@@ -1,0 +1,214 @@
+"""Порты: репозитории и внешние сервисы (сценарии зависят только от абстракций)."""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any
+from uuid import UUID
+
+from src.domain.entities import (
+    CallAnalytics,
+    CallRecord,
+    DialerQueueItem,
+    DialerQueueStatus,
+    KnowledgeItem,
+    Lead,
+    TrainingScenario,
+    TrainingSession,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class LLMToolCall:
+    """Вызов инструмента, запрошенный моделью (OpenAI tool_calls)."""
+
+    tool_call_id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+class ILLMService(ABC):
+    """Порт языковой модели для генерации ответа консультанта."""
+
+    @abstractmethod
+    async def generate_response(
+        self,
+        prompt: str,
+        context: list[str],
+        *,
+        history: list[dict] | None = None,
+        system_prompt: str | None = None,
+    ) -> str:
+        """Формирует ответ с учётом RAG-контекста и опциональной истории (role/content).
+
+        Если задан system_prompt — подставляется вместо персоны консультанта по умолчанию.
+        """
+
+    @abstractmethod
+    async def generate_sales_response_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]],
+    ) -> tuple[str | None, list[LLMToolCall]]:
+        """Один шаг чата: текст ассистента (может быть пустым) и запрошенные вызовы инструментов."""
+
+    @abstractmethod
+    async def analyze_conversation_quality(self, transcript_text: str) -> tuple[int, str]:
+        """ОКК: оценка диалога по шкале 1–10 и краткие рекомендации на русском."""
+
+    @abstractmethod
+    async def analyze_training_performance(
+        self,
+        transcript_text: str,
+        *,
+        scenario_title: str,
+        objections_to_raise: str,
+    ) -> tuple[int, str]:
+        """Тренер продаж: оценка менеджера (реплики user) и отработка возражений сценария."""
+
+
+class ICRMService(ABC):
+    """Порт внешней CRM (Bitrix24 и др.): создание лида по контактам из диалога."""
+
+    @abstractmethod
+    async def create_lead(self, phone: str, name: str, description: str) -> str:
+        """Создаёт лид; возвращает строковый идентификатор в CRM."""
+
+
+class ITelephonyService(ABC):
+    """Порт телефонии (SIP / мост к Pipecat). Без тяжёлых кодеков на CPU приложения."""
+
+    @abstractmethod
+    async def make_outbound_call(self, phone: str) -> str:
+        """Инициирует исходящий вызов; возвращает внешний идентификатор вызова у провайдера/PBX."""
+
+    @abstractmethod
+    async def handle_inbound_call(self, call_id: str) -> str:
+        """Регистрирует входящий вызов от АТС; возвращает session_id для Redis и пайплайна."""
+
+
+class ICallRecordRepository(ABC):
+    """Порт сохранения записей сессий и выборки для дашборда."""
+
+    @abstractmethod
+    async def save(self, record: CallRecord) -> CallRecord:
+        """Сохраняет запись звонка/чата; возвращает сущность с id из БД."""
+
+    @abstractmethod
+    async def save_analytics(self, row: CallAnalytics) -> CallAnalytics:
+        """Сохраняет аналитику ОКК, привязанную к call_record_id."""
+
+    @abstractmethod
+    async def list_recent_with_analytics(
+        self,
+        *,
+        limit: int = 100,
+    ) -> list[tuple[CallRecord, CallAnalytics | None]]:
+        """Последние записи с опциональной аналитикой (для таблицы в панели)."""
+
+
+class IChatMemoryRepository(ABC):
+    """Порт кратковременной памяти диалога (Redis и т.п.)."""
+
+    @abstractmethod
+    async def get_history(self, session_id: str) -> list[dict]:
+        """Возвращает сообщения до текущего хода; элементы с ключами role и content."""
+
+    @abstractmethod
+    async def save_message(self, session_id: str, role: str, content: str) -> None:
+        """Добавляет сообщение в историю сессии (role: user | assistant)."""
+
+
+class IEmbeddingService(ABC):
+    """Порт сервиса векторизации текста (эмбеддинги для RAG)."""
+
+    @abstractmethod
+    async def generate_embedding(self, text: str) -> list[float]:
+        """Возвращает вектор фиксированной размерности для запроса."""
+
+
+class ILeadRepository(ABC):
+    """Порт доступа к персистентности лидов."""
+
+    @abstractmethod
+    async def save(self, lead: Lead) -> Lead:
+        """Сохраняет новый лид; возвращает сущность с заполненными id и created_at."""
+
+
+class ITrainingScenarioRepository(ABC):
+    """Порт сценариев тренажёра."""
+
+    @abstractmethod
+    async def list_recent(self, *, limit: int = 100) -> list[TrainingScenario]:
+        """Последние сценарии (новые сверху)."""
+
+    @abstractmethod
+    async def get_by_id(self, scenario_id: UUID) -> TrainingScenario | None:
+        """Возвращает сценарий по UUID или None."""
+
+    @abstractmethod
+    async def save(self, scenario: TrainingScenario) -> TrainingScenario:
+        """Создаёт сценарий; возвращает сущность с id из БД."""
+
+
+class ITrainingSessionRepository(ABC):
+    """Порт результатов тренировочных звонков."""
+
+    @abstractmethod
+    async def save(self, row: TrainingSession) -> TrainingSession:
+        """Сохраняет оценку тренера; возвращает сущность с id из БД."""
+
+
+class IDialerQueueRepository(ABC):
+    """Порт очереди автообзвона."""
+
+    @abstractmethod
+    async def list_pending(self, *, limit: int = 50) -> list[DialerQueueItem]:
+        """Записи со статусом pending по возрастанию scheduled_at."""
+
+    @abstractmethod
+    async def add_phones(self, phones: list[str]) -> int:
+        """Пакетно добавляет номера (pending); возвращает число вставленных строк."""
+
+    @abstractmethod
+    async def set_status(self, item_id: UUID, status: DialerQueueStatus) -> None:
+        """Обновляет статус строки очереди."""
+
+
+class IKnowledgeRepository(ABC):
+    """Порт доступа к элементам базы знаний (в т.ч. с вектором)."""
+
+    @abstractmethod
+    async def save(self, item: KnowledgeItem) -> KnowledgeItem:
+        """Сохраняет элемент знаний; возвращает сущность с id из БД."""
+
+    @abstractmethod
+    async def search_similar(
+        self,
+        embedding: list[float],
+        limit: int = 3,
+    ) -> list[KnowledgeItem]:
+        """Ищет наиболее близкие по вектору записи (pgvector)."""
+
+
+class IVoiceTransport(ABC):
+    """Порт транспорта голосового потока (вход/выход аудио и служебные кадры).
+
+    Реализация живёт в инфраструктуре (Pipecat); тип процессоров намеренно Any,
+    чтобы слой use_cases не импортировал pipecat.
+    """
+
+    @property
+    @abstractmethod
+    def pipecat_transport(self) -> Any:
+        """Нативный Pipecat BaseTransport (события **on_client_disconnected** и т.д.)."""
+
+    @abstractmethod
+    def input_processor(self) -> Any:
+        """Процессор входа: аудио и сообщения от клиента."""
+
+    @abstractmethod
+    def output_processor(self) -> Any:
+        """Процессор выхода: синтезированное аудио и ответы клиенту."""

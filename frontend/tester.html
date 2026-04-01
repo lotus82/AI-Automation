@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Тест ИИ-агента — Sales AI</title>
+  <link rel="stylesheet" href="/static/css/dashboard.css" />
+  <!-- protobufjs — сериализация кадров Pipecat в браузере -->
+  <script src="https://cdn.jsdelivr.net/npm/protobufjs@7.4.0/dist/protobuf.min.js"></script>
+</head>
+<body>
+  <div class="dashboard">
+    <aside class="dashboard__sidebar">
+      <div class="dashboard__brand">Sales AI — панель</div>
+      <nav>
+        <ul class="nav">
+          <li class="nav__item">
+            <a class="nav__link" href="/" data-nav="home">Главная</a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/telephony.html" data-nav="telephony">Телефония</a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/scenarios.html" data-nav="scenarios">Сценарии тренажёра</a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/tester.html" data-nav="tester">Тест ИИ-агента</a>
+          </li>
+        </ul>
+      </nav>
+    </aside>
+    <main class="dashboard__main">
+      <h1 class="dashboard__title">Тест голосового агента</h1>
+      <p class="dashboard__lead">
+        Подключение к <code>/voice/stream</code> через Nginx (тот же хост): Pipecat Protobuf, микрофон → PCM 16 kHz → WebSocket,
+        воспроизведение ответа (PCM с сервера, обычно 24 kHz). Нужны ключи Deepgram и TTS (см. README).
+        В режиме <strong>Тренажёр</strong> ИИ играет роль клиента по выбранному сценарию; после звонка оценку ставит тренер (LLM).
+      </p>
+
+      <div class="voice-tester" id="voice-tester-root">
+        <div class="voice-tester__row">
+          <div class="status-badge status-badge--disconnected" id="voice-status" data-state="disconnected">
+            <span class="status-badge__dot" aria-hidden="true"></span>
+            <span id="voice-status-text">Отключено</span>
+          </div>
+        </div>
+
+        <div class="voice-tester__row">
+          <div class="voice-tester__field">
+            <label class="voice-tester__label" for="voice-mode-select">Режим</label>
+            <select class="voice-tester__input" id="voice-mode-select" aria-label="Режим работы агента">
+              <option value="consultant">Консультант (ИИ — продавец)</option>
+              <option value="trainer">Тренажёр (ИИ — клиент)</option>
+            </select>
+          </div>
+          <div class="voice-tester__field" id="voice-scenario-field" hidden>
+            <label class="voice-tester__label" for="voice-scenario-select">Сценарий</label>
+            <select class="voice-tester__input" id="voice-scenario-select" aria-label="Сценарий тренажёра">
+              <option value="">— Загрузка… —</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="voice-tester__row">
+          <div class="voice-tester__field">
+            <label class="voice-tester__label" for="manager-name-input">Имя менеджера (для отчёта тренера, опционально)</label>
+            <input class="voice-tester__input" type="text" id="manager-name-input" name="manager_name" placeholder="Например, Иванов А." autocomplete="name" />
+          </div>
+        </div>
+
+        <div class="voice-tester__row">
+          <div class="voice-tester__field">
+            <label class="voice-tester__label" for="session-id-input">Идентификатор сессии (опционально, UUID)</label>
+            <input class="voice-tester__input" type="text" id="session-id-input" name="session_id" placeholder="Оставьте пустым — сервер создаст новый" autocomplete="off" />
+          </div>
+        </div>
+
+        <div class="voice-tester__row">
+          <button type="button" class="btn btn--primary btn--lg" id="btn-start-call">Начать звонок (микрофон)</button>
+          <button type="button" class="btn btn--danger btn--lg" id="btn-end-call" disabled>Завершить звонок</button>
+        </div>
+
+        <h2 class="dashboard__title" style="font-size:1.1rem;margin-top:1.5rem;">Журнал</h2>
+        <div class="log-box" id="voice-log" aria-live="polite"></div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/js/voice_nav.js"></script>
+  <script src="/static/js/voice_app.js"></script>
+</body>
+</html>

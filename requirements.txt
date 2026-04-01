@@ -1,0 +1,43 @@
+# ВАЖНО (VPS без GPU): не добавлять torch, tensorflow, transformers и CUDA-сборки.
+# Вся «тяжёлая» ML-логика — только через внешние API (OpenAI и т.д.).
+
+# Веб-API и ASGI
+fastapi>=0.109.0,<1.0.0
+uvicorn[standard]>=0.27.0,<1.0.0
+
+# Импорт номеров для автообзвона (XLSX)
+openpyxl>=3.1.0,<4.0.0
+
+# Конфигурация
+pydantic>=2.0.0,<3.0.0
+pydantic-settings>=2.0.0,<3.0.0
+
+# Асинхронная БД
+sqlalchemy[asyncio]>=2.0.0,<3.0.0
+asyncpg>=0.29.0,<1.0.0
+
+# Миграции и векторный поиск в PostgreSQL
+alembic>=1.13.0,<2.0.0
+pgvector>=0.3.0,<1.0.0
+
+# Redis (память диалогов + брокер Celery)
+redis[hiredis]>=5.0.0,<6.0.0
+
+# Фоновые задачи (CPU, без локального ML)
+celery>=5.3.0,<6.0.0
+
+# OpenAI (async-клиент: эмбеддинги и чат для RAG)
+openai>=1.40.0,<2.0.0
+
+# HTTP-клиент для Bitrix24 REST (вебхук) и ARI Asterisk
+httpx>=0.27.0,<1.0.0
+
+# WebSocket-клиент для потока событий ARI
+websockets>=12.0,<14.0
+
+# Голосовой пайплайн (STT/TTS только через облако). Версия 0.0.60 без torch/transformers в core.
+# Не ставить extras: silero, whisper, local-smart-turn, moondream, ultravox и т.п.
+# Python 3.13: numpy~=1.26.4 может не иметь колеса под Windows — тогда MSVC или conda:
+#   conda install "numpy>=1.26.4,<1.27" -c conda-forge
+# Надёжнее для голоса: Python 3.10–3.12.
+pipecat-ai[deepgram,openai,websocket]==0.0.60

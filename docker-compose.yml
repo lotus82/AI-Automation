@@ -1,0 +1,126 @@
+# Локальная инфраструктура: API, фронт (Nginx), PostgreSQL (с pgvector), Redis, Asterisk (SIP + ARI).
+
+services:
+  asterisk:
+    image: andrius/asterisk:22
+    # Точечный монтаж конфигов сохраняет файлы по умолчанию образа (logger, modules и т.д.).
+    # Полный каталог ./infrastructure/asterisk/config → /etc/asterisk возможен только после
+    # копирования остальных системных .conf из контейнера.
+    volumes:
+      - ./infrastructure/asterisk/config/http.conf:/etc/asterisk/http.conf:ro
+      - ./infrastructure/asterisk/config/ari.conf:/etc/asterisk/ari.conf:ro
+      - ./infrastructure/asterisk/config/pjsip.conf:/etc/asterisk/pjsip.conf:ro
+      - ./infrastructure/asterisk/config/extensions.conf:/etc/asterisk/extensions.conf:ro
+      - ./infrastructure/asterisk/config/rtp.conf:/etc/asterisk/rtp.conf:ro
+    ports:
+      - "5060:5060/udp"
+      - "8088:8088"
+      - "10000-10500:10000-10500/udp"
+    networks:
+      - default
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    expose:
+      - "8000"
+    # Опционально: раскомментируйте для прямого доступа к FastAPI с хоста (без Nginx)
+    # ports:
+    #   - "8000:8000"
+    environment:
+      APP_ENV: development
+      APP_DEBUG: "true"
+      POSTGRES_URI: postgresql+asyncpg://sales:sales@postgres:5432/sales_agent
+      REDIS_URI: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      CHAT_MEMORY_TTL_SECONDS: "86400"
+      # ARI (тот же хост, что в ASTERISK_URL; из контейнера web — сервис asterisk)
+      ASTERISK_URL: http://asterisk:8088/ari
+      ASTERISK_ARI_USER: voiceai
+      ASTERISK_ARI_PASSWORD: voiceai_secret
+      ASTERISK_STASIS_APP: voice_ai_app
+      # Куда Asterisk шлёт RTP externalMedia (имя сервиса Docker)
+      ASTERISK_RTP_ADVERTISE_HOST: web
+      ASTERISK_RTP_PORT_MIN: "18000"
+      ASTERISK_RTP_PORT_MAX: "18015"
+    volumes:
+      - ./src:/app/src
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      asterisk:
+        condition: service_started
+    command:
+      [
+        "uvicorn",
+        "src.api.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+      ]
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: sales
+      POSTGRES_PASSWORD: sales
+      POSTGRES_DB: sales_agent
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sales -d sales_agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: development
+      POSTGRES_URI: postgresql+asyncpg://sales:sales@postgres:5432/sales_agent
+      REDIS_URI: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      redis:
+        condition: service_started
+    command:
+      [
+        "celery",
+        "-A",
+        "src.core.celery_app",
+        "worker",
+        "--loglevel=info",
+      ]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - web
+
+volumes:
+  postgres_data:
