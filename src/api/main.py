@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
 from src.api.routers import calls, chat, dialer, health, leads, telephony, training, voice
+from src.api.routers import settings as settings_router
 from src.core.config import get_settings
 from src.core.logging import setup_logging
 
@@ -54,7 +55,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     application = FastAPI(
         title="Sales AI Agent API",
-        version="0.11.0",
+        version="0.12.0",
         lifespan=lifespan,
         debug=settings.debug,
     )
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     application.include_router(training.router, prefix="/api", tags=["training"])
     application.include_router(telephony.router, prefix="/api", tags=["telephony"])
     application.include_router(dialer.router, prefix="/api", tags=["dialer"])
+    application.include_router(settings_router.router, prefix="/api", tags=["settings"])
     application.include_router(voice.router, prefix="/voice", tags=["voice"])
 
     return application

@@ -105,6 +105,16 @@ class TrainingSession:
 
 
 @dataclass(frozen=True, slots=True)
+class SystemSetting:
+    """Параметр системы, редактируемый руководителем из панели (LLM, промпты, токены)."""
+
+    key: str
+    value: str
+    description: str
+    updated_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class KnowledgeItem:
     """Элемент базы знаний (прайсы, описания для RAG). Вектор заполняется позже пайплайном эмбеддингов."""
 

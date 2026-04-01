@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -167,6 +167,21 @@ class CallAnalyticsModel(Base):
     call_record: Mapped["CallRecordModel"] = relationship(
         "CallRecordModel",
         back_populates="analytics",
+    )
+
+
+class SystemSettingModel(Base):
+    """Динамические настройки (LLM, промпты, ключи API) — правка из панели."""
+
+    __tablename__ = "system_settings"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    description: Mapped[str] = mapped_column(String(512), nullable=False, server_default=text("''"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+        onupdate=func.now(),
     )
 
 

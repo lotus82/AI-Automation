@@ -4,16 +4,22 @@ from __future__ import annotations
 
 import json
 
-from src.infrastructure.services.openai_llm import (
-    SALES_CONSULTANT_SYSTEM_PROMPT,
-    SALES_TOOLS_INSTRUCTION_RU,
-)
+from src.domain.default_system_prompts import FALLBACK_DEFAULT_CONSULTANT_PROMPT
+from src.domain import system_setting_keys as sk
 from src.use_cases.interfaces import (
     IChatMemoryRepository,
     ICRMService,
     IEmbeddingService,
     IKnowledgeRepository,
     ILLMService,
+    ISettingsRepository,
+)
+
+# Дополнение к системному промпту для вызова инструмента record_lead.
+SALES_TOOLS_INSTRUCTION_RU = (
+    "\n\nЕсли клиент явно оставил номер телефона и согласие на обратную связь, "
+    "вызови инструмент record_lead с полями phone, name (имя или компания), notes (краткий контекст). "
+    "После успешной передачи контактов в CRM ответь по-русски одним коротким подтверждением."
 )
 
 # Инструмент передачи лида в CRM (OpenAI tools schema).
@@ -59,12 +65,14 @@ class ProcessTextMessageUseCase:
         llm_service: ILLMService,
         chat_memory: IChatMemoryRepository,
         crm_service: ICRMService,
+        settings_repository: ISettingsRepository,
     ) -> None:
         self._embeddings = embedding_service
         self._knowledge = knowledge_repository
         self._llm = llm_service
         self._memory = chat_memory
         self._crm = crm_service
+        self._settings_repo = settings_repository
 
     def _build_user_content(self, prompt: str, context_chunks: list[str]) -> str:
         if context_chunks:
@@ -111,9 +119,9 @@ class ProcessTextMessageUseCase:
             if use_crm_tools:
                 system_text += SALES_TOOLS_INSTRUCTION_RU
         else:
-            system_text = SALES_CONSULTANT_SYSTEM_PROMPT + (
-                SALES_TOOLS_INSTRUCTION_RU if use_crm_tools else ""
-            )
+            db_prompt = (await self._settings_repo.get_value(sk.DEFAULT_CONSULTANT_PROMPT) or "").strip()
+            consultant_base = db_prompt or FALLBACK_DEFAULT_CONSULTANT_PROMPT
+            system_text = consultant_base + (SALES_TOOLS_INSTRUCTION_RU if use_crm_tools else "")
         messages: list[dict] = [{"role": "system", "content": system_text}]
         for turn in history:
             role = turn.get("role")

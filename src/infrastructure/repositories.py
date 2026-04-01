@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from uuid import UUID
 
+from datetime import datetime, timezone
+
 from src.domain.entities import (
     CallAnalytics,
     CallRecord,
@@ -19,6 +21,7 @@ from src.domain.entities import (
     KnowledgeItem,
     Lead,
     LeadStatus,
+    SystemSetting,
     TrainingScenario,
     TrainingSession,
 )
@@ -29,6 +32,7 @@ from src.infrastructure.models import (
     DialerQueueModel,
     KnowledgeItemModel,
     LeadModel,
+    SystemSettingModel,
     TrainingScenarioModel,
     TrainingSessionModel,
 )
@@ -38,6 +42,7 @@ from src.use_cases.interfaces import (
     IDialerQueueRepository,
     IKnowledgeRepository,
     ILeadRepository,
+    ISettingsRepository,
     ITrainingScenarioRepository,
     ITrainingSessionRepository,
 )
@@ -407,3 +412,55 @@ class SqlAlchemyDialerQueueRepository(IDialerQueueRepository):
             raise ValueError(msg)
         row.status = status.value
         await self._session.flush()
+
+
+def _system_setting_to_domain(row: SystemSettingModel) -> SystemSetting:
+    return SystemSetting(
+        key=row.key,
+        value=row.value,
+        description=row.description,
+        updated_at=row.updated_at,
+    )
+
+
+class PostgresSettingsRepository(ISettingsRepository):
+    """Настройки в PostgreSQL; горячие чтения кэшируются в Redis, при PUT ключ инвалидируется."""
+
+    CACHE_PREFIX = "sys_setting:v1:"
+
+    def __init__(self, session: AsyncSession, redis: Redis) -> None:
+        self._session = session
+        self._redis = redis
+
+    def _cache_key(self, key: str) -> str:
+        return f"{self.CACHE_PREFIX}{key.strip()}"
+
+    async def get_value(self, key: str) -> str | None:
+        k = key.strip()
+        ck = self._cache_key(k)
+        cached = await self._redis.get(ck)
+        if cached is not None:
+            return cached
+        row = await self._session.get(SystemSettingModel, k)
+        if row is None:
+            return None
+        await self._redis.set(ck, row.value)
+        return row.value
+
+    async def list_all(self) -> list[SystemSetting]:
+        stmt = select(SystemSettingModel).order_by(SystemSettingModel.key.asc())
+        result = await self._session.scalars(stmt)
+        return [_system_setting_to_domain(r) for r in result.all()]
+
+    async def upsert_values(self, updates: dict[str, str]) -> None:
+        for raw_key, value in updates.items():
+            k = raw_key.strip()
+            row = await self._session.get(SystemSettingModel, k)
+            if row is None:
+                msg = f"Неизвестный ключ настройки: {k}"
+                raise KeyError(msg)
+            row.value = value
+            row.updated_at = datetime.now(timezone.utc)
+        await self._session.flush()
+        for raw_key in updates:
+            await self._redis.delete(self._cache_key(raw_key.strip()))

@@ -12,13 +12,14 @@ from src.core.config import Settings
 from src.domain.entities import TrainingScenario
 from src.infrastructure.database import AsyncSessionLocal
 from src.infrastructure.repositories import (
+    PostgresSettingsRepository,
     RedisChatMemoryRepository,
     SqlAlchemyKnowledgeRepository,
     SqlAlchemyTrainingScenarioRepository,
 )
 from src.infrastructure.services.bitrix24 import build_crm_service
+from src.infrastructure.services.dynamic_llm import DynamicLLMService
 from src.infrastructure.services.openai_embedding import OpenAIEmbeddingService
-from src.infrastructure.services.openai_llm import OpenAILLMService
 from src.infrastructure.training_session_redis import (
     encode_trainer_meta,
     trainer_session_redis_key,
@@ -64,8 +65,9 @@ async def run_voice_pipeline_session(
                     redis,
                     ttl_seconds=settings.chat_memory_ttl_seconds,
                 )
-                embeddings = OpenAIEmbeddingService(settings=settings)
-                llm = OpenAILLMService(settings=settings)
+                settings_repo = PostgresSettingsRepository(session, redis)
+                embeddings = OpenAIEmbeddingService(settings=settings, settings_repo=settings_repo)
+                llm = DynamicLLMService(settings=settings, settings_repo=settings_repo)
                 crm = build_crm_service(settings.bitrix24_webhook_url)
                 use_case = ProcessTextMessageUseCase(
                     embedding_service=embeddings,
@@ -73,6 +75,7 @@ async def run_voice_pipeline_session(
                     llm_service=llm,
                     chat_memory=memory,
                     crm_service=crm,
+                    settings_repository=settings_repo,
                 )
                 if voice_mode == "trainer_client" and trainer_system:
                     reply = await use_case.execute(

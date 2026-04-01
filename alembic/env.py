@@ -19,6 +19,7 @@ from src.infrastructure.models import (  # noqa: F401
     DialerQueueModel,
     KnowledgeItemModel,
     LeadModel,
+    SystemSettingModel,
     TrainingScenarioModel,
     TrainingSessionModel,
 )

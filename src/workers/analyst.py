@@ -12,12 +12,13 @@ from src.core.config import get_settings
 from src.domain.entities import CallAnalytics, CallRecord, TrainingSession
 from src.infrastructure.database import AsyncSessionLocal
 from src.infrastructure.repositories import (
+    PostgresSettingsRepository,
     RedisChatMemoryRepository,
     SqlAlchemyCallRecordRepository,
     SqlAlchemyTrainingScenarioRepository,
     SqlAlchemyTrainingSessionRepository,
 )
-from src.infrastructure.services.openai_llm import OpenAILLMService
+from src.infrastructure.services.dynamic_llm import DynamicLLMService
 from src.infrastructure.sip_call_redis import (
     analyst_call_meta_redis_key,
     decode_analyst_call_meta,
@@ -80,7 +81,8 @@ async def _analyze_async(session_id: str) -> str:
                     scenario_repo = SqlAlchemyTrainingScenarioRepository(session)
                     call_repo = SqlAlchemyCallRecordRepository(session)
                     scenario = await scenario_repo.get_by_id(sc_uuid)
-                    llm = OpenAILLMService(settings=settings)
+                    settings_repo = PostgresSettingsRepository(session, redis)
+                    llm = DynamicLLMService(settings=settings, settings_repo=settings_repo)
 
                     record = CallRecord(
                         session_id=session_id,
@@ -147,7 +149,8 @@ async def _analyze_async(session_id: str) -> str:
                     msg = "После сохранения call_record отсутствует id"
                     raise RuntimeError(msg)
 
-                llm = OpenAILLMService(settings=settings)
+                settings_repo = PostgresSettingsRepository(session, redis)
+                llm = DynamicLLMService(settings=settings, settings_repo=settings_repo)
                 score, recommendations = await llm.analyze_conversation_quality(transcript)
                 analytics = CallAnalytics(
                     call_record_id=saved.id,

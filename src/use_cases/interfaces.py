@@ -14,6 +14,7 @@ from src.domain.entities import (
     DialerQueueStatus,
     KnowledgeItem,
     Lead,
+    SystemSetting,
     TrainingScenario,
     TrainingSession,
 )
@@ -26,6 +27,22 @@ class LLMToolCall:
     tool_call_id: str
     name: str
     arguments: dict[str, Any]
+
+
+class ISettingsRepository(ABC):
+    """Порт динамических настроек (PostgreSQL + кэш Redis)."""
+
+    @abstractmethod
+    async def get_value(self, key: str) -> str | None:
+        """Возвращает значение по ключу или None, если строки нет в БД."""
+
+    @abstractmethod
+    async def list_all(self) -> list[SystemSetting]:
+        """Все настройки (для панели администрирования)."""
+
+    @abstractmethod
+    async def upsert_values(self, updates: dict[str, str]) -> None:
+        """Обновляет значения существующих ключей; сбрасывает кэш Redis для них."""
 
 
 class ILLMService(ABC):

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import Settings, get_settings
 from src.infrastructure.database import get_async_session
 from src.infrastructure.repositories import (
+    PostgresSettingsRepository,
     RedisChatMemoryRepository,
     SqlAlchemyCallRecordRepository,
     SqlAlchemyDialerQueueRepository,
@@ -20,7 +21,7 @@ from src.infrastructure.repositories import (
 )
 from src.infrastructure.services.bitrix24 import build_crm_service
 from src.infrastructure.services.openai_embedding import OpenAIEmbeddingService
-from src.infrastructure.services.openai_llm import OpenAILLMService
+from src.infrastructure.services.dynamic_llm import DynamicLLMService
 from src.use_cases.chat import ProcessTextMessageUseCase
 from src.use_cases.interfaces import (
     ICallRecordRepository,
@@ -31,6 +32,7 @@ from src.use_cases.interfaces import (
     IKnowledgeRepository,
     ILeadRepository,
     ILLMService,
+    ISettingsRepository,
     ITrainingScenarioRepository,
 )
 from src.use_cases.leads import CreateLeadUseCase
@@ -78,17 +80,31 @@ def get_knowledge_repository(session: AsyncSessionDep) -> IKnowledgeRepository:
 KnowledgeRepositoryDep = Annotated[IKnowledgeRepository, Depends(get_knowledge_repository)]
 
 
-def get_embedding_service(settings: SettingsDep) -> IEmbeddingService:
-    """Сервис эмбеддингов (OpenAI или заглушка без ключа)."""
-    return OpenAIEmbeddingService(settings=settings)
+def get_settings_repository(session: AsyncSessionDep, redis: RedisDep) -> ISettingsRepository:
+    """Динамические настройки (PostgreSQL + Redis-кэш при чтении)."""
+    return PostgresSettingsRepository(session, redis)
+
+
+SettingsRepositoryDep = Annotated[ISettingsRepository, Depends(get_settings_repository)]
+
+
+def get_embedding_service(
+    settings: SettingsDep,
+    settings_repository: SettingsRepositoryDep,
+) -> IEmbeddingService:
+    """Сервис эмбеддингов: ключ **OPENAI_API_KEY** из настроек БД или из env."""
+    return OpenAIEmbeddingService(settings=settings, settings_repo=settings_repository)
 
 
 EmbeddingServiceDep = Annotated[IEmbeddingService, Depends(get_embedding_service)]
 
 
-def get_llm_service(settings: SettingsDep) -> ILLMService:
-    """Сервис LLM (OpenAI или заглушка без ключа)."""
-    return OpenAILLMService(settings=settings)
+def get_llm_service(
+    settings: SettingsDep,
+    settings_repository: SettingsRepositoryDep,
+) -> ILLMService:
+    """LLM DeepSeek (по умолчанию) или OpenAI — из настроек панели."""
+    return DynamicLLMService(settings=settings, settings_repo=settings_repository)
 
 
 LLMServiceDep = Annotated[ILLMService, Depends(get_llm_service)]
@@ -158,6 +174,7 @@ def get_process_text_message_use_case(
     llm_service: LLMServiceDep,
     chat_memory: ChatMemoryRepositoryDep,
     crm_service: CRMDep,
+    settings_repository: SettingsRepositoryDep,
 ) -> ProcessTextMessageUseCase:
     """Сценарий текстового RAG с историей в Redis."""
     return ProcessTextMessageUseCase(
@@ -166,6 +183,7 @@ def get_process_text_message_use_case(
         llm_service=llm_service,
         chat_memory=chat_memory,
         crm_service=crm_service,
+        settings_repository=settings_repository,
     )
 
 

@@ -1,6 +1,6 @@
 # AI Voice & Text Agent (отдел продаж)
 
-Сервис для голосового и текстового ИИ-агента отдела продаж. **Текущее состояние: фаза 11** — **Asterisk в Docker + ARI**: сервис **`asterisk`** в **`docker-compose.yml`**, конфиги в **`infrastructure/asterisk/config/`**, фоновый слушатель **`run_ari_event_listener`** (WebSocket событий ARI + REST), мост **SIP → mixing bridge → externalMedia (UDP RTP PCMU) → Pipecat** на контейнере **`web`** (порты **`ASTERISK_RTP_PORT_*`**). Реализации телефонии: **`AsteriskTelephonyService`** при заданных **`ASTERISK_*`**, иначе **`StubSIPTelephonyService`**. **Важно:** нативный ARI **externalMedia** использует **UDP RTP** на **`ASTERISK_RTP_ADVERTISE_HOST:порт`**, а не подключение Asterisk к **`ws://.../voice/stream`** (браузер по-прежнему Protobuf по WebSocket). Сохранены **фаза 10** (вебхуки телефонии, **`dialer_queue`**, UI **`telephony.html`**) и **5–9**. Локальные Whisper/Torch/CUDA **не используются**.
+Сервис для голосового и текстового ИИ-агента отдела продаж. **Текущее состояние: фаза 12** — **динамические настройки из панели**: таблица **`system_settings`**, репозиторий **`PostgresSettingsRepository`** с **кэшем Redis** (`sys_setting:v1:{key}`), **`DynamicLLMService`** (по умолчанию провайдер **DeepSeek** через официальный **OpenAI-совместимый** клиент: `base_url=https://api.deepseek.com`, модель **`deepseek-chat`**; режим **openai** — **`gpt-4o-mini`**). Промпт консультанта и ОКК читаются из БД (**`DEFAULT_CONSULTANT_PROMPT`**, **`ANALYST_QA_PROMPT`**); сценарий **`ProcessTextMessageUseCase`** использует **`ISettingsRepository`**. UI: **`frontend/settings.html`**, **`GET/PUT /api/settings`**. **# TODO (продакшен):** хранить API-ключи в БД в **зашифрованном виде** (например, **Fernet** из **`cryptography`**). Сохранены **фазы 5–11**. Локальные Whisper/Torch/CUDA **не используются**.
 
 ---
 
@@ -33,7 +33,7 @@
 
 ## Фронтенд и Nginx (фаза 8)
 
-- **Каталог**: корневой **`frontend/`** — **`index.html`**, **`telephony.html`** (очередь + Celery), **`tester.html`**, **`scenarios.html`**, **`static/`**. Таблица звонков: **`fetch("/api/calls")`** (колонки направление и номер); сценарии: **`GET /api/scenarios`**.
+- **Каталог**: корневой **`frontend/`** — **`index.html`**, **`settings.html`** (LLM, ключи, промпты), **`telephony.html`**, **`tester.html`**, **`scenarios.html`**, **`static/`**. Таблица звонков: **`fetch("/api/calls")`**; настройки: **`fetch("/api/settings")`**.
 - **Docker Compose**: сервис **`frontend`** (образ **`nginx:alpine`**) публикует **`8080:80`**. Откройте **`http://localhost:8080/`** — запросы к **`/api/...`** и **`/voice/...`** уходят на внутренний сервис **`web:8000`** (см. **`frontend/nginx.conf`**). WebSocket: заголовки **`Upgrade`** и **`Connection`** проксируются для **`/voice/stream`**.
 - **Сервис `web`**: с хоста **порт 8000 не проброшен** (имитация продакшена); при отладке можно раскомментировать **`ports: "8000:8000"`** в **`docker-compose.yml`**.
 - **Микрофон в браузере**: страница должна открываться с **`localhost`**, **`127.0.0.1`** или **HTTPS**.
@@ -128,6 +128,7 @@
 - Миграция **`002_call_analytics`**: **`call_records`**, **`call_analytics`** (ОКК для диалогов «клиент ↔ ИИ-консультант»).
 - Миграция **`003_training`**: **`training_scenarios`**, **`training_sessions`**; в миграции есть **сид** одного сценария по умолчанию (см. файл; **TODO** на вынос сидов — в ревизии).
 - Миграция **`004_sip_dialer`**: у **`call_records`** поля **`direction`**, **`remote_phone`**; таблица **`dialer_queue`**.
+- Миграция **`005_system_settings`**: таблица **`system_settings`** (ключ, значение, описание, **`updated_at`**) и сиды по умолчанию (**`LLM_PROVIDER=deepseek`**, пустые ключи API, промпты). **# TODO:** шифрование секретов at rest — в комментарии миграции.
 - Задача **`analyze_conversation_task(session_id)`** (`src/workers/analyst.py`):
   1. Читает историю из **Redis**.
   2. Если в Redis есть ключ **`trainer_session:{session_id}`** (ставится при подключении в режиме тренажёра): сохраняет **`call_records`** со статусом **`training`**, вызывает **`ILLMService.analyze_training_performance`** (промпт **Sales Coach**), пишет **`training_sessions`**; строка **`call_analytics`** **не** создаётся.
@@ -177,7 +178,7 @@ curl -s -X POST "http://127.0.0.1:8000/api/chat/finalize" -H "Content-Type: appl
 
 - Приложение: **`src/core/celery_app.py`**, команда **`celery -A src.core.celery_app worker`**.
 - **Брокер** и **backend** — Redis (**`CELERY_BROKER_URL`**, **`CELERY_RESULT_BACKEND`**); чат — **`REDIS_URI`** (БД **0**).
-- **`analyze_conversation_task`**: реализация в **`src/workers/analyst.py`**, регистрация в **`src/workers/tasks.py`**; использует **`AsyncSessionLocal`**, **`OpenAILLMService`**, те же **`Settings`**, что и API.
+- **`analyze_conversation_task`**: реализация в **`src/workers/analyst.py`**, регистрация в **`src/workers/tasks.py`**; использует **`AsyncSessionLocal`**, **`PostgresSettingsRepository`** + **`DynamicLLMService`**, Redis и **`Settings`**.
 - Воркеру нужны **`POSTGRES_URI`**, **`REDIS_URI`**, **`OPENAI_API_KEY`** (для ОКК и тренера).
 
 ```bash
@@ -197,7 +198,7 @@ analyze_conversation_task.delay("session-uuid-here")
 | `src/use_cases/interfaces.py` | Порты: **`ILLMService`**, **`ITelephonyService`**, **`IDialerQueueRepository`**, др. |
 | `src/use_cases/chat.py` | **`ProcessTextMessageUseCase`**: опциональный **`system_prompt_override`**, **`skip_rag`**, отключение CRM-tools |
 | `src/infrastructure/repositories.py` | **`SqlAlchemyTrainingScenarioRepository`**, **`SqlAlchemyTrainingSessionRepository`**, др. |
-| `src/infrastructure/services/` | **`OpenAILLMService`** (**`analyze_training_performance`**), **`bitrix24`** |
+| `src/infrastructure/services/` | **`dynamic_llm.DynamicLLMService`**, **`openai_embedding`**, **`bitrix24`** |
 | `src/infrastructure/training_session_redis.py` | Ключ **`trainer_session:`** для воркера |
 | `src/infrastructure/sip_call_redis.py` | **`analyst_call_meta:`**, маппинг **`sip_call:`** для ОКК после SIP |
 | `src/infrastructure/voice/sip_pipecat_adapter.py` | **`SIPPipecatAdapter`**, **`StubSIPTelephonyService`** |
@@ -231,8 +232,8 @@ analyze_conversation_task.delay("session-uuid-here")
 | **`CELERY_BROKER_URL`** | Redis для брокера Celery (рекомендуется **/1**) |
 | **`CELERY_RESULT_BACKEND`** | Redis для результатов задач (рекомендуется **/2**) |
 | **`CHAT_MEMORY_TTL_SECONDS`** | TTL ключа сессии в секундах (по умолчанию **86400**) |
-| `OPENAI_API_KEY` | Опционально; без ключа — заглушки в адаптерах |
-| **`DEEPGRAM_API_KEY`** | Облачный STT для **`/voice/stream`** |
+| `OPENAI_API_KEY` | Опционально; **резерв** для эмбеддингов RAG, если в БД пустой **`OPENAI_API_KEY`**; основной ключ LLM задаётся в панели **«Настройки»** |
+| **`DEEPGRAM_API_KEY`** | Облачный STT для **`/voice/stream`** (пока только из env) |
 | **`VOICE_TTS_PROVIDER`** | **`openai`** (по умолчанию) или **`elevenlabs`** |
 | **`OPENAI_TTS_VOICE`**, **`OPENAI_TTS_MODEL`** | Голос и модель OpenAI TTS |
 | **`ELEVENLABS_API_KEY`**, **`ELEVENLABS_VOICE_ID`** | Нужны при **`VOICE_TTS_PROVIDER=elevenlabs`** |
@@ -285,6 +286,7 @@ curl -s -X POST "http://127.0.0.1:8080/api/chat/text" \
 - **`POST /api/telephony/inbound`**, **`POST /api/telephony/event`** — вебхуки АТС (SIP)
 - **`POST /api/dialer/queue/upload`** (multipart **`file`**) — загрузка номеров в **`dialer_queue`**
 - **`POST /api/dialer/campaign/start`** — постановка **`run_outbound_campaign_task`** в Celery
+- **`GET /api/settings`**, **`PUT /api/settings`** — динамические параметры (ключи API маскируются в ответе)
 - **`WebSocket /voice/stream`** — голос (браузер, Protobuf); по закрытию сокета — **`analyze_conversation_task`**
 - **SIP через Asterisk** — без отдельного WS: ARI + **UDP RTP** к приложению (см. «Asterisk и ARI»); по завершении сессии — тот же **`analyze_conversation_task`**
 
@@ -299,20 +301,27 @@ uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
 
 Отдельно: Redis и (при необходимости) второй терминал с **Celery worker** (см. выше). Запросы к API с фронта: **`http://127.0.0.1:8000/api/...`** (CORS уже разрешает `*`). Либо поднимите только Nginx из **`frontend/`** и укажите в конфиге **`proxy_pass`** на **`127.0.0.1:8000`**.
 
-## Структура (фаза 11)
+## Динамические настройки (фаза 12)
+
+- **Таблица** **`system_settings`**: первичный ключ **`key`** (строка), **`value`** (TEXT), **`description`**, **`updated_at`**.
+- **Кэш Redis**: при **`get_value`** сначала читается Redis; при промахе — PostgreSQL, затем запись в кэш. При **`PUT /api/settings`** соответствующие ключи кэша **удаляются**.
+- **Провайдер LLM**: **`LLM_PROVIDER`** = **`deepseek`** (по умолчанию) или **`openai`**. Клиент — **`AsyncOpenAI`**; для DeepSeek задаётся **`base_url=https://api.deepseek.com`**.
+- **Эмбеддинги RAG** остаются на API OpenAI (**`text-embedding-3-small`**); ключ **`OPENAI_API_KEY`** берётся из настроек БД, при пустом значении — из переменной окружения **`OPENAI_API_KEY`** (удобно до первой настройки панели).
+- Панель: **`http://localhost:8080/settings.html`** (после **`alembic upgrade head`** и **`docker compose up`**).
+
+## Структура (фаза 12)
 
 ```
-infrastructure/asterisk/config/   # http.conf, ari.conf, pjsip.conf, extensions.conf, rtp.conf
-frontend/        # telephony.html, scenarios.html, tester.html, static/
+infrastructure/asterisk/config/   # Asterisk (фаза 11)
+frontend/        # settings.html, telephony.html, scenarios.html, tester.html, static/
 src/
-  api/
-  core/           # config (SIP_*, ASTERISK_*), celery_app.py
-  domain/         # CallRecord (+ direction), DialerQueueItem, …
-  infrastructure/  # telephony/ari_client.py, voice/asterisk_rtp_transport.py, g711.py, …
-  workers/        # tasks.py, analyst.py, dialer.py
+  api/routers/settings.py
+  domain/          # system_setting_keys.py, default_system_prompts.py, SystemSetting
+  infrastructure/  # models SystemSettingModel, PostgresSettingsRepository, dynamic_llm.py
+  workers/
   ...
 ```
 
 ## Дальнейшие фазы
 
-**Originate** (исходящий) через ARI, отчёт по **`training_sessions`** в UI, роли и авторизация вебхуков, мониторинг Celery.
+Шифрование секретов в БД, **Originate** (ARI), отчёт по **`training_sessions`** в UI, авторизация **`/api/settings`**, мониторинг Celery.
