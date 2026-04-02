@@ -10,6 +10,8 @@ from uuid import UUID
 from src.domain.entities import (
     CallAnalytics,
     CallRecord,
+    ChatMessage,
+    ChatSessionSummary,
     DialerQueueItem,
     DialerQueueStatus,
     KnowledgeItem,
@@ -135,15 +137,63 @@ class ICallRecordRepository(ABC):
 
 
 class IChatMemoryRepository(ABC):
-    """Порт кратковременной памяти диалога (Redis и т.п.)."""
+    """Порт памяти диалога: Redis (кэш с TTL) + PostgreSQL (долговременная копия)."""
 
     @abstractmethod
-    async def get_history(self, session_id: str) -> list[dict]:
-        """Возвращает сообщения до текущего хода; элементы с ключами role и content."""
+    async def get_history(self, session_id: str, *, limit: int | None = None) -> list[dict]:
+        """Сообщения с ключами role, content; опционально не более ``limit`` последних (для LLM)."""
 
     @abstractmethod
-    async def save_message(self, session_id: str, role: str, content: str) -> None:
-        """Добавляет сообщение в историю сессии (role: user | assistant)."""
+    async def save_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        *,
+        user_display: str | None = None,
+    ) -> None:
+        """Сохраняет реплику; ``user_display`` — подпись пользователя из канала (MAX и т.д.), только для user."""
+
+
+class IChatMonitoringPublisher(ABC):
+    """Порт рассылки событий мониторинга чатов (WebSocket-дашборд)."""
+
+    @abstractmethod
+    async def publish_new_message(
+        self,
+        *,
+        session_id: str,
+        role: str,
+        content: str,
+        user_info: str | None = None,
+    ) -> None:
+        """Событие новой реплики; ошибки доставки не должны ломать основной сценарий."""
+
+
+class IChatSessionQueryRepository(ABC):
+    """Порт выборок по сохранённым чатам для панели мониторинга."""
+
+    @abstractmethod
+    async def list_session_summaries(self, *, limit: int = 200) -> list[ChatSessionSummary]:
+        """Уникальные ``session_id`` с превью последнего сообщения."""
+
+    @abstractmethod
+    async def list_messages_chronological(self, session_id: str) -> list[ChatMessage]:
+        """Полная история сессии по времени."""
+
+
+class NullChatMonitoringPublisher(IChatMonitoringPublisher):
+    """Заглушка для воркеров и тестов без WebSocket."""
+
+    async def publish_new_message(
+        self,
+        *,
+        session_id: str,
+        role: str,
+        content: str,
+        user_info: str | None = None,
+    ) -> None:
+        return None
 
 
 class IEmbeddingService(ABC):

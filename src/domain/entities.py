@@ -116,6 +116,28 @@ class SystemSetting:
 
 
 @dataclass(frozen=True, slots=True)
+class ChatMessage:
+    """Сообщение диалога (персистентная копия для MAX, Telegram и др.)."""
+
+    session_id: str
+    role: str
+    content: str
+    id: UUID | None = None
+    user_display: str | None = None
+    created_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ChatSessionSummary:
+    """Сводка по сессии чата для мониторинга (последняя реплика)."""
+
+    session_id: str
+    last_preview: str
+    last_at: datetime | None
+    user_label: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class KnowledgeItem:
     """Элемент базы знаний (прайсы, описания для RAG). Вектор заполняется позже пайплайном эмбеддингов."""
 

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Боты — Sales AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/dashboard.css" />
+</head>
+<body>
+  <div class="dashboard">
+    <aside class="dashboard__sidebar">
+      <div class="dashboard__brand">Sales AI — панель</div>
+      <nav>
+        <ul class="nav">
+          <li class="nav__item">
+            <a class="nav__link" href="/" data-nav="home">Главная</a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/settings.html" data-nav="settings">Настройки</a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/knowledge.html" data-nav="knowledge">База знаний</a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/telephony.html" data-nav="telephony">Телефония</a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/scenarios.html" data-nav="scenarios">Сценарии тренажёра</a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/tester.html" data-nav="tester">Тест ИИ-агента</a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/bots.html" data-nav="bots">Боты</a>
+          </li>
+        </ul>
+      </nav>
+    </aside>
+    <main class="dashboard__main">
+      <h1 class="dashboard__title">Мониторинг чат-ботов</h1>
+      <p class="dashboard__lead">
+        Активные сессии (MAX, веб-чат, голос — общая память). Обновление строк в реальном времени через WebSocket.
+        Полная история хранится в PostgreSQL.
+      </p>
+
+      <div class="bots-debug-toolbar">
+        <label>
+          <input type="checkbox" id="bots-debug-mode" />
+          Режим отладки
+        </label>
+        <span class="dashboard__lead dashboard__lead--tight" style="margin:0;">Симулятор вебхука MAX и поток логов сервера</span>
+      </div>
+
+      <div id="bots-main-view">
+      <p id="bots-ws-status" class="dashboard__lead dashboard__lead--tight" aria-live="polite"></p>
+
+      <div class="calls-table-wrap panel">
+        <table class="calls-table bots-table">
+          <thead>
+            <tr>
+              <th>Сессия / пользователь</th>
+              <th>Последнее сообщение</th>
+              <th>Время</th>
+            </tr>
+          </thead>
+          <tbody id="bots-tbody">
+            <tr id="bots-empty-row">
+              <td colspan="3" class="calls-table__empty">Загрузка…</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="bots-history-backdrop" class="bots-modal-backdrop" hidden></div>
+      <div id="bots-history-modal" class="bots-modal panel" hidden role="dialog" aria-modal="true" aria-labelledby="bots-history-title">
+        <div class="bots-modal__head">
+          <h2 id="bots-history-title" class="dashboard__subtitle" style="margin:0;">История диалога</h2>
+          <button type="button" class="bots-modal__close" id="bots-history-close" aria-label="Закрыть">×</button>
+        </div>
+        <p id="bots-history-session" class="dashboard__lead dashboard__lead--tight"></p>
+        <div id="bots-history-body" class="bots-history-body"></div>
+      </div>
+      </div>
+
+      <div id="bots-debug-view" hidden>
+        <p class="bots-debug-note" role="note">
+          <strong>Важно:</strong> чтобы настоящие серверы MAX достучались до приложения в Docker на вашем ПК,
+          нужен публичный HTTPS-URL (например туннель <code>ngrok http 8080</code> к порту Nginx и регистрация этого URL в настройках бота MAX).
+          Подробности — в README, раздел «Отладка MAX (фаза 16)».
+        </p>
+
+        <div class="bots-debug-grid">
+          <section class="bots-debug-panel" aria-labelledby="bots-debug-panel-a-title">
+            <h2 id="bots-debug-panel-a-title" class="bots-debug-panel__title">Панель A — виджет MAX</h2>
+            <p class="bots-debug-panel__hint">
+              Контейнер для официального JavaScript-виджета мессенджера MAX (вставьте сниппет из документации разработчика MAX).
+            </p>
+            <!-- TODO: вставьте сюда официальный JS-сниппет виджета MAX Messenger (как в документации dev.max.ru), инициализируя виджет внутри #bots-max-widget-root -->
+            <div id="bots-max-widget-root" class="bots-debug-max-slot">
+              Место под виджет MAX (сниппет пока не подключён)
+            </div>
+          </section>
+
+          <section class="bots-debug-panel" aria-labelledby="bots-debug-panel-b-title">
+            <h2 id="bots-debug-panel-b-title" class="bots-debug-panel__title">Панель B — симулятор вебхука</h2>
+            <p class="bots-debug-panel__hint">
+              Отправляет <code>POST /api/max/webhook</code> с тем же телом, что ожидает бэкенд (событие <code>message_created</code>).
+            </p>
+            <form id="bots-debug-webhook-form" class="bots-debug-form">
+              <label for="bots-debug-webhook-json">JSON тела запроса</label>
+              <textarea id="bots-debug-webhook-json" class="bots-debug-json" spellcheck="false">{
+  "update_type": "message_created",
+  "message": {
+    "sender": {
+      "is_bot": false,
+      "name": "Тестовый пользователь"
+    },
+    "recipient": {
+      "chat_id": 123456789
+    },
+    "body": {
+      "text": "Здравствуйте, какая цена на оборудование?"
+    }
+  }
+}</textarea>
+              <div class="bots-debug-actions">
+                <button type="submit" class="btn btn--primary">Отправить вебхук</button>
+                <span id="bots-debug-webhook-status" class="bots-debug-status" aria-live="polite"></span>
+              </div>
+            </form>
+          </section>
+
+          <section class="bots-debug-panel" aria-labelledby="bots-debug-panel-c-title">
+            <h2 id="bots-debug-panel-c-title" class="bots-debug-panel__title">Панель C — логи сервера</h2>
+            <p class="bots-debug-panel__hint">
+              Поток по WebSocket <code>/api/ws/logs</code> (модули вебхука MAX, сценарий текста, LLM). Включайте «Режим отладки», чтобы подключиться.
+            </p>
+            <div id="bots-debug-log-window" class="bots-debug-log-window" aria-live="polite" aria-relevant="additions"></div>
+            <p id="bots-debug-log-meta" class="bots-debug-log-meta"></p>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/js/voice_nav.js"></script>
+  <script src="/static/js/bots_app.js"></script>
+  <script src="/static/js/debug_app.js"></script>
+</body>
+</html>

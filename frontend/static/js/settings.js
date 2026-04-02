@@ -9,10 +9,14 @@
     DEEPSEEK_API_KEY: "DEEPSEEK_API_KEY",
     OPENAI_API_KEY: "OPENAI_API_KEY",
     TELEGRAM_BOT_TOKEN: "TELEGRAM_BOT_TOKEN",
+    MAX_BOT_TOKEN: "MAX_BOT_TOKEN",
+    MAX_USE_POLLING: "MAX_USE_POLLING",
+    MAX_CONTEXT_LIMIT: "MAX_CONTEXT_LIMIT",
     SALUTESPEECH_AUTH_KEY: "SALUTESPEECH_AUTH_KEY",
     SALUTESPEECH_SCOPE: "SALUTESPEECH_SCOPE",
     SALUTESPEECH_VOICE: "SALUTESPEECH_VOICE",
     DEFAULT_CONSULTANT_PROMPT: "DEFAULT_CONSULTANT_PROMPT",
+    TEXT_BOT_SYSTEM_SUPPLEMENT: "TEXT_BOT_SYSTEM_SUPPLEMENT",
     ANALYST_QA_PROMPT: "ANALYST_QA_PROMPT",
   };
 
@@ -57,11 +61,13 @@
     hintFor(KEYS.DEEPSEEK_API_KEY, "deepseek-mask-hint");
     hintFor(KEYS.OPENAI_API_KEY, "openai-mask-hint");
     hintFor(KEYS.TELEGRAM_BOT_TOKEN, "telegram-mask-hint");
+    hintFor(KEYS.MAX_BOT_TOKEN, "max-bot-mask-hint");
     hintFor(KEYS.SALUTESPEECH_AUTH_KEY, "salutespeech-mask-hint");
 
     byId("deepseek-key").value = "";
     byId("openai-key").value = "";
     byId("telegram-token").value = "";
+    byId("max-bot-token").value = "";
     byId("salutespeech-key").value = "";
 
     var ssScope = map[KEYS.SALUTESPEECH_SCOPE];
@@ -72,8 +78,30 @@
     var c = map[KEYS.DEFAULT_CONSULTANT_PROMPT];
     if (c) byId("consultant-prompt").value = c.value || "";
 
+    var tbs = map[KEYS.TEXT_BOT_SYSTEM_SUPPLEMENT];
+    var tbsEl = byId("text-bot-supplement");
+    if (tbsEl) {
+      tbsEl.value = tbs ? (tbs.value != null ? String(tbs.value) : "") : "";
+    }
+
     var a = map[KEYS.ANALYST_QA_PROMPT];
     if (a) byId("analyst-prompt").value = a.value || "";
+
+    var mxc = map[KEYS.MAX_CONTEXT_LIMIT];
+    var mxcEl = byId("max-context-limit");
+    if (mxcEl) {
+      mxcEl.value =
+        mxc && mxc.value && String(mxc.value).trim() !== ""
+          ? String(mxc.value).trim()
+          : "10";
+    }
+
+    var mPoll = map[KEYS.MAX_USE_POLLING];
+    var pollEl = byId("max-use-polling");
+    if (pollEl) {
+      var pv = mPoll && mPoll.value ? String(mPoll.value).trim().toLowerCase() : "1";
+      pollEl.checked = pv === "1" || pv === "true" || pv === "yes" || pv === "on";
+    }
   }
 
   async function loadSettings() {
@@ -94,25 +122,43 @@
     var values = {};
     values[KEYS.LLM_PROVIDER] = byId("llm-provider").value.trim();
     values[KEYS.DEFAULT_CONSULTANT_PROMPT] = byId("consultant-prompt").value;
+    var tbsEl2 = byId("text-bot-supplement");
+    if (tbsEl2) values[KEYS.TEXT_BOT_SYSTEM_SUPPLEMENT] = tbsEl2.value;
     values[KEYS.ANALYST_QA_PROMPT] = byId("analyst-prompt").value;
     values[KEYS.SALUTESPEECH_SCOPE] =
       byId("salutespeech-scope").value.trim() || "SALUTE_SPEECH_PERS";
     values[KEYS.SALUTESPEECH_VOICE] = byId("salutespeech-voice").value.trim() || "Ost_24000";
 
-    [KEYS.DEEPSEEK_API_KEY, KEYS.OPENAI_API_KEY, KEYS.TELEGRAM_BOT_TOKEN, KEYS.SALUTESPEECH_AUTH_KEY].forEach(
-      function (k) {
-        var inputId =
-          k === KEYS.DEEPSEEK_API_KEY
-            ? "deepseek-key"
-            : k === KEYS.OPENAI_API_KEY
-              ? "openai-key"
-              : k === KEYS.TELEGRAM_BOT_TOKEN
-                ? "telegram-token"
+    var lim = parseInt(byId("max-context-limit").value, 10);
+    if (isNaN(lim)) lim = 10;
+    lim = Math.max(1, Math.min(200, lim));
+    values[KEYS.MAX_CONTEXT_LIMIT] = String(lim);
+
+    var pollChk = byId("max-use-polling");
+    if (pollChk) {
+      values[KEYS.MAX_USE_POLLING] = pollChk.checked ? "1" : "0";
+    }
+
+    [
+      KEYS.DEEPSEEK_API_KEY,
+      KEYS.OPENAI_API_KEY,
+      KEYS.TELEGRAM_BOT_TOKEN,
+      KEYS.MAX_BOT_TOKEN,
+      KEYS.SALUTESPEECH_AUTH_KEY,
+    ].forEach(function (k) {
+      var inputId =
+        k === KEYS.DEEPSEEK_API_KEY
+          ? "deepseek-key"
+          : k === KEYS.OPENAI_API_KEY
+            ? "openai-key"
+            : k === KEYS.TELEGRAM_BOT_TOKEN
+              ? "telegram-token"
+              : k === KEYS.MAX_BOT_TOKEN
+                ? "max-bot-token"
                 : "salutespeech-key";
-        var v = byId(inputId).value.trim();
-        if (v) values[k] = v;
-      }
-    );
+      var v = byId(inputId).value.trim();
+      if (v) values[k] = v;
+    });
 
     return values;
   }

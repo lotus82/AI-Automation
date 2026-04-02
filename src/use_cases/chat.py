@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from src.domain.default_system_prompts import FALLBACK_DEFAULT_CONSULTANT_PROMPT
 from src.domain import system_setting_keys as sk
 from src.use_cases.interfaces import (
     IChatMemoryRepository,
+    IChatMonitoringPublisher,
     ICRMService,
     IEmbeddingService,
     IKnowledgeRepository,
@@ -54,6 +56,8 @@ _RECORD_LEAD_TOOL: dict = {
 
 _MAX_TOOL_ROUNDS = 4
 
+logger = logging.getLogger(__name__)
+
 
 class ProcessTextMessageUseCase:
     """Обработка текстового сообщения: память → эмбеддинг → RAG → LLM (+CRM) → сохранение реплик."""
@@ -66,6 +70,7 @@ class ProcessTextMessageUseCase:
         chat_memory: IChatMemoryRepository,
         crm_service: ICRMService,
         settings_repository: ISettingsRepository,
+        chat_monitoring: IChatMonitoringPublisher,
     ) -> None:
         self._embeddings = embedding_service
         self._knowledge = knowledge_repository
@@ -73,6 +78,17 @@ class ProcessTextMessageUseCase:
         self._memory = chat_memory
         self._crm = crm_service
         self._settings_repo = settings_repository
+        self._monitor = chat_monitoring
+
+    async def _context_message_limit(self) -> int:
+        raw = (await self._settings_repo.get_value(sk.MAX_CONTEXT_LIMIT) or "").strip()
+        if not raw:
+            return 10
+        try:
+            n = int(raw)
+        except ValueError:
+            return 10
+        return max(1, min(n, 200))
 
     def _build_user_content(self, prompt: str, context_chunks: list[str]) -> str:
         if context_chunks:
@@ -96,11 +112,20 @@ class ProcessTextMessageUseCase:
         system_prompt_override: str | None = None,
         use_crm_tools: bool = True,
         skip_rag: bool = False,
+        interaction_user_label: str | None = None,
+        append_text_messenger_system_supplement: bool = False,
     ) -> str:
-        """История → RAG (опционально) → LLM (с опциональным record_lead) → запись в Redis."""
+        """История (лимит из MAX_CONTEXT_LIMIT) → RAG → LLM → запись в Redis и PostgreSQL → мониторинг WS."""
         user_text = message.strip()
+        logger.info(
+            "Текстовое сообщение: session_id=%s, длина текста=%s, skip_rag=%s",
+            session_id,
+            len(user_text),
+            skip_rag,
+        )
 
-        history = await self._memory.get_history(session_id)
+        ctx_limit = await self._context_message_limit()
+        history = await self._memory.get_history(session_id, limit=ctx_limit)
 
         if skip_rag:
             context_chunks: list[str] = []
@@ -122,6 +147,12 @@ class ProcessTextMessageUseCase:
             db_prompt = (await self._settings_repo.get_value(sk.DEFAULT_CONSULTANT_PROMPT) or "").strip()
             consultant_base = db_prompt or FALLBACK_DEFAULT_CONSULTANT_PROMPT
             system_text = consultant_base + (SALES_TOOLS_INSTRUCTION_RU if use_crm_tools else "")
+
+        if append_text_messenger_system_supplement:
+            supplement = (await self._settings_repo.get_value(sk.TEXT_BOT_SYSTEM_SUPPLEMENT) or "").strip()
+            if supplement:
+                system_text = f"{system_text}\n\n---\n\n{supplement}"
+
         messages: list[dict] = [{"role": "system", "content": system_text}]
         for turn in history:
             role = turn.get("role")
@@ -196,7 +227,27 @@ class ProcessTextMessageUseCase:
                 or "Прошу прощения, не удалось завершить обработку запроса. Попробуйте ещё раз."
             )
 
-        await self._memory.save_message(session_id, "user", user_text)
+        label = (interaction_user_label or "").strip() or None
+        await self._memory.save_message(
+            session_id, "user", user_text, user_display=label
+        )
+        await self._monitor.publish_new_message(
+            session_id=session_id,
+            role="user",
+            content=user_text,
+            user_info=label,
+        )
         await self._memory.save_message(session_id, "assistant", final_reply)
+        await self._monitor.publish_new_message(
+            session_id=session_id,
+            role="assistant",
+            content=final_reply,
+            user_info=label,
+        )
 
+        logger.info(
+            "Текстовый ответ сохранён: session_id=%s, длина ответа=%s",
+            session_id,
+            len(final_reply),
+        )
         return final_reply

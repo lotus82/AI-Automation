@@ -6,7 +6,7 @@ import json
 import re
 
 from redis.asyncio import Redis
-from sqlalchemy import select, update
+from sqlalchemy import desc, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from uuid import UUID
@@ -17,6 +17,8 @@ from src.domain import system_setting_keys as sk
 from src.domain.entities import (
     CallAnalytics,
     CallRecord,
+    ChatMessage,
+    ChatSessionSummary,
     DialerQueueItem,
     DialerQueueStatus,
     KnowledgeItem,
@@ -30,6 +32,7 @@ from src.infrastructure.models import (
     KNOWLEDGE_EMBEDDING_DIM,
     CallAnalyticsModel,
     CallRecordModel,
+    ChatMessageModel,
     DialerQueueModel,
     KnowledgeItemModel,
     LeadModel,
@@ -40,6 +43,7 @@ from src.infrastructure.models import (
 from src.use_cases.interfaces import (
     ICallRecordRepository,
     IChatMemoryRepository,
+    IChatSessionQueryRepository,
     IDialerQueueRepository,
     IKnowledgeRepository,
     ILeadRepository,
@@ -280,7 +284,7 @@ class RedisChatMemoryRepository(IChatMemoryRepository):
     def _key(self, session_id: str) -> str:
         return f"{_CHAT_SESSION_KEY_PREFIX}{session_id}"
 
-    async def get_history(self, session_id: str) -> list[dict]:
+    async def get_history(self, session_id: str, *, limit: int | None = None) -> list[dict]:
         key = self._key(session_id)
         raw_messages = await self._redis.lrange(key, 0, -1)
         history: list[dict] = []
@@ -290,19 +294,162 @@ class RedisChatMemoryRepository(IChatMemoryRepository):
             except (json.JSONDecodeError, TypeError):
                 # Повреждённая запись — пропускаем, чтобы не ломать весь диалог
                 continue
+        if limit is not None and limit > 0 and len(history) > limit:
+            return history[-limit:]
         return history
 
-    async def save_message(self, session_id: str, role: str, content: str) -> None:
+    async def save_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        *,
+        user_display: str | None = None,
+    ) -> None:
         if role not in ("user", "assistant"):
             msg = "role должен быть 'user' или 'assistant'"
             raise ValueError(msg)
         key = self._key(session_id)
-        payload = json.dumps(
-            {"role": role, "content": content},
-            ensure_ascii=False,
-        )
+        obj: dict = {"role": role, "content": content}
+        if user_display and role == "user":
+            obj["user_display"] = user_display
+        payload = json.dumps(obj, ensure_ascii=False)
         await self._redis.rpush(key, payload)
         await self._redis.expire(key, self._ttl)
+
+
+def _row_to_chat_message_dict(row: ChatMessageModel) -> dict:
+    d: dict = {"role": row.role, "content": row.content}
+    if row.user_display:
+        d["user_display"] = row.user_display
+    return d
+
+
+class HybridChatMemoryRepository(IChatMemoryRepository):
+    """Redis (горячий кэш) + PostgreSQL (``chat_messages``) для всех текстовых каналов."""
+
+    def __init__(
+        self,
+        redis_backend: RedisChatMemoryRepository,
+        session: AsyncSession,
+    ) -> None:
+        self._redis = redis_backend
+        self._session = session
+
+    async def get_history(self, session_id: str, *, limit: int | None = None) -> list[dict]:
+        sid = session_id.strip()
+        if limit is not None and limit > 0:
+            stmt = (
+                select(ChatMessageModel)
+                .where(ChatMessageModel.session_id == sid)
+                .order_by(desc(ChatMessageModel.created_at), desc(ChatMessageModel.id))
+                .limit(limit)
+            )
+            result = await self._session.scalars(stmt)
+            rows = list(result.all())
+            if rows:
+                return [_row_to_chat_message_dict(r) for r in reversed(rows)]
+            return await self._redis.get_history(session_id, limit=limit)
+
+        stmt = (
+            select(ChatMessageModel)
+            .where(ChatMessageModel.session_id == sid)
+            .order_by(ChatMessageModel.created_at.asc(), ChatMessageModel.id.asc())
+        )
+        result = await self._session.scalars(stmt)
+        rows = list(result.all())
+        if rows:
+            return [_row_to_chat_message_dict(r) for r in rows]
+        return await self._redis.get_history(session_id, limit=None)
+
+    async def save_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        *,
+        user_display: str | None = None,
+    ) -> None:
+        await self._redis.save_message(
+            session_id, role, content, user_display=user_display
+        )
+        sid = session_id.strip()
+        ud = user_display if role == "user" else None
+        row = ChatMessageModel(
+            session_id=sid,
+            role=role,
+            content=content,
+            user_display=(ud.strip() if ud else None) or None,
+        )
+        self._session.add(row)
+        await self._session.flush()
+
+
+_SESSION_SUMMARIES_SQL = text("""
+SELECT session_id, last_preview, last_at, user_label FROM (
+  SELECT DISTINCT ON (session_id)
+    session_id,
+    content AS last_preview,
+    created_at AS last_at,
+    (
+      SELECT cm2.user_display FROM chat_messages cm2
+      WHERE cm2.session_id = chat_messages.session_id
+        AND cm2.role = 'user'
+        AND cm2.user_display IS NOT NULL
+        AND trim(cm2.user_display) <> ''
+      ORDER BY cm2.created_at DESC NULLS LAST
+      LIMIT 1
+    ) AS user_label
+  FROM chat_messages
+  ORDER BY session_id, created_at DESC, id DESC
+) AS sub
+ORDER BY last_at DESC NULLS LAST
+LIMIT :lim
+""")
+
+
+class SqlAlchemyChatSessionRepository(IChatSessionQueryRepository):
+    """Сводки и полная история из ``chat_messages``."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def list_session_summaries(self, *, limit: int = 200) -> list[ChatSessionSummary]:
+        lim = max(1, min(limit, 500))
+        result = await self._session.execute(_SESSION_SUMMARIES_SQL, {"lim": lim})
+        out: list[ChatSessionSummary] = []
+        for row in result.mappings().all():
+            raw_preview = row["last_preview"] or ""
+            preview = raw_preview[:280] + ("…" if len(raw_preview) > 280 else "")
+            out.append(
+                ChatSessionSummary(
+                    session_id=str(row["session_id"]),
+                    last_preview=preview,
+                    last_at=row["last_at"],
+                    user_label=row["user_label"],
+                )
+            )
+        return out
+
+    async def list_messages_chronological(self, session_id: str) -> list[ChatMessage]:
+        sid = session_id.strip()
+        stmt = (
+            select(ChatMessageModel)
+            .where(ChatMessageModel.session_id == sid)
+            .order_by(ChatMessageModel.created_at.asc(), ChatMessageModel.id.asc())
+        )
+        result = await self._session.scalars(stmt)
+        return [
+            ChatMessage(
+                id=r.id,
+                session_id=r.session_id,
+                role=r.role,
+                content=r.content,
+                user_display=r.user_display,
+                created_at=r.created_at,
+            )
+            for r in result.all()
+        ]
 
 
 def _training_scenario_to_domain(row: TrainingScenarioModel) -> TrainingScenario:

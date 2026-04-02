@@ -249,6 +249,9 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
+# Локальные WAV записи голосовых сессий (каталог data/recordings/ в репозитории)
+data/recordings/*.wav
+
 # Environments
 .env
 .venv

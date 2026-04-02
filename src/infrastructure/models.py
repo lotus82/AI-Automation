@@ -172,7 +172,10 @@ class CallAnalyticsModel(Base):
 
 
 class SystemSettingModel(Base):
-    """Динамические настройки (LLM, промпты, ключи API) — правка из панели."""
+    """Динамические настройки (LLM, промпты, ключи API) — правка из панели.
+
+    Известные ключи см. ``src.domain.system_setting_keys`` (в т.ч. **MAX_BOT_TOKEN**, **MAX_CONTEXT_LIMIT**, **TEXT_BOT_SYSTEM_SUPPLEMENT**).
+    """
 
     __tablename__ = "system_settings"
 
@@ -183,6 +186,26 @@ class SystemSettingModel(Base):
         DateTime(timezone=True),
         server_default=text("now()"),
         onupdate=func.now(),
+    )
+
+
+class ChatMessageModel(Base):
+    """История сообщений чат-ботов (MAX, будущий Telegram и т.д.) — источник для мониторинга и ОКК."""
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    session_id: Mapped[str] = mapped_column(String(128), index=True)
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text())
+    user_display: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
     )
 
 

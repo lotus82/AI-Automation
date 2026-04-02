@@ -10,22 +10,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import Settings, get_settings
 from src.infrastructure.database import get_async_session
+from src.infrastructure.monitoring import get_chat_events_broadcaster
 from src.infrastructure.repositories import (
+    HybridChatMemoryRepository,
     PostgresSettingsRepository,
     RedisChatMemoryRepository,
     SqlAlchemyCallRecordRepository,
+    SqlAlchemyChatSessionRepository,
     SqlAlchemyDialerQueueRepository,
     SqlAlchemyKnowledgeRepository,
     SqlAlchemyLeadRepository,
     SqlAlchemyTrainingScenarioRepository,
 )
 from src.infrastructure.services.bitrix24 import build_crm_service
-from src.infrastructure.services.openai_embedding import OpenAIEmbeddingService
 from src.infrastructure.services.dynamic_llm import DynamicLLMService
+from src.infrastructure.services.max_messenger import MaxMessengerClient
+from src.infrastructure.services.openai_embedding import OpenAIEmbeddingService
 from src.use_cases.chat import ProcessTextMessageUseCase
 from src.use_cases.interfaces import (
     ICallRecordRepository,
     IChatMemoryRepository,
+    IChatMonitoringPublisher,
+    IChatSessionQueryRepository,
     ICRMService,
     IDialerQueueRepository,
     IEmbeddingService,
@@ -152,19 +158,45 @@ CallRecordRepositoryDep = Annotated[
 
 
 def get_chat_memory_repository(
+    session: AsyncSessionDep,
     redis: RedisDep,
     settings: SettingsDep,
 ) -> IChatMemoryRepository:
-    """Память диалога в Redis с TTL по настройкам."""
-    return RedisChatMemoryRepository(
+    """Память: Redis (TTL) + PostgreSQL ``chat_messages``."""
+    inner = RedisChatMemoryRepository(
         redis,
         ttl_seconds=settings.chat_memory_ttl_seconds,
     )
+    return HybridChatMemoryRepository(inner, session)
 
 
 ChatMemoryRepositoryDep = Annotated[
     IChatMemoryRepository,
     Depends(get_chat_memory_repository),
+]
+
+
+def get_chat_monitoring_publisher() -> IChatMonitoringPublisher:
+    """Рассылка событий на WebSocket ``/api/ws/monitoring``."""
+    return get_chat_events_broadcaster()
+
+
+ChatMonitoringPublisherDep = Annotated[
+    IChatMonitoringPublisher,
+    Depends(get_chat_monitoring_publisher),
+]
+
+
+def get_chat_session_query_repository(
+    session: AsyncSessionDep,
+) -> IChatSessionQueryRepository:
+    """Выборки сессий для панели «Боты»."""
+    return SqlAlchemyChatSessionRepository(session)
+
+
+ChatSessionQueryRepositoryDep = Annotated[
+    IChatSessionQueryRepository,
+    Depends(get_chat_session_query_repository),
 ]
 
 
@@ -175,6 +207,7 @@ def get_process_text_message_use_case(
     chat_memory: ChatMemoryRepositoryDep,
     crm_service: CRMDep,
     settings_repository: SettingsRepositoryDep,
+    chat_monitoring: ChatMonitoringPublisherDep,
 ) -> ProcessTextMessageUseCase:
     """Сценарий текстового RAG с историей в Redis."""
     return ProcessTextMessageUseCase(
@@ -184,10 +217,58 @@ def get_process_text_message_use_case(
         chat_memory=chat_memory,
         crm_service=crm_service,
         settings_repository=settings_repository,
+        chat_monitoring=chat_monitoring,
     )
 
 
 ProcessTextMessageUseCaseDep = Annotated[
     ProcessTextMessageUseCase,
     Depends(get_process_text_message_use_case),
+]
+
+
+def get_max_messenger_client(
+    settings_repo: SettingsRepositoryDep,
+    settings: SettingsDep,
+) -> MaxMessengerClient:
+    """Клиент MAX Bot API; токен подставляется из БД при отправке."""
+    return MaxMessengerClient(
+        settings_repository=settings_repo,
+        api_base_url=settings.max_api_base,
+        platform_api_base_url=settings.max_platform_api_base,
+        env_fallback_max_bot_token=settings.max_bot_token,
+    )
+
+
+def build_max_long_poll_stack(
+    session: AsyncSession,
+    redis: Redis,
+    settings: Settings,
+) -> tuple[ProcessTextMessageUseCase, MaxMessengerClient]:
+    """Собирает сценарий текста и клиент MAX с **одним** ``PostgresSettingsRepository`` (долгоживущая сессия long poll)."""
+    settings_repo = PostgresSettingsRepository(session, redis)
+    use_case = ProcessTextMessageUseCase(
+        embedding_service=OpenAIEmbeddingService(settings=settings, settings_repo=settings_repo),
+        knowledge_repository=SqlAlchemyKnowledgeRepository(session),
+        llm_service=DynamicLLMService(settings=settings, settings_repo=settings_repo),
+        chat_memory=HybridChatMemoryRepository(
+            RedisChatMemoryRepository(redis, ttl_seconds=settings.chat_memory_ttl_seconds),
+            session,
+        ),
+        crm_service=build_crm_service(settings.bitrix24_webhook_url),
+        settings_repository=settings_repo,
+        chat_monitoring=get_chat_events_broadcaster(),
+    )
+    client = MaxMessengerClient(
+        settings_repository=settings_repo,
+        api_base_url=settings.max_api_base,
+        platform_api_base_url=settings.max_platform_api_base,
+        env_fallback_max_bot_token=settings.max_bot_token,
+    )
+    return use_case, client
+
+
+MaxMessengerClientDep = Annotated[
+    MaxMessengerClient,
+    Depends(get_max_messenger_client),
 ]

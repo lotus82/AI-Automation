@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from openai import AsyncOpenAI
@@ -15,6 +16,8 @@ from src.use_cases.interfaces import ILLMService, ISettingsRepository, LLMToolCa
 _DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 _DEEPSEEK_CHAT_MODEL = "deepseek-chat"
 _OPENAI_CHAT_MODEL = "gpt-4o-mini"
+
+logger = logging.getLogger(__name__)
 
 # Шаблон тренера: поля сценария подставляются из БД тренажёра (не из system_settings).
 _COACH_SYSTEM_TEMPLATE = """Ты — тренер по продажам (Sales Coach). Менеджер отрабатывал навыки в диалоге с ИИ, который изображал клиента.
@@ -143,6 +146,12 @@ class DynamicLLMService(ILLMService):
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
+        logger.info(
+            "LLM (продажи + инструменты): model=%s, сообщений в запросе=%s, инструментов=%s",
+            model,
+            len(messages),
+            len(tools),
+        )
         completion = await client.chat.completions.create(**kwargs)
         msg = completion.choices[0].message
         text = msg.content

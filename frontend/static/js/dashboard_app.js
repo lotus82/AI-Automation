@@ -52,6 +52,7 @@
       if (key === "telephony" && path.indexOf("telephony") !== -1) active = true;
       if (key === "settings" && path.indexOf("settings") !== -1) active = true;
       if (key === "knowledge" && path.indexOf("knowledge") !== -1) active = true;
+      if (key === "bots" && path.indexOf("bots") !== -1) active = true;
       a.classList.toggle("nav__link--active", active);
     });
   }

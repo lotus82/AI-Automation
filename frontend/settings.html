@@ -33,6 +33,9 @@
           <li class="nav__item">
             <a class="nav__link" href="/tester.html" data-nav="tester">Тест ИИ-агента</a>
           </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/bots.html" data-nav="bots">Боты</a>
+          </li>
         </ul>
       </nav>
     </aside>
@@ -78,6 +81,31 @@
                  placeholder="Оставьте пустым, чтобы не менять" />
         </div>
 
+        <div class="voice-tester__field">
+          <label class="voice-tester__label" for="max-bot-token">Токен бота MAX</label>
+          <p id="max-bot-mask-hint" class="dashboard__lead dashboard__lead--small" style="margin-top:0;"></p>
+          <input class="voice-tester__input" type="password" id="max-bot-token" name="MAX_BOT_TOKEN" autocomplete="off"
+                 placeholder="Оставьте пустым, чтобы не менять сохранённый токен" />
+        </div>
+
+        <div class="voice-tester__field">
+          <label class="voice-tester__label" style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+            <input type="checkbox" id="max-use-polling" />
+            Использовать Long Polling (для локальной отладки)
+          </label>
+          <p class="dashboard__lead dashboard__lead--small" style="margin-top:0.35rem;">
+            Опрос <code>GET /updates</code> у MAX без публичного HTTPS. В продакшене выключайте и используйте Webhook; по правилам MAX одновременно не использовать оба способа.
+          </p>
+        </div>
+
+        <div class="voice-tester__field">
+          <label class="voice-tester__label" for="max-context-limit">Лимит сообщений в контексте LLM (MAX_CONTEXT_LIMIT)</label>
+          <p class="dashboard__lead dashboard__lead--small" style="margin-top:0;">
+            Сколько последних реплик (user/assistant) подмешивать в запрос к модели; действует для MAX, веб-чата и голоса.
+          </p>
+          <input class="voice-tester__input" type="number" id="max-context-limit" min="1" max="200" step="1" value="10" />
+        </div>
+
         <h2 class="dashboard__subtitle">Голос: SaluteSpeech (Сбер)</h2>
         <p class="dashboard__lead dashboard__lead--tight" style="font-size:0.9rem;">
           При <code>VOICE_STT_PROVIDER=salutespeech</code> и/или <code>VOICE_TTS_PROVIDER=salutespeech</code> в <code>.env</code>
@@ -109,6 +137,17 @@
         </div>
 
         <div class="voice-tester__field">
+          <label class="voice-tester__label" for="text-bot-supplement">Дополнение для текстовых ботов MAX и Telegram (TEXT_BOT_SYSTEM_SUPPLEMENT)</label>
+          <p class="dashboard__lead dashboard__lead--small" style="margin-top:0;">
+            Добавляется к системному промпту <strong>после</strong> основного промпта консультанта и инструкций по CRM.
+            Используйте для правил формата ответа в мессенджере (длина, эмодзи, обращение на «вы», без Markdown и т.д.).
+            Не применяется к голосовому каналу и к полю выше по отдельности — только там, где сценарий вызывается как бот MAX/Telegram.
+          </p>
+          <textarea id="text-bot-supplement" class="voice-tester__input" rows="5" style="resize:vertical;"
+                    placeholder="Например: Отвечай кратко, до 800 символов. Обращайся на «вы». Не используй Markdown."></textarea>
+        </div>
+
+        <div class="voice-tester__field">
           <label class="voice-tester__label" for="analyst-prompt">Промпт ОКК (ANALYST_QA_PROMPT)</label>
           <textarea id="analyst-prompt" class="voice-tester__input" rows="8" style="resize:vertical;"></textarea>
         </div>
@@ -120,6 +159,6 @@
     </main>
   </div>
   <script src="/static/js/voice_nav.js"></script>
-  <script src="/static/js/settings_app.js"></script>
+  <script src="/static/js/settings.js"></script>
 </body>
 </html>

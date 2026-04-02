@@ -8,15 +8,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
-from src.api.routers import calls, chat, dialer, health, knowledge, leads, telephony, training, voice
+from src.api.routers import calls, chat, chats, dialer, health, knowledge, leads, max_bot, notifications, telephony, training, voice
 from src.api.routers import settings as settings_router
+from src.api.dependencies import build_max_long_poll_stack
 from src.core.config import get_settings
 from src.core.logging import setup_logging
+from src.infrastructure.database import AsyncSessionLocal
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Жизненный цикл: логирование, async Redis для памяти диалогов."""
+    """Жизненный цикл: логирование, async Redis для памяти диалогов, опционально MAX long polling."""
     settings = get_settings()
     setup_logging(debug=settings.debug)
     app.state.redis = Redis.from_url(
@@ -26,6 +28,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.ari_stop_event = asyncio.Event()
     app.state.ari_listener_task = None
+    app.state.max_poll_stop = None
+    app.state.max_poll_task = None
+    app.state.max_poll_session_cm = None
     if (
         (settings.asterisk_url or "").strip()
         and (settings.asterisk_ari_user or "").strip()
@@ -37,9 +42,37 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             run_ari_event_listener(settings, app.state.redis, app.state.ari_stop_event),
             name="ari-event-listener",
         )
+    if settings.max_use_polling:
+        app.state.max_poll_stop = asyncio.Event()
+        sess_cm = AsyncSessionLocal()
+        app.state.max_poll_session_cm = sess_cm
+        app.state.max_poll_session = await sess_cm.__aenter__()
+        uc, mx_client = build_max_long_poll_stack(
+            app.state.max_poll_session,
+            app.state.redis,
+            settings,
+        )
+        app.state.max_poll_task = asyncio.create_task(
+            mx_client.start_polling(
+                uc,
+                session=app.state.max_poll_session,
+                stop_event=app.state.max_poll_stop,
+            ),
+            name="max-long-polling",
+        )
     try:
         yield
     finally:
+        if app.state.max_poll_stop is not None:
+            app.state.max_poll_stop.set()
+        if app.state.max_poll_task is not None:
+            app.state.max_poll_task.cancel()
+            try:
+                await app.state.max_poll_task
+            except asyncio.CancelledError:
+                pass
+        if app.state.max_poll_session_cm is not None:
+            await app.state.max_poll_session_cm.__aexit__(None, None, None)
         if app.state.ari_listener_task is not None:
             app.state.ari_stop_event.set()
             app.state.ari_listener_task.cancel()
@@ -55,10 +88,11 @@ def create_app() -> FastAPI:
     settings = get_settings()
     application = FastAPI(
         title="Sales AI Agent API",
-        version="0.12.0",
+        version="0.13.0",
         lifespan=lifespan,
         debug=settings.debug,
     )
+    # В т.ч. симулятор вебхука MAX с панели bots.html: POST /api/max/webhook с того же origin или другого порта.
     application.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -76,6 +110,9 @@ def create_app() -> FastAPI:
     application.include_router(telephony.router, prefix="/api", tags=["telephony"])
     application.include_router(dialer.router, prefix="/api", tags=["dialer"])
     application.include_router(settings_router.router, prefix="/api", tags=["settings"])
+    application.include_router(max_bot.router, prefix="/api")
+    application.include_router(chats.router, prefix="/api")
+    application.include_router(notifications.router, prefix="/api")
     application.include_router(voice.router, prefix="/voice", tags=["voice"])
 
     return application

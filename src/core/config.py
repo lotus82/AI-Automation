@@ -61,6 +61,22 @@ class Settings(BaseSettings):
         validation_alias="TELEGRAM_BOT_TOKEN",
     )
 
+    # MAX Messenger: фоновый long polling (GET /updates на platform-api); в продакшене обычно false + Webhook
+    max_use_polling: bool = Field(default=True, validation_alias="MAX_USE_POLLING")
+    max_platform_api_base: str = Field(
+        default="https://platform-api.max.ru",
+        validation_alias="MAX_PLATFORM_API_BASE",
+    )
+    max_api_base: str = Field(
+        default="https://api.max.ru",
+        validation_alias="MAX_API_BASE",
+    )
+    # Fallback, если токен не задан в system_settings (панель «Настройки»)
+    max_bot_token: str | None = Field(
+        default=None,
+        validation_alias="MAX_BOT_TOKEN",
+    )
+
     # Голос: облачный STT/TTS (без локальных моделей)
     deepgram_api_key: str | None = Field(
         default=None,
@@ -241,6 +257,7 @@ class Settings(BaseSettings):
         "salutespeech_auth_key",
         "deepseek_api_key",
         "telegram_bot_token",
+        "max_bot_token",
         mode="before",
     )
     @classmethod

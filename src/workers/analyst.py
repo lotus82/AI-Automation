@@ -13,6 +13,7 @@ from src.core.config import get_settings
 from src.domain.entities import CallAnalytics, CallRecord, TrainingSession
 from src.infrastructure.database import AsyncSessionLocal
 from src.infrastructure.repositories import (
+    HybridChatMemoryRepository,
     PostgresSettingsRepository,
     RedisChatMemoryRepository,
     SqlAlchemyCallRecordRepository,
@@ -63,11 +64,14 @@ async def _analyze_async(session_id: str) -> str:
     settings = get_settings()
     redis = Redis.from_url(settings.redis_uri, decode_responses=True)
     try:
-        memory = RedisChatMemoryRepository(
-            redis,
-            ttl_seconds=settings.chat_memory_ttl_seconds,
-        )
-        history = await memory.get_history(session_id)
+        async with AsyncSessionLocal() as session:
+            inner = RedisChatMemoryRepository(
+                redis,
+                ttl_seconds=settings.chat_memory_ttl_seconds,
+            )
+            memory = HybridChatMemoryRepository(inner, session)
+            history = await memory.get_history(session_id)
+            await session.commit()
         transcript = _format_transcript(history)
         if not transcript.strip():
             logger.info("История пуста, пропуск записи (session_id=%s)", session_id)

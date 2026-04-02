@@ -12,7 +12,9 @@ from src.core.config import Settings
 from src.domain import system_setting_keys as sk
 from src.domain.entities import TrainingScenario
 from src.infrastructure.database import AsyncSessionLocal
+from src.infrastructure.monitoring import get_chat_events_broadcaster
 from src.infrastructure.repositories import (
+    HybridChatMemoryRepository,
     PostgresSettingsRepository,
     RedisChatMemoryRepository,
     SqlAlchemyKnowledgeRepository,
@@ -112,10 +114,11 @@ async def run_voice_pipeline_session(
         async with AsyncSessionLocal() as session:
             try:
                 knowledge = SqlAlchemyKnowledgeRepository(session)
-                memory = RedisChatMemoryRepository(
+                redis_memory = RedisChatMemoryRepository(
                     redis,
                     ttl_seconds=settings.chat_memory_ttl_seconds,
                 )
+                memory = HybridChatMemoryRepository(redis_memory, session)
                 settings_repo = PostgresSettingsRepository(session, redis)
                 embeddings = OpenAIEmbeddingService(settings=settings, settings_repo=settings_repo)
                 llm = DynamicLLMService(settings=settings, settings_repo=settings_repo)
@@ -127,6 +130,7 @@ async def run_voice_pipeline_session(
                     chat_memory=memory,
                     crm_service=crm,
                     settings_repository=settings_repo,
+                    chat_monitoring=get_chat_events_broadcaster(),
                 )
                 if voice_mode == "trainer_client" and trainer_system:
                     reply = await use_case.execute(

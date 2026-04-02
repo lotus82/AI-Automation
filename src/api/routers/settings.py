@@ -85,6 +85,46 @@ async def update_settings(
                 detail="SALUTESPEECH_VOICE слишком длинный (максимум 128 символов)",
             )
 
+    if sk.MAX_BOT_TOKEN in normalized:
+        t = normalized[sk.MAX_BOT_TOKEN] or ""
+        if len(t) > 512:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MAX_BOT_TOKEN слишком длинный (максимум 512 символов)",
+            )
+
+    if sk.MAX_CONTEXT_LIMIT in normalized:
+        raw = (normalized[sk.MAX_CONTEXT_LIMIT] or "").strip()
+        try:
+            n = int(raw)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MAX_CONTEXT_LIMIT должен быть целым числом",
+            ) from None
+        if n < 1 or n > 200:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MAX_CONTEXT_LIMIT допустим от 1 до 200",
+            )
+
+    if sk.TEXT_BOT_SYSTEM_SUPPLEMENT in normalized:
+        sup = normalized[sk.TEXT_BOT_SYSTEM_SUPPLEMENT] or ""
+        if len(sup) > 32000:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="TEXT_BOT_SYSTEM_SUPPLEMENT слишком длинный (максимум 32000 символов)",
+            )
+
+    if sk.MAX_USE_POLLING in normalized:
+        v = (normalized[sk.MAX_USE_POLLING] or "").strip().lower()
+        if v not in ("0", "1", "true", "false", "yes", "no", "on", "off"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MAX_USE_POLLING: укажите 0/1, true/false, yes/no, on/off",
+            )
+        normalized[sk.MAX_USE_POLLING] = "1" if v in ("1", "true", "yes", "on") else "0"
+
     try:
         await repo.upsert_values(normalized)
     except KeyError as e:
