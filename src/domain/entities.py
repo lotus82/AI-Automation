@@ -56,6 +56,7 @@ class CallRecord:
     remote_phone: str = ""
     id: UUID | None = None
     created_at: datetime | None = None
+    audio_filename: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,3 +123,4 @@ class KnowledgeItem:
     content: str
     id: UUID | None = None
     embedding: list[float] | None = None
+    created_at: datetime | None = None

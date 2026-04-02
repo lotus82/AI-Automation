@@ -26,7 +26,10 @@ COPY --from=builder /opt/venv /opt/venv
 COPY src ./src
 COPY alembic ./alembic
 COPY alembic.ini .
+COPY scripts/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
 EXPOSE 8000
 
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -4,6 +4,8 @@
 # Веб-API и ASGI
 fastapi>=0.109.0,<1.0.0
 uvicorn[standard]>=0.27.0,<1.0.0
+# multipart/form-data: загрузка файлов (например POST /api/dialer/queue/upload)
+python-multipart>=0.0.9,<1.0.0
 
 # Импорт номеров для автообзвона (XLSX)
 openpyxl>=3.1.0,<4.0.0
@@ -41,3 +43,9 @@ websockets>=12.0,<14.0
 #   conda install "numpy>=1.26.4,<1.27" -c conda-forge
 # Надёжнее для голоса: Python 3.10–3.12.
 pipecat-ai[deepgram,openai,websocket]==0.0.60
+
+# SaluteSpeech (Сбер): потоковый STT/TTS по gRPC (grpc.aio). Сгенерированные *_pb2* см. src/infrastructure/voice/sber_protos/
+grpcio>=1.71.2,<2
+protobuf>=5.26.0,<6
+# Пересборка .proto: python scripts/compile_sber_protos.py (нужен интернет только при pip install)
+grpcio-tools>=1.71.2,<2

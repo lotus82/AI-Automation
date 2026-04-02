@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Настройки системы — Sales AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/dashboard.css" />
 </head>
 <body>
@@ -17,6 +20,9 @@
           </li>
           <li class="nav__item">
             <a class="nav__link" href="/settings.html" data-nav="settings">Настройки</a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/knowledge.html" data-nav="knowledge">База знаний</a>
           </li>
           <li class="nav__item">
             <a class="nav__link" href="/telephony.html" data-nav="telephony">Телефония</a>
@@ -36,13 +42,13 @@
         Параметры LLM, API-ключи и системные промпты хранятся в базе данных и кэшируются в Redis.
         По умолчанию используется <strong>DeepSeek</strong> (совместимый с OpenAI SDK, <code>base_url=https://api.deepseek.com</code>).
       </p>
-      <p class="dashboard__lead" style="color:#b45309;">
-        # TODO: В продакшене ключи в БД следует шифровать at rest (например, <code>cryptography.fernet</code>).
+      <p class="dashboard__alert">
+        В продакшене ключи в БД следует шифровать at rest (например, <code>cryptography.fernet</code>).
       </p>
 
-      <div id="settings-status" class="dashboard__lead" style="min-height:1.5rem;" aria-live="polite"></div>
+      <div id="settings-status" class="dashboard__lead dashboard__status-slot" aria-live="polite"></div>
 
-      <form id="settings-form" class="voice-tester" style="max-width:48rem;">
+      <form id="settings-form" class="voice-tester panel" style="max-width:48rem;">
         <div class="voice-tester__field">
           <label class="voice-tester__label" for="llm-provider">Провайдер LLM</label>
           <select id="llm-provider" class="voice-tester__input" name="LLM_PROVIDER">
@@ -53,23 +59,48 @@
 
         <div class="voice-tester__field">
           <label class="voice-tester__label" for="deepseek-key">Ключ DeepSeek API</label>
-          <p id="deepseek-mask-hint" class="dashboard__lead" style="font-size:0.85rem;margin:0 0 0.35rem;"></p>
+          <p id="deepseek-mask-hint" class="dashboard__lead dashboard__lead--small" style="margin-top:0;"></p>
           <input class="voice-tester__input" type="password" id="deepseek-key" autocomplete="off"
                  placeholder="Оставьте пустым, чтобы не менять сохранённый ключ" />
         </div>
 
         <div class="voice-tester__field">
           <label class="voice-tester__label" for="openai-key">Ключ OpenAI API</label>
-          <p id="openai-mask-hint" class="dashboard__lead" style="font-size:0.85rem;margin:0 0 0.35rem;"></p>
+          <p id="openai-mask-hint" class="dashboard__lead dashboard__lead--small" style="margin-top:0;"></p>
           <input class="voice-tester__input" type="password" id="openai-key" autocomplete="off"
                  placeholder="Оставьте пустым, чтобы не менять сохранённый ключ" />
         </div>
 
         <div class="voice-tester__field">
           <label class="voice-tester__label" for="telegram-token">Токен Telegram-бота</label>
-          <p id="telegram-mask-hint" class="dashboard__lead" style="font-size:0.85rem;margin:0 0 0.35rem;"></p>
+          <p id="telegram-mask-hint" class="dashboard__lead dashboard__lead--small" style="margin-top:0;"></p>
           <input class="voice-tester__input" type="password" id="telegram-token" autocomplete="off"
                  placeholder="Оставьте пустым, чтобы не менять" />
+        </div>
+
+        <h2 class="dashboard__subtitle">Голос: SaluteSpeech (Сбер)</h2>
+        <p class="dashboard__lead dashboard__lead--tight" style="font-size:0.9rem;">
+          При <code>VOICE_STT_PROVIDER=salutespeech</code> и/или <code>VOICE_TTS_PROVIDER=salutespeech</code> в <code>.env</code>
+          ключ можно задать здесь (или переменная <code>SALUTESPEECH_AUTH_KEY</code> в окружении контейнера).
+        </p>
+
+        <div class="voice-tester__field">
+          <label class="voice-tester__label" for="salutespeech-key">Ключ SaluteSpeech (Authorization Key из Studio)</label>
+          <p id="salutespeech-mask-hint" class="dashboard__lead dashboard__lead--small" style="margin-top:0;"></p>
+          <input class="voice-tester__input" type="password" id="salutespeech-key" name="SALUTESPEECH_AUTH_KEY" autocomplete="off"
+                 placeholder="Оставьте пустым, чтобы не менять сохранённый ключ" />
+        </div>
+
+        <div class="voice-tester__field">
+          <label class="voice-tester__label" for="salutespeech-scope">OAuth scope (SALUTESPEECH_SCOPE)</label>
+          <input class="voice-tester__input" type="text" id="salutespeech-scope" autocomplete="off"
+                 placeholder="SALUTE_SPEECH_PERS" />
+        </div>
+
+        <div class="voice-tester__field">
+          <label class="voice-tester__label" for="salutespeech-voice">Голос TTS (SALUTESPEECH_VOICE)</label>
+          <input class="voice-tester__input" type="text" id="salutespeech-voice" autocomplete="off"
+                 placeholder="Ost_24000" />
         </div>
 
         <div class="voice-tester__field">

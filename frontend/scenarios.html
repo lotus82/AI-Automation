@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Сценарии тренажёра — Sales AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/dashboard.css" />
 </head>
 <body>
@@ -17,6 +20,9 @@
           </li>
           <li class="nav__item">
             <a class="nav__link" href="/settings.html" data-nav="settings">Настройки</a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/knowledge.html" data-nav="knowledge">База знаний</a>
           </li>
           <li class="nav__item">
             <a class="nav__link" href="/telephony.html" data-nav="telephony">Телефония</a>
@@ -37,8 +43,8 @@
       </p>
 
       <!-- TODO: Добавить редактирование и удаление сценариев, разграничение прав по ролям. -->
-      <h2 class="dashboard__title" style="font-size:1.1rem;">Новый сценарий</h2>
-      <form id="scenario-form" class="voice-tester" style="max-width:40rem;">
+      <h2 class="dashboard__subtitle">Новый сценарий</h2>
+      <form id="scenario-form" class="voice-tester panel" style="max-width:40rem;">
         <div class="voice-tester__field">
           <label class="voice-tester__label" for="sc-title">Название</label>
           <input class="voice-tester__input" id="sc-title" name="title" required maxlength="512" placeholder="Кратко, для списка" />
@@ -57,7 +63,7 @@
         <p id="scenario-form-msg" class="dashboard__lead" style="margin-top:1rem;"></p>
       </form>
 
-      <h2 class="dashboard__title" style="font-size:1.1rem;margin-top:2rem;">Существующие сценарии</h2>
+      <h2 class="dashboard__subtitle">Существующие сценарии</h2>
       <div id="scenario-list" class="placeholder">Загрузка…</div>
     </main>
   </div>

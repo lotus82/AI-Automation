@@ -96,7 +96,7 @@ class AriRestClient:
             if r.status_code not in (404, 204) and not r.is_success:
                 r.raise_for_status()
         except httpx.HTTPError as e:
-            logger.warning("ARI delete_bridge %s: %s", bridge_id, e)
+            logger.warning("ARI delete_bridge {}: {}", bridge_id, e)
 
     async def hangup_channel(self, channel_id: str) -> None:
         try:
@@ -104,7 +104,7 @@ class AriRestClient:
             if r.status_code not in (404, 204) and not r.is_success:
                 r.raise_for_status()
         except httpx.HTTPError as e:
-            logger.warning("ARI hangup_channel %s: %s", channel_id, e)
+            logger.warning("ARI hangup_channel {}: {}", channel_id, e)
 
 
 @dataclass
@@ -218,7 +218,7 @@ async def _run_stasis_inbound_call(
                 index[ext_id] = leg
 
                 logger.info(
-                    "ARI: мост SIP %s ↔ RTP %s, session_id=%s, ext=%s",
+                    "ARI: мост SIP {} ↔ RTP {}, session_id={}, ext={}",
                     channel_id,
                     external_host,
                     session_id,
@@ -241,7 +241,7 @@ async def _run_stasis_inbound_call(
                     index.pop(channel_id, None)
                     index.pop(ext_id, None)
             except Exception:
-                logger.exception("ARI: сбой обработки входящего %s", channel_id)
+                logger.exception("ARI: сбой обработки входящего {}", channel_id)
                 index.pop(channel_id, None)
                 raise
     finally:
@@ -257,7 +257,7 @@ async def _on_channel_destroyed(
         return
     index.pop(leg.sip_channel_id, None)
     index.pop(leg.ext_channel_id, None)
-    logger.info("ARI: ChannelDestroyed %s — останавливаем RTP/Pipecat", destroyed_id)
+    logger.info("ARI: ChannelDestroyed {} — останавливаем RTP/Pipecat", destroyed_id)
     try:
         await leg.rtp.signal_disconnect()
     except Exception:
@@ -315,7 +315,7 @@ async def run_ari_event_listener(
             except Exception as e:
                 if stop.is_set():
                     break
-                logger.warning("ARI: переподключение через 3 с после ошибки: %s", e)
+                logger.warning("ARI: переподключение через 3 с после ошибки: {}", e)
                 await asyncio.sleep(3.0)
     finally:
         await rest.aclose()

@@ -69,6 +69,22 @@ async def update_settings(
                 detail="LLM_PROVIDER должен быть deepseek или openai",
             )
 
+    if sk.SALUTESPEECH_SCOPE in normalized:
+        sc = (normalized[sk.SALUTESPEECH_SCOPE] or "").strip()
+        if not sc or len(sc) > 128:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="SALUTESPEECH_SCOPE не может быть пустым (максимум 128 символов)",
+            )
+
+    if sk.SALUTESPEECH_VOICE in normalized:
+        v = (normalized[sk.SALUTESPEECH_VOICE] or "").strip()
+        if len(v) > 128:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="SALUTESPEECH_VOICE слишком длинный (максимум 128 символов)",
+            )
+
     try:
         await repo.upsert_values(normalized)
     except KeyError as e:

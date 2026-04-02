@@ -2,20 +2,38 @@
 
 services:
   asterisk:
-    image: andrius/asterisk:22
+    build:
+      context: .
+      dockerfile: infrastructure/asterisk/Dockerfile
+    env_file:
+      - .env
+    environment:
+      # pjsip.conf собирается из шаблона при старте (см. infrastructure/asterisk/docker-entrypoint.sh)
+      SIP_SERVER_IP: ${SIP_SERVER_IP:-127.0.0.1}
+      SIP_OPERATOR_IP: ${SIP_OPERATOR_IP:-}
+      SIP_USER: ${SIP_USER:-}
+      SIP_PASSWORD: ${SIP_PASSWORD:-}
     # Точечный монтаж конфигов сохраняет файлы по умолчанию образа (logger, modules и т.д.).
-    # Полный каталог ./infrastructure/asterisk/config → /etc/asterisk возможен только после
-    # копирования остальных системных .conf из контейнера.
+    # pjsip.conf не монтируется — генерируется из pjsip.conf.template в entrypoint.
     volumes:
       - ./infrastructure/asterisk/config/http.conf:/etc/asterisk/http.conf:ro
       - ./infrastructure/asterisk/config/ari.conf:/etc/asterisk/ari.conf:ro
-      - ./infrastructure/asterisk/config/pjsip.conf:/etc/asterisk/pjsip.conf:ro
       - ./infrastructure/asterisk/config/extensions.conf:/etc/asterisk/extensions.conf:ro
       - ./infrastructure/asterisk/config/rtp.conf:/etc/asterisk/rtp.conf:ro
     ports:
       - "5060:5060/udp"
       - "8088:8088"
       - "10000-10500:10000-10500/udp"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf -u voiceai:voiceai_secret http://127.0.0.1:8088/ari/api-docs/resources.json -o /dev/null",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     networks:
       - default
 
@@ -23,6 +41,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    env_file:
+      - .env
     expose:
       - "8000"
     # Опционально: раскомментируйте для прямого доступа к FastAPI с хоста (без Nginx)
@@ -36,6 +56,9 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       CHAT_MEMORY_TTL_SECONDS: "86400"
+      # Голос SaluteSpeech вместо Deepgram (ключ — в .env или на settings.html):
+      VOICE_STT_PROVIDER: salutespeech
+      VOICE_TTS_PROVIDER: salutespeech
       # ARI (тот же хост, что в ASTERISK_URL; из контейнера web — сервис asterisk)
       ASTERISK_URL: http://asterisk:8088/ari
       ASTERISK_ARI_USER: voiceai
@@ -45,17 +68,19 @@ services:
       ASTERISK_RTP_ADVERTISE_HOST: web
       ASTERISK_RTP_PORT_MIN: "18000"
       ASTERISK_RTP_PORT_MAX: "18015"
+      CALL_RECORDINGS_DIR: /app/data/recordings
     volumes:
       - ./src:/app/src
       - ./alembic:/app/alembic
       - ./alembic.ini:/app/alembic.ini
+      - ./data/recordings:/app/data/recordings
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_started
       asterisk:
-        condition: service_started
+        condition: service_healthy
     command:
       [
         "uvicorn",
@@ -93,14 +118,18 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    env_file:
+      - .env
     environment:
       APP_ENV: development
       POSTGRES_URI: postgresql+asyncpg://sales:sales@postgres:5432/sales_agent
       REDIS_URI: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      CALL_RECORDINGS_DIR: /app/data/recordings
     volumes:
       - ./src:/app/src
+      - ./data/recordings:/app/data/recordings
     depends_on:
       redis:
         condition: service_started

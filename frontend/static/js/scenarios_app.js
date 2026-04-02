@@ -18,21 +18,21 @@
     var box = document.getElementById("scenario-list");
     if (!box) return;
     if (!items || !items.length) {
-      box.innerHTML = "<p>Пока нет сценариев.</p>";
+      box.innerHTML = '<p class="placeholder">Пока нет сценариев.</p>';
       return;
     }
-    var html = '<ul class="nav" style="list-style:disc;padding-left:1.25rem;">';
+    var html = '<div class="scenario-grid">';
     var i;
     for (i = 0; i < items.length; i++) {
       var it = items[i];
       html +=
-        "<li style=\"margin-bottom:0.75rem;\"><strong>" +
+        '<article class="scenario-card"><h3 class="scenario-card__title">' +
         escapeHtml(it.title) +
-        "</strong><br/><code style=\"font-size:0.75rem;\">" +
+        '</h3><p class="scenario-card__id"><code>' +
         escapeHtml(it.id) +
-        "</code></li>";
+        "</code></p></article>";
     }
-    html += "</ul>";
+    html += "</div>";
     box.innerHTML = html;
   }
 
@@ -97,6 +97,8 @@
         (key === "scenarios" && path.indexOf("scenarios") !== -1) ||
         (key === "telephony" && path.indexOf("telephony") !== -1) ||
         (key === "tester" && path.indexOf("tester") !== -1) ||
+        (key === "settings" && path.indexOf("settings") !== -1) ||
+        (key === "knowledge" && path.indexOf("knowledge") !== -1) ||
         (key === "home" && (path === "/" || path.endsWith("/index.html")));
       a.classList.toggle("nav__link--active", active);
     });

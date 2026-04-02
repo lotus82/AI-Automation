@@ -50,6 +50,8 @@
       if (key === "tester" && path.indexOf("tester") !== -1) active = true;
       if (key === "scenarios" && path.indexOf("scenarios") !== -1) active = true;
       if (key === "telephony" && path.indexOf("telephony") !== -1) active = true;
+      if (key === "settings" && path.indexOf("settings") !== -1) active = true;
+      if (key === "knowledge" && path.indexOf("knowledge") !== -1) active = true;
       a.classList.toggle("nav__link--active", active);
     });
   }
@@ -67,7 +69,7 @@
       var tr0 = document.createElement("tr");
       tr0.id = "calls-empty-row";
       tr0.innerHTML =
-        '<td colspan="9" class="calls-table__empty">Пока нет записей. Завершите голосовой звонок или вызовите <code>POST /api/chat/finalize</code>.</td>';
+        '<td colspan="10" class="calls-table__empty">Пока нет записей. Завершите голосовой звонок или вызовите <code>POST /api/chat/finalize</code>.</td>';
       tbody.appendChild(tr0);
       return;
     }
@@ -76,6 +78,20 @@
       var rec = row;
       var an = rec.analytics;
       var tr = document.createElement("tr");
+      var recUrl = API_CALLS + "/" + encodeURIComponent(rec.id) + "/recording";
+      var audioCell = "—";
+      if (rec.has_audio) {
+        audioCell =
+          '<audio controls preload="none" src="' +
+          escapeHtml(recUrl) +
+          '" class="calls-table__audio-el"></audio> ' +
+          '<a class="calls-table__link" href="' +
+          escapeHtml(recUrl) +
+          '" download>скачать</a> ' +
+          '<button type="button" class="calls-table__btn-del" data-call-id="' +
+          escapeHtml(rec.id) +
+          '">удалить</button>';
+      }
       tr.innerHTML =
         "<td><code>" +
         escapeHtml(rec.session_id) +
@@ -101,10 +117,33 @@
         '<td class="calls-table__rec">' +
         (an ? escapeHtml(an.recommendations) : "—") +
         "</td>" +
+        '<td class="calls-table__audio">' +
+        audioCell +
+        "</td>" +
         '<td class="calls-table__snippet">' +
         escapeHtml(snippet(rec.transcript_text, 280)) +
         "</td>";
       tbody.appendChild(tr);
+    });
+
+    tbody.querySelectorAll(".calls-table__btn-del").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.getAttribute("data-call-id");
+        if (!id || !window.confirm("Удалить файл записи разговора? Строка в таблице останется.")) {
+          return;
+        }
+        fetch(API_CALLS + "/" + encodeURIComponent(id) + "/recording", {
+          method: "DELETE",
+          credentials: "same-origin",
+        })
+          .then(function (r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            loadCalls();
+          })
+          .catch(function (e) {
+            window.alert("Не удалось удалить: " + (e.message || String(e)));
+          });
+      });
     });
   }
 
@@ -114,7 +153,7 @@
 
     var trLoad = document.createElement("tr");
     trLoad.innerHTML =
-      '<td colspan="9" class="calls-table__empty">Загрузка…</td>';
+      '<td colspan="10" class="calls-table__empty">Загрузка…</td>';
     while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
     tbody.appendChild(trLoad);
 
@@ -130,7 +169,7 @@
         while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
         var tr = document.createElement("tr");
         tr.innerHTML =
-          '<td colspan="9" class="calls-table__empty calls-table__error">Не удалось загрузить данные: ' +
+          '<td colspan="10" class="calls-table__empty calls-table__error">Не удалось загрузить данные: ' +
           escapeHtml(e.message || String(e)) +
           ". Проверьте, что бэкенд доступен через прокси <code>/api/</code>.</td>";
         tbody.appendChild(tr);

@@ -1,0 +1,142 @@
+"""Синтез SaluteSpeech по gRPC (``SmartSpeech/Synthesize``) для Pipecat 0.0.60."""
+
+from __future__ import annotations
+
+import asyncio
+import re
+import struct
+from typing import Any, AsyncGenerator
+
+import grpc
+import grpc.aio
+from loguru import logger
+from pipecat.frames.frames import (
+    ErrorFrame,
+    Frame,
+    TTSAudioRawFrame,
+    TTSStartedFrame,
+    TTSStoppedFrame,
+)
+from pipecat.services.ai_services import TTSService
+
+from src.infrastructure.services.salute_auth import SaluteSpeechAuthManager
+from src.infrastructure.voice.salute_grpc_tls import smartspeech_channel_credentials
+from src.infrastructure.voice.sber_protos import synthesis_pb2, synthesis_pb2_grpc
+
+
+def _pcm16_mono_resample_linear(pcm: bytes, src_rate: int, dst_rate: int) -> bytes:
+    """Линейный ресэмплинг int16 mono (без numpy/scipy)."""
+    if src_rate == dst_rate or not pcm:
+        return pcm
+    n_in = len(pcm) // 2
+    if n_in < 2:
+        return pcm
+    samples = struct.unpack(f"<{n_in}h", pcm)
+    ratio = dst_rate / src_rate
+    n_out = max(1, int(n_in * ratio))
+    out: list[int] = []
+    for j in range(n_out):
+        x = j / ratio
+        i0 = int(x)
+        i1 = min(i0 + 1, n_in - 1)
+        frac = x - i0
+        v = samples[i0] * (1.0 - frac) + samples[i1] * frac
+        out.append(int(max(-32768, min(32767, round(v)))))
+    return struct.pack(f"<{len(out)}h", *out)
+
+
+def _infer_pcm_rate_from_voice(voice: str) -> int:
+    """Эвристика: ``May_24000`` / ``Ost_24000`` → 24000 Гц."""
+    m = re.search(r"_(\d{4,6})$", (voice or "").strip())
+    if m:
+        try:
+            return int(m.group(1))
+        except ValueError:
+            pass
+    return 16000
+
+
+class SaluteSpeechTTSService(TTSService):
+    """TTS: унарный ``Synthesize`` + поток ``SynthesisResponse.data`` (``grpc.aio``)."""
+
+    def __init__(
+        self,
+        *,
+        auth_manager: SaluteSpeechAuthManager,
+        grpc_target: str = "smartspeech.sber.ru:443",
+        voice: str = "Ost_24000",
+        language: str = "ru-RU",
+        smartspeech_verify_ssl: bool = True,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(sample_rate=24000, **kwargs)
+        self._auth = auth_manager
+        self._grpc_target = grpc_target.strip()
+        self.set_voice(voice)
+        self._language = language
+        self._verify_ssl = smartspeech_verify_ssl
+        self._api_pcm_rate = _infer_pcm_rate_from_voice(self._voice_id)
+        self.set_model_name("salutespeech-tts-grpc")
+
+    def can_generate_metrics(self) -> bool:
+        return True
+
+    def _grpc_metadata(self, token: str) -> tuple[tuple[str, str], ...]:
+        return (("authorization", f"Bearer {token}"),)
+
+    async def _get_channel_credentials(self) -> grpc.ChannelCredentials:
+        if self._verify_ssl:
+            return smartspeech_channel_credentials(self._grpc_target, True)
+        return await asyncio.to_thread(
+            smartspeech_channel_credentials, self._grpc_target, False
+        )
+
+    def _build_request(self, text: str) -> synthesis_pb2.SynthesisRequest:
+        body = text if text.strip() else " "
+        return synthesis_pb2.SynthesisRequest(
+            text=body,
+            audio_encoding=synthesis_pb2.SynthesisRequest.PCM_S16LE,
+            language=self._language,
+            content_type=synthesis_pb2.SynthesisRequest.TEXT,
+            voice=self._voice_id,
+            rebuild_cache=False,
+        )
+
+    async def run_tts(self, text: str) -> AsyncGenerator[Frame, None]:
+        logger.debug("%s: SaluteSpeech TTS gRPC [%s…]", self, (text or "")[:80])
+        token = await self._auth.get_access_token()
+        req = self._build_request(text)
+        creds = await self._get_channel_credentials()
+        channel = grpc.aio.secure_channel(self._grpc_target, creds)
+        stub = synthesis_pb2_grpc.SmartSpeechStub(channel)
+        metadata = self._grpc_metadata(token)
+        try:
+            await self.start_ttfb_metrics()
+            await self.start_tts_usage_metrics(text)
+            first_audio = True
+            async for resp in stub.Synthesize(req, metadata=metadata):
+                raw = bytes(resp.data) if resp.data else b""
+                if not raw:
+                    continue
+                pcm_out = _pcm16_mono_resample_linear(
+                    raw, self._api_pcm_rate, self.sample_rate
+                )
+                if first_audio:
+                    yield TTSStartedFrame()
+                    first_audio = False
+                await self.stop_ttfb_metrics()
+                yield TTSAudioRawFrame(pcm_out, self.sample_rate, num_channels=1)
+            if first_audio:
+                yield ErrorFrame("SaluteSpeech TTS: пустой поток аудио")
+            else:
+                yield TTSStoppedFrame()
+        except grpc.aio.AioRpcError as err:
+            if err.code() == grpc.StatusCode.UNAUTHENTICATED:
+                await self._auth.invalidate_cache()
+            logger.exception("SaluteSpeech TTS gRPC: {} {}", err.code(), err.details())
+            yield ErrorFrame(f"SaluteSpeech TTS gRPC: {err.code()} {err.details()}")
+        except Exception as exc:
+            logger.exception("SaluteSpeech TTS gRPC: {}", exc)
+            yield ErrorFrame(f"SaluteSpeech TTS: {exc}")
+        finally:
+            await channel.close()

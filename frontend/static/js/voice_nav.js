@@ -10,6 +10,7 @@
       (key === "tester" && path.indexOf("tester") !== -1) ||
       (key === "telephony" && path.indexOf("telephony") !== -1) ||
       (key === "scenarios" && path.indexOf("scenarios") !== -1) ||
+      (key === "knowledge" && path.indexOf("knowledge") !== -1) ||
       (key === "settings" && path.indexOf("settings") !== -1) ||
       (key === "home" && (path === "/" || path.endsWith("/index.html")));
     a.classList.toggle("nav__link--active", active);

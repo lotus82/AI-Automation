@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Literal
 
 import aiohttp
@@ -30,6 +31,14 @@ from pipecat.transcriptions.language import Language
 
 from src.core.config import Settings
 from src.domain.entities import TrainingScenario
+from src.infrastructure.services.salute_auth import SaluteSpeechAuthManager
+from src.infrastructure.voice.conversation_recording import (
+    BotAudioRecordingTap,
+    ConversationStereoRecorder,
+    UserAudioRecordingTap,
+)
+from src.infrastructure.voice.salute_stt import SaluteSpeechSTTService
+from src.infrastructure.voice.salute_tts import SaluteSpeechTTSService
 from src.use_cases.interfaces import IVoiceTransport
 
 # TODO: Вынести выбор модели Deepgram и маппинг языков в настройки при расширении локалей.
@@ -42,6 +51,16 @@ def _language_from_settings(code: str) -> Language:
     except ValueError:
         logger.warning("Неизвестный VOICE_STT_LANGUAGE=%s, используется en", code)
         return Language.EN
+
+
+def _salute_language_tag_from_voice_stt(code: str) -> str:
+    """RFC-3066 тег для SaluteSpeech (упрощённый маппинг из VOICE_STT_LANGUAGE)."""
+    c = (code or "ru").strip().lower().replace("_", "-")
+    if c.startswith("ru"):
+        return "ru-RU"
+    if c.startswith("en"):
+        return "en-US"
+    return "ru-RU"
 
 
 class LLMUserResponseAggregator(FrameProcessor):
@@ -60,14 +79,21 @@ class LLMUserResponseAggregator(FrameProcessor):
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
 
+        # Pipecat 0.0.60: FrameProcessor.process_frame(StartFrame) только инициализирует
+        # процессор и не вызывает push_frame вниз. Без явной пересылки TTS не получает
+        # StartFrame → не создаётся __input_queue → при EndFrame падает queue_frame.
         if isinstance(frame, StartFrame):
+            await self.push_frame(frame, direction)
             return
         if isinstance(frame, CancelFrame):
+            await self.push_frame(frame, direction)
             return
 
         if isinstance(frame, TranscriptionFrame):
             text = (frame.text or "").strip()
             if text and direction == FrameDirection.DOWNSTREAM:
+                # Отдаём финальную транскрипцию на WebSocket-клиент (Protobuf transcription).
+                await self.push_frame(frame, direction)
                 async with self._turn_lock:
                     try:
                         reply = await self._on_final(text)
@@ -124,19 +150,32 @@ class VoicePipelineOrchestrator:
         self,
         *,
         voice_transport: IVoiceTransport,
-        stt: DeepgramSTTService,
+        stt: DeepgramSTTService | SaluteSpeechSTTService,
         aggregator: LLMUserResponseAggregator,
-        tts: OpenAITTSService | ElevenLabsHttpTTSService,
+        tts: OpenAITTSService | ElevenLabsHttpTTSService | SaluteSpeechTTSService,
+        stereo_recorder: ConversationStereoRecorder | None = None,
     ) -> None:
-        pipeline = Pipeline(
-            [
+        if stereo_recorder is not None:
+            user_tap = UserAudioRecordingTap(stereo_recorder, name="user_recording")
+            bot_tap = BotAudioRecordingTap(stereo_recorder, name="bot_recording")
+            processors = [
+                voice_transport.input_processor(),
+                user_tap,
+                stt,
+                aggregator,
+                tts,
+                bot_tap,
+                voice_transport.output_processor(),
+            ]
+        else:
+            processors = [
                 voice_transport.input_processor(),
                 stt,
                 aggregator,
                 tts,
                 voice_transport.output_processor(),
             ]
-        )
+        pipeline = Pipeline(processors)
 
         task = PipelineTask(
             pipeline,
@@ -152,7 +191,7 @@ class VoicePipelineOrchestrator:
 
         @stt.event_handler("on_speech_started")
         async def _on_speech_started(_service, *_args, **_kwargs) -> None:
-            # Облачный VAD Deepgram: прерываем воспроизведение ответа бота.
+            # Deepgram VAD или первый частичный гипотеза SaluteSpeech — прерываем ответ бота.
             await task.queue_frame(StartInterruptionFrame())
 
         @pt.event_handler("on_client_disconnected")
@@ -169,6 +208,10 @@ class VoicePipelineOrchestrator:
         on_final_transcript: Callable[[str], Awaitable[str]],
         voice_mode: Literal["consultant", "trainer_client"] = "consultant",
         training_scenario: TrainingScenario | None = None,
+        salute_auth: SaluteSpeechAuthManager | None = None,
+        salutespeech_voice: str | None = None,
+        voice_stt_provider_effective: str | None = None,
+        recording_session_id: str | None = None,
     ) -> None:
         """Запускает runner до завершения сессии (браузер: WebSocket; Asterisk: UDP RTP).
 
@@ -184,29 +227,77 @@ class VoicePipelineOrchestrator:
         elif voice_mode == "consultant":
             logger.debug("Голос: режим консультанта (ИИ-продавец)")
 
-        if not self._settings.deepgram_api_key:
-            raise ValueError("Для голоса нужен DEEPGRAM_API_KEY")
+        stt_sel = (voice_stt_provider_effective or self._settings.voice_stt_provider).strip().lower()
+        if stt_sel not in ("deepgram", "salutespeech"):
+            stt_sel = self._settings.voice_stt_provider
 
-        from deepgram import LiveOptions
+        uses_salute = stt_sel == "salutespeech" or self._settings.voice_tts_provider == "salutespeech"
+        auth: SaluteSpeechAuthManager | None = salute_auth
+        if uses_salute:
+            if auth is None:
+                raise ValueError(
+                    "SaluteSpeech: передайте salute_auth (менеджер токенов с Redis) в VoicePipelineOrchestrator.run"
+                )
+            await auth.prewarm()
 
-        lang = _language_from_settings(self._settings.voice_stt_language)
-        live_options = LiveOptions(
-            vad_events=True,
-            language=lang,
-            interim_results=True,
-            smart_format=True,
-            punctuate=True,
-            model="nova-2-general",
-        )
+        if stt_sel == "salutespeech":
+            assert auth is not None
+            stt = SaluteSpeechSTTService(
+                auth_manager=auth,
+                grpc_target=self._settings.salutespeech_grpc_target,
+                language=_salute_language_tag_from_voice_stt(self._settings.voice_stt_language),
+                smartspeech_verify_ssl=self._settings.salutespeech_smartspeech_verify_ssl,
+                sample_rate=16000,
+            )
+        else:
+            if not (self._settings.deepgram_api_key or "").strip():
+                raise ValueError("Для голоса с Deepgram нужен DEEPGRAM_API_KEY")
 
-        stt = DeepgramSTTService(
-            api_key=self._settings.deepgram_api_key,
-            live_options=live_options,
-        )
+            from deepgram import LiveOptions
+
+            lang = _language_from_settings(self._settings.voice_stt_language)
+            live_options = LiveOptions(
+                vad_events=True,
+                language=lang,
+                interim_results=True,
+                smart_format=True,
+                punctuate=True,
+                model="nova-2-general",
+            )
+
+            stt = DeepgramSTTService(
+                api_key=self._settings.deepgram_api_key,
+                live_options=live_options,
+            )
 
         aggregator = LLMUserResponseAggregator(on_final_transcript=on_final_transcript)
 
-        if self._settings.voice_tts_provider == "elevenlabs":
+        voice_id = (salutespeech_voice or self._settings.salutespeech_voice or "Ost_24000").strip()
+
+        stereo_recorder: ConversationStereoRecorder | None = None
+        rec_dir = self._settings.call_recordings_dir
+        if rec_dir and recording_session_id:
+            stereo_recorder = ConversationStereoRecorder(
+                out_dir=Path(rec_dir),
+                target_sample_rate=16000,
+            )
+
+        if self._settings.voice_tts_provider == "salutespeech":
+            assert auth is not None
+            tts = SaluteSpeechTTSService(
+                auth_manager=auth,
+                grpc_target=self._settings.salutespeech_grpc_target,
+                voice=voice_id,
+                smartspeech_verify_ssl=self._settings.salutespeech_smartspeech_verify_ssl,
+            )
+            await self._run_pipeline(
+                voice_transport=voice_transport,
+                stt=stt,
+                aggregator=aggregator,
+                tts=tts,
+                stereo_recorder=stereo_recorder,
+            )
+        elif self._settings.voice_tts_provider == "elevenlabs":
             async with aiohttp.ClientSession() as http_session:
                 tts = self._build_elevenlabs_tts(http_session)
                 await self._run_pipeline(
@@ -214,6 +305,7 @@ class VoicePipelineOrchestrator:
                     stt=stt,
                     aggregator=aggregator,
                     tts=tts,
+                    stereo_recorder=stereo_recorder,
                 )
         else:
             tts = self._build_openai_tts()
@@ -222,4 +314,8 @@ class VoicePipelineOrchestrator:
                 stt=stt,
                 aggregator=aggregator,
                 tts=tts,
+                stereo_recorder=stereo_recorder,
             )
+
+        if stereo_recorder is not None and recording_session_id:
+            stereo_recorder.write_wav_stereo(recording_session_id)

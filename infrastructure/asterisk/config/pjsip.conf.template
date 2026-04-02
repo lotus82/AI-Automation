@@ -1,0 +1,44 @@
+; PJSIP: транк к оператору (MCN.ru). Значения подставляются при старте контейнера из .env
+; (SIP_SERVER_IP, SIP_USER, SIP_PASSWORD, SIP_OPERATOR_IP). См. .env.example и README.
+
+[global]
+type=global
+user_agent=VoiceAI-Asterisk-Docker
+
+[transport-udp]
+type=transport
+protocol=udp
+bind=0.0.0.0:5060
+; При NAT укажите вручную external_media_address / external_signaling_address в отдельном фрагменте.
+
+[mcn-auth]
+type=auth
+auth_type=userpass
+username=${SIP_USER}
+password=${SIP_PASSWORD}
+
+[mcn-aor]
+type=aor
+contact=sip:${SIP_SERVER_IP}:5060
+qualify_frequency=60
+
+[mcn-endpoint]
+type=endpoint
+context=mcn-inbound
+disallow=all
+allow=ulaw
+allow=alaw
+from_user=${SIP_USER}
+from_domain=${SIP_SERVER_IP}
+outbound_auth=mcn-auth
+aors=mcn-aor
+direct_media=no
+rtp_symmetric=yes
+force_rport=yes
+rewrite_contact=yes
+
+; Входящие INVITE с IP оператора (match — IP или CIDR из документации MCN)
+[mcn-identify]
+type=identify
+endpoint=mcn-endpoint
+match=${SIP_OPERATOR_IP}

@@ -35,11 +35,32 @@
   var elScenario = null;
   var elScenarioField = null;
   var elManager = null;
+  var elTranscriptBody = null;
 
   var API_SCENARIOS = "/api/scenarios";
 
   function nowLine() {
     return new Date().toISOString().replace("T", " ").slice(0, 19);
+  }
+
+  function clearTranscript() {
+    if (elTranscriptBody) elTranscriptBody.innerHTML = "";
+  }
+
+  function appendUserTranscript(text) {
+    if (!elTranscriptBody || !text) return;
+    var line = document.createElement("div");
+    line.className = "voice-transcript__line";
+    var meta = document.createElement("span");
+    meta.className = "voice-transcript__meta";
+    meta.textContent = "Вы";
+    var body = document.createElement("div");
+    body.className = "voice-transcript__text";
+    body.textContent = text;
+    line.appendChild(meta);
+    line.appendChild(body);
+    elTranscriptBody.appendChild(line);
+    elTranscriptBody.scrollTop = elTranscriptBody.scrollHeight;
   }
 
   function log(msg, level) {
@@ -164,7 +185,7 @@
         return;
       }
       if (decoded.transcription && decoded.transcription.text) {
-        log("Распознано (сервер): " + decoded.transcription.text, "info");
+        appendUserTranscript(String(decoded.transcription.text).trim());
         return;
       }
       if (decoded.text && decoded.text.text) {
@@ -240,6 +261,7 @@
     elStart.disabled = false;
     elEnd.disabled = true;
     setStatus("disconnected");
+    clearTranscript();
     log("Звонок завершён, микрофон и сокет освобождены", "info");
   }
 
@@ -351,6 +373,7 @@
 
   function startCall() {
     if (elStart) elStart.disabled = true;
+    clearTranscript();
     setStatus("connected");
     log("Запрос доступа к микрофону…", "info");
 
@@ -462,6 +485,7 @@
     elScenario = document.getElementById("voice-scenario-select");
     elScenarioField = document.getElementById("voice-scenario-field");
     elManager = document.getElementById("manager-name-input");
+    elTranscriptBody = document.getElementById("voice-transcript-body");
 
     if (!elStart || !elEnd) return;
 

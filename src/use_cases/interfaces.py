@@ -114,6 +114,14 @@ class ICallRecordRepository(ABC):
         """Сохраняет запись звонка/чата; возвращает сущность с id из БД."""
 
     @abstractmethod
+    async def get_by_id(self, call_id: UUID) -> CallRecord | None:
+        """Возвращает запись по id или None."""
+
+    @abstractmethod
+    async def update_audio_filename(self, call_id: UUID, filename: str | None) -> None:
+        """Обновляет имя файла записи разговора (basename) или сбрасывает в None."""
+
+    @abstractmethod
     async def save_analytics(self, row: CallAnalytics) -> CallAnalytics:
         """Сохраняет аналитику ОКК, привязанную к call_record_id."""
 
@@ -208,6 +216,14 @@ class IKnowledgeRepository(ABC):
         limit: int = 3,
     ) -> list[KnowledgeItem]:
         """Ищет наиболее близкие по вектору записи (pgvector)."""
+
+    @abstractmethod
+    async def list_recent(self, *, limit: int = 500) -> list[KnowledgeItem]:
+        """Список элементов для админки (новые сверху)."""
+
+    @abstractmethod
+    async def delete_by_id(self, item_id: UUID) -> bool:
+        """Удаляет запись; ``True`` если строка была удалена."""
 
 
 class IVoiceTransport(ABC):

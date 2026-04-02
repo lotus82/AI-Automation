@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from uuid import UUID
 
 from redis.asyncio import Redis
@@ -27,8 +28,24 @@ from src.infrastructure.training_session_redis import (
     decode_trainer_meta,
     trainer_session_redis_key,
 )
+from src.infrastructure.voice.conversation_recording import recording_wav_basename
 
 logger = logging.getLogger(__name__)
+
+
+async def _link_voice_recording_if_file_exists(
+    *,
+    settings,
+    session_id: str,
+    call_repo: SqlAlchemyCallRecordRepository,
+    saved_id: UUID,
+) -> None:
+    base = settings.call_recordings_dir
+    if not base:
+        return
+    wav_name = recording_wav_basename(session_id)
+    if (Path(base) / wav_name).is_file():
+        await call_repo.update_audio_filename(saved_id, wav_name)
 
 
 def _format_transcript(history: list[dict]) -> str:
@@ -96,6 +113,12 @@ async def _analyze_async(session_id: str) -> str:
                     if saved.id is None:
                         msg = "После сохранения call_record отсутствует id"
                         raise RuntimeError(msg)
+                    await _link_voice_recording_if_file_exists(
+                        settings=settings,
+                        session_id=session_id,
+                        call_repo=call_repo,
+                        saved_id=saved.id,
+                    )
 
                     if scenario is not None and scenario.id is not None:
                         score, feedback = await llm.analyze_training_performance(
@@ -148,6 +171,12 @@ async def _analyze_async(session_id: str) -> str:
                 if saved.id is None:
                     msg = "После сохранения call_record отсутствует id"
                     raise RuntimeError(msg)
+                await _link_voice_recording_if_file_exists(
+                    settings=settings,
+                    session_id=session_id,
+                    call_repo=repo,
+                    saved_id=saved.id,
+                )
 
                 settings_repo = PostgresSettingsRepository(session, redis)
                 llm = DynamicLLMService(settings=settings, settings_repo=settings_repo)

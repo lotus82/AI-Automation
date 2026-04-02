@@ -51,6 +51,15 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="OPENAI_API_KEY",
     )
+    # Fallback, если ключ ещё не сохранён в system_settings (панель «Настройки»)
+    deepseek_api_key: str | None = Field(
+        default=None,
+        validation_alias="DEEPSEEK_API_KEY",
+    )
+    telegram_bot_token: str | None = Field(
+        default=None,
+        validation_alias="TELEGRAM_BOT_TOKEN",
+    )
 
     # Голос: облачный STT/TTS (без локальных моделей)
     deepgram_api_key: str | None = Field(
@@ -65,7 +74,7 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="ELEVENLABS_VOICE_ID",
     )
-    # Провайдер синтеза: openai | elevenlabs (HTTP streaming, без локального TTS)
+    # Провайдер синтеза: openai | elevenlabs | salutespeech (без локального TTS)
     voice_tts_provider: str = Field(
         default="openai",
         validation_alias="VOICE_TTS_PROVIDER",
@@ -82,6 +91,66 @@ class Settings(BaseSettings):
     voice_stt_language: str = Field(
         default="ru",
         validation_alias="VOICE_STT_LANGUAGE",
+    )
+    # STT: deepgram | salutespeech (SaluteSpeech — gRPC Recognize, поток PCM)
+    voice_stt_provider: str = Field(
+        default="deepgram",
+        validation_alias="VOICE_STT_PROVIDER",
+    )
+
+    # SaluteSpeech (Сбер SmartSpeech): OAuth через ngw + токен в Redis (см. фаза 13 README)
+    salutespeech_auth_key: str | None = Field(
+        default=None,
+        validation_alias="SALUTESPEECH_AUTH_KEY",
+    )
+    salutespeech_scope: str = Field(
+        default="SALUTE_SPEECH_PERS",
+        validation_alias="SALUTESPEECH_SCOPE",
+    )
+    salutespeech_voice: str = Field(
+        default="Ost_24000",
+        validation_alias="SALUTESPEECH_VOICE",
+    )
+    salutespeech_ws_recognize_url: str = Field(
+        default="wss://smartspeech.sber.ru/async/recognize",
+        validation_alias="SALUTESPEECH_WS_RECOGNIZE_URL",
+        description="Устарело: STT/TTS SaluteSpeech — только gRPC (см. SALUTESPEECH_GRPC_TARGET).",
+    )
+    salutespeech_rest_base_url: str = Field(
+        default="https://smartspeech.sber.ru/rest/v1/",
+        validation_alias="SALUTESPEECH_REST_BASE_URL",
+        description="Не используется для STT/TTS; оставлено для совместимости .env.",
+    )
+    salutespeech_grpc_target: str = Field(
+        default="smartspeech.sber.ru:443",
+        validation_alias="SALUTESPEECH_GRPC_TARGET",
+        description="Хост:порт gRPC SaluteSpeech (TLS). В документации часто 443; при необходимости укажите :8443.",
+    )
+    # OAuth SaluteSpeech (HTTP POST); при блокировке 9443 / DPI — прокси или другой URL из документации Сбера
+    salutespeech_oauth_url: str = Field(
+        default="https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
+        validation_alias="SALUTESPEECH_OAUTH_URL",
+    )
+    salutespeech_oauth_retries: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        validation_alias="SALUTESPEECH_OAUTH_RETRIES",
+    )
+    # true — учитывать HTTP(S)_PROXY из окружения (нужно за корпоративным прокси); false — типично для Docker Desktop
+    salutespeech_oauth_trust_env: bool = Field(
+        default=False,
+        validation_alias="SALUTESPEECH_OAUTH_TRUST_ENV",
+    )
+    # TLS при обмене ключа на OAuth-шлюз (часто нужен корневой Минцифры на VPS)
+    salutespeech_oauth_verify_ssl: bool = Field(
+        default=False,
+        validation_alias="SALUTESPEECH_OAUTH_VERIFY_SSL",
+    )
+    # TLS к smartspeech.sber.ru: false — для gRPC доверяем листовому сертификату (как verify=False у httpx)
+    salutespeech_smartspeech_verify_ssl: bool = Field(
+        default=False,
+        validation_alias="SALUTESPEECH_SMARTSPEECH_VERIFY_SSL",
     )
 
     # Bitrix24: полный URL входящего вебхука для crm.lead.add
@@ -138,6 +207,12 @@ class Settings(BaseSettings):
         validation_alias="ASTERISK_RTP_PORT_MAX",
     )
 
+    # Локальные WAV записи голосовых сессий (стерео: L — пользователь, R — бот). Пусто — не писать файлы.
+    call_recordings_dir: str | None = Field(
+        default="data/recordings",
+        validation_alias="CALL_RECORDINGS_DIR",
+    )
+
     @model_validator(mode="after")
     def _asterisk_rtp_port_order(self):
         if self.asterisk_rtp_port_max < self.asterisk_rtp_port_min:
@@ -163,6 +238,9 @@ class Settings(BaseSettings):
         "asterisk_url",
         "asterisk_ari_user",
         "asterisk_ari_password",
+        "salutespeech_auth_key",
+        "deepseek_api_key",
+        "telegram_bot_token",
         mode="before",
     )
     @classmethod
@@ -172,6 +250,27 @@ class Settings(BaseSettings):
             return None
         return value
 
+    @field_validator("voice_stt_provider", mode="before")
+    @classmethod
+    def _normalize_voice_stt_provider(cls, value: object) -> str:
+        v = (value or "deepgram")
+        if not isinstance(v, str):
+            return "deepgram"
+        v = v.strip().lower()
+        if v not in ("deepgram", "salutespeech"):
+            raise ValueError("VOICE_STT_PROVIDER должен быть 'deepgram' или 'salutespeech'")
+        return v
+
+    @field_validator("call_recordings_dir", mode="before")
+    @classmethod
+    def _normalize_call_recordings_dir(cls, value: object) -> object:
+        if value is None or value == "":
+            return None
+        if isinstance(value, str):
+            s = value.strip()
+            return s or None
+        return value
+
     @field_validator("voice_tts_provider", mode="before")
     @classmethod
     def _normalize_voice_tts_provider(cls, value: object) -> str:
@@ -179,8 +278,8 @@ class Settings(BaseSettings):
         if not isinstance(v, str):
             return "openai"
         v = v.strip().lower()
-        if v not in ("openai", "elevenlabs"):
-            raise ValueError("VOICE_TTS_PROVIDER должен быть 'openai' или 'elevenlabs'")
+        if v not in ("openai", "elevenlabs", "salutespeech"):
+            raise ValueError("VOICE_TTS_PROVIDER должен быть 'openai', 'elevenlabs' или 'salutespeech'")
         return v
 
     @property

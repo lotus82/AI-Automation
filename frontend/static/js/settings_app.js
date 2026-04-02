@@ -9,6 +9,9 @@
     DEEPSEEK_API_KEY: "DEEPSEEK_API_KEY",
     OPENAI_API_KEY: "OPENAI_API_KEY",
     TELEGRAM_BOT_TOKEN: "TELEGRAM_BOT_TOKEN",
+    SALUTESPEECH_AUTH_KEY: "SALUTESPEECH_AUTH_KEY",
+    SALUTESPEECH_SCOPE: "SALUTESPEECH_SCOPE",
+    SALUTESPEECH_VOICE: "SALUTESPEECH_VOICE",
     DEFAULT_CONSULTANT_PROMPT: "DEFAULT_CONSULTANT_PROMPT",
     ANALYST_QA_PROMPT: "ANALYST_QA_PROMPT",
   };
@@ -54,10 +57,17 @@
     hintFor(KEYS.DEEPSEEK_API_KEY, "deepseek-mask-hint");
     hintFor(KEYS.OPENAI_API_KEY, "openai-mask-hint");
     hintFor(KEYS.TELEGRAM_BOT_TOKEN, "telegram-mask-hint");
+    hintFor(KEYS.SALUTESPEECH_AUTH_KEY, "salutespeech-mask-hint");
 
     byId("deepseek-key").value = "";
     byId("openai-key").value = "";
     byId("telegram-token").value = "";
+    byId("salutespeech-key").value = "";
+
+    var ssScope = map[KEYS.SALUTESPEECH_SCOPE];
+    if (ssScope) byId("salutespeech-scope").value = ssScope.value || "";
+    var ssVoice = map[KEYS.SALUTESPEECH_VOICE];
+    if (ssVoice) byId("salutespeech-voice").value = ssVoice.value || "";
 
     var c = map[KEYS.DEFAULT_CONSULTANT_PROMPT];
     if (c) byId("consultant-prompt").value = c.value || "";
@@ -85,17 +95,24 @@
     values[KEYS.LLM_PROVIDER] = byId("llm-provider").value.trim();
     values[KEYS.DEFAULT_CONSULTANT_PROMPT] = byId("consultant-prompt").value;
     values[KEYS.ANALYST_QA_PROMPT] = byId("analyst-prompt").value;
+    values[KEYS.SALUTESPEECH_SCOPE] =
+      byId("salutespeech-scope").value.trim() || "SALUTE_SPEECH_PERS";
+    values[KEYS.SALUTESPEECH_VOICE] = byId("salutespeech-voice").value.trim() || "Ost_24000";
 
-    [KEYS.DEEPSEEK_API_KEY, KEYS.OPENAI_API_KEY, KEYS.TELEGRAM_BOT_TOKEN].forEach(function (k) {
-      var inputId =
-        k === KEYS.DEEPSEEK_API_KEY
-          ? "deepseek-key"
-          : k === KEYS.OPENAI_API_KEY
-            ? "openai-key"
-            : "telegram-token";
-      var v = byId(inputId).value.trim();
-      if (v) values[k] = v;
-    });
+    [KEYS.DEEPSEEK_API_KEY, KEYS.OPENAI_API_KEY, KEYS.TELEGRAM_BOT_TOKEN, KEYS.SALUTESPEECH_AUTH_KEY].forEach(
+      function (k) {
+        var inputId =
+          k === KEYS.DEEPSEEK_API_KEY
+            ? "deepseek-key"
+            : k === KEYS.OPENAI_API_KEY
+              ? "openai-key"
+              : k === KEYS.TELEGRAM_BOT_TOKEN
+                ? "telegram-token"
+                : "salutespeech-key";
+        var v = byId(inputId).value.trim();
+        if (v) values[k] = v;
+      }
+    );
 
     return values;
   }

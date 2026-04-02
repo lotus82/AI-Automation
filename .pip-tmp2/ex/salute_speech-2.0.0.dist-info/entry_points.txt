@@ -1,0 +1,2 @@
+[console_scripts]
+salute_speech = salute_speech:cli

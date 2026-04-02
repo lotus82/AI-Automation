@@ -18,12 +18,20 @@ from src.infrastructure.training_session_redis import (
     trainer_session_redis_key,
 )
 from src.infrastructure.voice.voice_session import (
+    resolve_effective_voice_stt_provider,
     run_voice_pipeline_session,
     schedule_analyze_after_voice,
 )
 router = APIRouter()
 
 _VoiceModeLit = Literal["consultant", "trainer_client"]
+
+
+def _websocket_close_reason(exc: BaseException, max_bytes: int = 118) -> str:
+    """Краткий текст для ``close(reason)`` (UTF-8 ≤ ~123 байт по спецификации WebSocket)."""
+    text = f"{type(exc).__name__}: {exc}"
+    encoded = text.encode("utf-8", errors="replace")[:max_bytes]
+    return encoded.decode("utf-8", errors="replace")
 
 
 def _parse_session_id(raw: str | None) -> str:
@@ -72,17 +80,22 @@ async def voice_stream(
         FastAPIWebsocketParams,
         FastAPIWebsocketTransport,
     )
-    from src.infrastructure.voice import PipecatWebSocketVoiceTransport
+    from src.infrastructure.voice.transport import (
+        PipecatWebSocketVoiceTransport,
+        replace_fastapi_output_with_transcript_forwarding,
+    )
 
     settings = get_settings()
     await websocket.accept()
 
-    if not settings.deepgram_api_key:
-        await websocket.close(code=1008, reason="Не задан DEEPGRAM_API_KEY")
+    redis: Redis = websocket.app.state.redis
+
+    effective_stt, gate_err = await resolve_effective_voice_stt_provider(settings, redis)
+    if gate_err:
+        await websocket.close(code=1008, reason=gate_err)
         return
 
     sid = _parse_session_id(session_id)
-    redis: Redis = websocket.app.state.redis
     voice_mode = _parse_voice_mode(mode)
     training_scenario: TrainingScenario | None = None
 
@@ -126,6 +139,7 @@ async def voice_stream(
         serializer=ProtobufFrameSerializer(),
     )
     pipecat_transport = FastAPIWebsocketTransport(websocket=websocket, params=params)
+    replace_fastapi_output_with_transcript_forwarding(pipecat_transport)
     voice_transport = PipecatWebSocketVoiceTransport(pipecat_transport)
 
     try:
@@ -136,13 +150,14 @@ async def voice_stream(
             settings=settings,
             voice_mode=cast(_VoiceModeLit, voice_mode),
             training_scenario=training_scenario,
+            voice_stt_provider_effective=effective_stt,
         )
     except WebSocketDisconnect:
         logger.info("WebSocket голоса отключён клиентом (session_id=%s)", sid)
-    except Exception:
-        logger.exception("Сбой голосового пайплайна (session_id=%s)", sid)
+    except Exception as exc:
+        logger.exception("Сбой голосового пайплайна (session_id={})", sid)
         try:
-            await websocket.close(code=1011)
+            await websocket.close(code=1011, reason=_websocket_close_reason(exc))
         except Exception:
             pass
     finally:

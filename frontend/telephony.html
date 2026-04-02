@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Телефония и автообзвон — Sales AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/dashboard.css" />
 </head>
 <body>
@@ -17,6 +20,9 @@
           </li>
           <li class="nav__item">
             <a class="nav__link" href="/settings.html" data-nav="settings">Настройки</a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/knowledge.html" data-nav="knowledge">База знаний</a>
           </li>
           <li class="nav__item">
             <a class="nav__link" href="/telephony.html" data-nav="telephony">Телефония</a>
@@ -38,11 +44,11 @@
       </p>
 
       <!-- TODO: Показать статистику очереди (pending/completed) без перезагрузки страницы. -->
-      <h2 class="dashboard__title" style="font-size:1.1rem;">Загрузка номеров</h2>
-      <p class="dashboard__lead" style="margin-bottom:0.75rem;">
+      <h2 class="dashboard__subtitle">Загрузка номеров</h2>
+      <p class="dashboard__lead dashboard__lead--tight">
         Файл <strong>CSV</strong> или <strong>XLSX</strong>: номера в <strong>первой колонке</strong> (первая строка может быть заголовком — некорректные строки отфильтруются).
       </p>
-      <form id="upload-form" class="voice-tester" style="max-width:36rem;">
+      <form id="upload-form" class="voice-tester panel" style="max-width:36rem;">
         <div class="voice-tester__field">
           <label class="voice-tester__label" for="phones-file">Файл</label>
           <input class="voice-tester__input" type="file" id="phones-file" accept=".csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required />
@@ -53,8 +59,8 @@
         <p id="upload-msg" class="dashboard__lead" style="margin-top:1rem;"></p>
       </form>
 
-      <h2 class="dashboard__title" style="font-size:1.1rem;margin-top:2rem;">Запуск кампании</h2>
-      <p class="dashboard__lead" style="margin-bottom:0.75rem;">
+      <h2 class="dashboard__subtitle">Запуск кампании</h2>
+      <p class="dashboard__lead dashboard__lead--tight">
         Ставит задачу <code>run_outbound_campaign_task</code> в Celery (нужен запущенный worker).
       </p>
       <button type="button" class="btn btn--primary btn--lg" id="btn-campaign">Начать обзвон (Celery)</button>

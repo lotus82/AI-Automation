@@ -50,6 +50,8 @@ class DynamicLLMService(ILLMService):
 
         if provider == "deepseek":
             key = (await self._repo.get_value(sk.DEEPSEEK_API_KEY) or "").strip()
+            if not key and self._settings.deepseek_api_key:
+                key = self._settings.deepseek_api_key.strip()
             sig = f"deepseek:{key[:12]}:{len(key)}"
             if not key:
                 return None, _DEEPSEEK_CHAT_MODEL, sig

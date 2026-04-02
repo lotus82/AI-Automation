@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Тест ИИ-агента — Sales AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/dashboard.css" />
   <!-- protobufjs — сериализация кадров Pipecat в браузере -->
   <script src="https://cdn.jsdelivr.net/npm/protobufjs@7.4.0/dist/protobuf.min.js"></script>
@@ -19,6 +22,9 @@
           </li>
           <li class="nav__item">
             <a class="nav__link" href="/settings.html" data-nav="settings">Настройки</a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/knowledge.html" data-nav="knowledge">База знаний</a>
           </li>
           <li class="nav__item">
             <a class="nav__link" href="/telephony.html" data-nav="telephony">Телефония</a>
@@ -40,7 +46,7 @@
         В режиме <strong>Тренажёр</strong> ИИ играет роль клиента по выбранному сценарию; после звонка оценку ставит тренер (LLM).
       </p>
 
-      <div class="voice-tester" id="voice-tester-root">
+      <div class="voice-tester panel" id="voice-tester-root">
         <div class="voice-tester__row">
           <div class="status-badge status-badge--disconnected" id="voice-status" data-state="disconnected">
             <span class="status-badge__dot" aria-hidden="true"></span>
@@ -83,7 +89,23 @@
           <button type="button" class="btn btn--danger btn--lg" id="btn-end-call" disabled>Завершить звонок</button>
         </div>
 
-        <h2 class="dashboard__title" style="font-size:1.1rem;margin-top:1.5rem;">Журнал</h2>
+        <section class="voice-transcript panel" aria-labelledby="voice-transcript-heading">
+          <h2 class="dashboard__subtitle voice-transcript__title" id="voice-transcript-heading">
+            Транскрипция разговора
+          </h2>
+          <p class="voice-transcript__hint">
+            Фразы появляются после того, как распознавание речи отдаёт финальный текст (не побуквенно).
+          </p>
+          <div
+            class="voice-transcript__body"
+            id="voice-transcript-body"
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions"
+          ></div>
+        </section>
+
+        <h2 class="dashboard__subtitle" style="margin-top:1.5rem;">Журнал</h2>
         <div class="log-box" id="voice-log" aria-live="polite"></div>
       </div>
     </main>

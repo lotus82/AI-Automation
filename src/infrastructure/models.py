@@ -54,6 +54,7 @@ class CallRecordModel(Base):
     transcript_text: Mapped[str] = mapped_column(Text())
     direction: Mapped[str] = mapped_column(String(16), server_default=text("'web'"))
     remote_phone: Mapped[str] = mapped_column(String(64), server_default=text("''"))
+    audio_filename: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("now()"),
@@ -200,4 +201,9 @@ class KnowledgeItemModel(Base):
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(KNOWLEDGE_EMBEDDING_DIM),
         nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+        nullable=False,
     )

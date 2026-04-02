@@ -28,6 +28,7 @@ class CallRecordItem(BaseModel):
     status: str
     transcript_text: str
     created_at: datetime | None = None
+    has_audio: bool = False
     analytics: CallAnalyticsItem | None = None
 
 

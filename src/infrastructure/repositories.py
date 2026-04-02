@@ -6,13 +6,14 @@ import json
 import re
 
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from uuid import UUID
 
 from datetime import datetime, timezone
 
+from src.domain import system_setting_keys as sk
 from src.domain.entities import (
     CallAnalytics,
     CallRecord,
@@ -74,6 +75,7 @@ def _call_record_to_domain(row: CallRecordModel) -> CallRecord:
         direction=row.direction,
         remote_phone=row.remote_phone,
         created_at=row.created_at,
+        audio_filename=row.audio_filename,
     )
 
 
@@ -93,6 +95,7 @@ def _knowledge_to_domain(row: KnowledgeItemModel) -> KnowledgeItem:
         title=row.title,
         content=row.content,
         embedding=_embedding_to_list(row.embedding),
+        created_at=getattr(row, "created_at", None),
     )
 
 
@@ -144,6 +147,17 @@ class SqlAlchemyCallRecordRepository(ICallRecordRepository):
         await self._session.flush()
         await self._session.refresh(model)
         return _call_record_to_domain(model)
+
+    async def get_by_id(self, call_id: UUID) -> CallRecord | None:
+        row = await self._session.get(CallRecordModel, call_id)
+        return _call_record_to_domain(row) if row is not None else None
+
+    async def update_audio_filename(self, call_id: UUID, filename: str | None) -> None:
+        await self._session.execute(
+            update(CallRecordModel)
+            .where(CallRecordModel.id == call_id)
+            .values(audio_filename=filename)
+        )
 
     async def save_analytics(self, row: CallAnalytics) -> CallAnalytics:
         if row.id is not None:
@@ -227,6 +241,23 @@ class SqlAlchemyKnowledgeRepository(IKnowledgeRepository):
         )
         result = await self._session.scalars(stmt)
         return [_knowledge_to_domain(row) for row in result.all()]
+
+    async def list_recent(self, *, limit: int = 500) -> list[KnowledgeItem]:
+        stmt = (
+            select(KnowledgeItemModel)
+            .order_by(KnowledgeItemModel.created_at.desc())
+            .limit(min(max(1, limit), 1000))
+        )
+        result = await self._session.scalars(stmt)
+        return [_knowledge_to_domain(row) for row in result.all()]
+
+    async def delete_by_id(self, item_id: UUID) -> bool:
+        from sqlalchemy import delete
+
+        stmt = delete(KnowledgeItemModel).where(KnowledgeItemModel.id == item_id)
+        res = await self._session.execute(stmt)
+        await self._session.flush()
+        return res.rowcount > 0
 
 
 # Префикс ключа и TTL по умолчанию (сутки) — не даём старым сессиям бесконечно занимать RAM на VPS.
@@ -453,14 +484,25 @@ class PostgresSettingsRepository(ISettingsRepository):
         return [_system_setting_to_domain(r) for r in result.all()]
 
     async def upsert_values(self, updates: dict[str, str]) -> None:
+        """Обновляет значения; для ключей из UPDATABLE_KEYS создаёт строку, если миграция-сид ещё не вставила её."""
+        now = datetime.now(timezone.utc)
         for raw_key, value in updates.items():
             k = raw_key.strip()
             row = await self._session.get(SystemSettingModel, k)
             if row is None:
-                msg = f"Неизвестный ключ настройки: {k}"
-                raise KeyError(msg)
-            row.value = value
-            row.updated_at = datetime.now(timezone.utc)
+                if k not in sk.UPDATABLE_KEYS:
+                    msg = f"Неизвестный ключ настройки: {k}"
+                    raise KeyError(msg)
+                row = SystemSettingModel(
+                    key=k,
+                    value=value,
+                    description="",
+                    updated_at=now,
+                )
+                self._session.add(row)
+            else:
+                row.value = value
+                row.updated_at = now
         await self._session.flush()
         for raw_key in updates:
             await self._redis.delete(self._cache_key(raw_key.strip()))

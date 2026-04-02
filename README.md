@@ -1,6 +1,6 @@
 # AI Voice & Text Agent (отдел продаж)
 
-Сервис для голосового и текстового ИИ-агента отдела продаж. **Текущее состояние: фаза 12** — **динамические настройки из панели**: таблица **`system_settings`**, репозиторий **`PostgresSettingsRepository`** с **кэшем Redis** (`sys_setting:v1:{key}`), **`DynamicLLMService`** (по умолчанию провайдер **DeepSeek** через официальный **OpenAI-совместимый** клиент: `base_url=https://api.deepseek.com`, модель **`deepseek-chat`**; режим **openai** — **`gpt-4o-mini`**). Промпт консультанта и ОКК читаются из БД (**`DEFAULT_CONSULTANT_PROMPT`**, **`ANALYST_QA_PROMPT`**); сценарий **`ProcessTextMessageUseCase`** использует **`ISettingsRepository`**. UI: **`frontend/settings.html`**, **`GET/PUT /api/settings`**. **# TODO (продакшен):** хранить API-ключи в БД в **зашифрованном виде** (например, **Fernet** из **`cryptography`**). Сохранены **фазы 5–11**. Локальные Whisper/Torch/CUDA **не используются**.
+Сервис для голосового и текстового ИИ-агента отдела продаж. **Текущее состояние: фаза 13** — **SaluteSpeech (Сбер SmartSpeech)** для потокового STT/TTS в Pipecat: **`SaluteSpeechAuthManager`** (OAuth `ngw.devices.sberbank.ru`, кэш токена в **Redis**, TTL **25 мин**), кастомные **`SaluteSpeechSTTService`** и **`SaluteSpeechTTSService`** на **`grpc.aio`** (RPC **`Recognize`** / **`Synthesize`**, хост **`SALUTESPEECH_GRPC_TARGET`**, обычно **smartspeech.sber.ru:443**). Proto см. **`src/infrastructure/voice/sber_protos/`**. Ключ **`SALUTESPEECH_AUTH_KEY`**, **`SALUTESPEECH_SCOPE`**, голос **`SALUTESPEECH_VOICE`** — в **`.env`** и в **`system_settings`** (миграция **`006`**). Сохранены **фазы 5–12**. Локальные Whisper/Torch/CUDA **не используются**.
 
 ---
 
@@ -29,6 +29,23 @@
 
 Проверка голоса через панель см. раздел **«Фронтенд и Nginx»** ниже. Альтернатива — любой клиент с **Protobuf**-кадрами Pipecat ([пример websocket-server](https://github.com/pipecat-ai/pipecat/tree/v0.0.60/examples/websocket-server)).
 
+### Как протестировать звонок с микрофона (`tester.html`)
+
+1. Откройте **`http://localhost:8080/tester.html`** (или ваш домен по **HTTPS**). Страница должна быть с **localhost** / **127.0.0.1** / **HTTPS**, иначе браузер не даст микрофон.
+2. В **«Настройки»** сохраните ключи: для SaluteSpeech — **Authorization Key**; для **TTS по умолчанию (OpenAI)** — **`OPENAI_API_KEY`** в **`.env`** контейнера **`web`** или ключ OpenAI в панели (иначе ответ агента не синтезируется). При **`VOICE_TTS_PROVIDER=salutespeech`** нужен только ключ Сбера.
+3. В **Docker Compose** задайте провайдеры голоса, например: **`VOICE_STT_PROVIDER`**, **`VOICE_TTS_PROVIDER`** (`salutespeech` и/или `deepgram` / `openai` / `elevenlabs`). После правок **`docker compose up -d --build web`** (или перезапуск **`web`**).
+4. Нажмите **«Начать звонок»**. Если сокет закроется с **кодом 1011**, в логе страницы теперь может отображаться краткая **причина**; полный traceback смотрите в логах: **`docker compose logs web -f`** (или **`docker compose logs -f web`**).
+5. Частые причины **1011**: нет **`OPENAI_API_KEY`** при **`VOICE_TTS_PROVIDER=openai`**; ошибка OAuth или WebSocket к **SaluteSpeech**; несовпадение формата REST TTS; сбой **RAG/LLM** при первой реплике.
+
+### SaluteSpeech (фаза 13)
+
+- **Назначение**: STT и/или TTS через облако **Сбер SaluteSpeech** без локальных моделей. Переключение: **`VOICE_STT_PROVIDER=salutespeech`** и/или **`VOICE_TTS_PROVIDER=salutespeech`** (остальные комбинации с Deepgram/OpenAI/ElevenLabs допустимы).
+- **Ключ Studio**: в личном кабинете [Studio](https://developers.sber.ru/studio/login) сгенерируйте **Authorization Key** и укажите его в **`SALUTESPEECH_AUTH_KEY`** (или в панели **`SALUTESPEECH_AUTH_KEY`**). Формат **`client_id:client_secret`** в строке тоже поддерживается (будет закодирован в Base64).
+- **OAuth**: **`POST https://ngw.devices.sberbank.ru:9443/api/v2/oauth`** с заголовками **`Authorization: Basic …`**, **`RqUID`** (UUID) и телом **`scope=…`** (по умолчанию **`SALUTE_SPEECH_PERS`**). Токен доступа кэшируется в Redis (**25 мин**); источник значений scope — env или **`system_settings`**.
+- **STT**: потоковое **gRPC** **`Recognize`** (`smartspeech.recognition.v2`), первое сообщение — **`RecognitionOptions`** (флаги **`OptionalBool`**: multi-utterance, partial results), далее **`audio_chunk`** (PCM **S16LE**, **16 kHz**). Ответы — **`RecognitionResponse`**: ветка **`transcription`** с **`results`** и **`eou`**; промежуточные гипотезы → **`InterimTranscriptionFrame`**, финал (**`eou=true`**) → **`TranscriptionFrame`**. Публичного WebSocket STT у Сбера нет; REST для низкой задержки не используется.
+- **TTS**: **gRPC** **`Synthesize`** (унарный запрос + поток **`SynthesisResponse.data`**). Выход для Pipecat — **`TTSAudioRawFrame`** при **24 kHz** (линейный ресэмплинг с частоты, выведенной из имени голоса, напр. **`Ost_24000`** → **24 kHz**).
+- **TLS на VPS (Beget и др.)**: если **`httpx`** / **`websockets`** падают на проверке цепочки до **ngw** или **smartspeech**, по умолчанию **`SALUTESPEECH_OAUTH_VERIFY_SSL=false`** и **`SALUTESPEECH_SMARTSPEECH_VERIFY_SSL=false`**. **# TODO (рус.):** для продакшена установите доверенные корневые сертификаты **Минцифры** в образ или ОС (например, пакет **`ca-certificates`** + ручная установка корней НУЦ / инструкции провайдера VPS), затем включите **`true`** на обоих флагах и перезапустите контейнер **`web`**.
+
 ---
 
 ## Фронтенд и Nginx (фаза 8)
@@ -46,7 +63,7 @@
 ### Подключение транка (MCN.ru и аналоги)
 
 1. Закажите у оператора **SIP-транк** (исходящие/входящие), получите **хост регистрара/прокси**, **логин** и **пароль**. Часто для MCN.ru используют хост вида **`sip.mcn.ru`** (уточняйте в личном кабинете).
-2. Укажите в **`.env`**: **`SIP_SERVER_IP`**, **`SIP_USER`**, **`SIP_PASSWORD`** для правки **`pjsip.conf`** (учётные данные транка). При работе через **Docker Asterisk** сигналинг и RTP обрабатывает контейнер **`asterisk`**; приложение **`web`** принимает только **RTP** на выделенных UDP-портах (см. **фаза 11**). Без **`ASTERISK_*`** в приложении остаётся **`StubSIPTelephonyService`** (без реального INVITE из Python).
+2. Укажите в **`.env`**: **`SIP_SERVER_IP`**, **`SIP_USER`**, **`SIP_PASSWORD`**, при необходимости **`SIP_OPERATOR_IP`** (IP/CIDR для `identify`; если не задан, подставляется **`SIP_SERVER_IP`**). При старте контейнера **`asterisk`** из шаблона **`pjsip.conf.template`** генерируется **`/etc/asterisk/pjsip.conf`**. Сигналинг и RTP — в **`asterisk`**; приложение **`web`** принимает только **RTP** на выделенных UDP-портах (см. **фаза 11**). Без **`ASTERISK_*`** в приложении остаётся **`StubSIPTelephonyService`** (без реального INVITE из Python).
 3. **Входящий**: АТС вызывает **`POST /api/telephony/inbound`** с **`call_id`** и опционально **`caller_phone`**. Ответ содержит **`session_id`** — его нужно использовать при мосте аудио в Redis/ Pipecat (тот же формат истории, что у **`/voice/stream`**).
 4. **События**: **`POST /api/telephony/event`** с **`status`**: **`ringing`**, **`answered`**, **`hung_up`**. На **`hung_up`** ставится **`analyze_conversation_task(session_id)`** (если был **`inbound`** и маппинг **`call_id` → session_id** ещё в Redis).
 5. **Исходящий автообзвон**: загрузите CSV/XLSX через **`POST /api/dialer/queue/upload`**, затем **`POST /api/dialer/campaign/start`** (или кнопка на **`telephony.html`**). Воркер читает **`pending`** из **`dialer_queue`**, вызывает **`make_outbound_call`**; после реальной интеграции SIP при **ответе абонента** нужно поднять Pipecat с персоной консультанта (**TODO** в коде).
@@ -55,7 +72,8 @@
 
 | Переменная | Назначение |
 |------------|------------|
-| **`SIP_SERVER_IP`** | Хост регистрара/прокси SIP (или IP) |
+| **`SIP_SERVER_IP`** | Хост регистратора/прокси SIP (FQDN или IP) |
+| **`SIP_OPERATOR_IP`** | IP или CIDR SIP-серверов оператора для `match` в PJSIP identify (если пусто — как **`SIP_SERVER_IP`**) |
 | **`SIP_USER`** | Логин учётной записи транка |
 | **`SIP_PASSWORD`** | Пароль (не логировать в открытом виде) |
 
@@ -80,8 +98,8 @@
 ### Настройка MCN.ru на ваш Asterisk
 
 1. В личном кабинете MCN (или у менеджера) укажите **адрес SIP-сервера** — **публичный IP VPS** и порт **5060** (если провайдер принимает только домен — создайте **A-запись** на этот IP).
-2. Внесите в **`infrastructure/asterisk/config/pjsip.conf`** реальные **`SIP_USERNAME`**, **`SIP_PASSWORD`**, хост **`MCN_SIP_HOST`**, IP в **`match=`** для **`[mcn-identify]`** (диапазон адресов SIP-сети оператора — в документации MCN).
-3. Перезапустите контейнер **`asterisk`**: `docker compose restart asterisk`.
+2. Задайте в **`.env`** переменные **`SIP_SERVER_IP`**, **`SIP_USER`**, **`SIP_PASSWORD`**, при FQDN в **`SIP_SERVER_IP`** обычно нужен отдельный **`SIP_OPERATOR_IP`** (IP из документации MCN для `identify`). Шаблон: **`infrastructure/asterisk/config/pjsip.conf.template`**.
+3. Пересоберите и перезапустите **`asterisk`**: `docker compose build asterisk && docker compose up -d asterisk` (или **`restart`** после первой сборки).
 4. Проверьте регистрацию/доступность транка командами Asterisk CLI (**`docker compose exec asterisk asterisk -rvvv`**, затем **`pjsip show endpoints`**) — точные команды зависят от образа.
 
 ### Файрвол VPS (UDP)
