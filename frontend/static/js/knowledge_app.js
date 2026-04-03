@@ -52,6 +52,7 @@
     var thead =
       "<thead><tr>" +
       "<th>Заголовок</th>" +
+      "<th>Описание</th>" +
       "<th>Фрагмент</th>" +
       "<th>Вектор</th>" +
       "<th>Дата</th>" +
@@ -64,12 +65,16 @@
       var emb = r.has_embedding
         ? '<span class="knowledge-badge knowledge-badge--ok">есть</span>'
         : '<span class="knowledge-badge knowledge-badge--warn">нет</span>';
+      var desc = r.description ? escapeHtml(r.description) : "—";
       body +=
         "<tr data-id=\"" +
         escapeHtml(r.id) +
         "\">" +
         "<td class=\"knowledge-list__title\">" +
         escapeHtml(r.title) +
+        "</td>" +
+        "<td class=\"knowledge-list__desc\">" +
+        desc +
         "</td>" +
         "<td class=\"knowledge-list__preview\">" +
         escapeHtml(r.content_preview) +
@@ -80,7 +85,7 @@
         "<td class=\"knowledge-list__date\">" +
         escapeHtml(formatDate(r.created_at)) +
         "</td>" +
-        "<td><button type=\"button\" class=\"btn btn--danger btn--sm knowledge-del\">Удалить</button></td>" +
+        "<td><button type=\"button\" class=\"btn btn--danger btn--sm knowledge-del\" title=\"Удалить\"><i class=\"fa-solid fa-trash-can\" aria-hidden=\"true\"></i></button></td>" +
         "</tr>";
     }
     body += "</tbody>";
@@ -129,10 +134,32 @@
   function init() {
     var form = document.getElementById("knowledge-upload-form");
     var filesInput = document.getElementById("knowledge-files");
+    var descInput = document.getElementById("knowledge-description");
+    var namesEl = document.getElementById("knowledge-file-names");
     var msg = document.getElementById("knowledge-upload-msg");
     var listEl = document.getElementById("knowledge-list");
 
     loadList(listEl);
+
+    function syncFileNames() {
+      if (!filesInput || !namesEl) return;
+      var files = filesInput.files;
+      if (!files || !files.length) {
+        namesEl.textContent = "Файлы не выбраны";
+        return;
+      }
+      var parts = [];
+      var i;
+      for (i = 0; i < files.length; i++) {
+        parts.push(files[i].name);
+      }
+      namesEl.textContent = parts.join(", ");
+    }
+
+    if (filesInput) {
+      filesInput.addEventListener("change", syncFileNames);
+      syncFileNames();
+    }
 
     if (form && filesInput) {
       form.addEventListener("submit", function (ev) {
@@ -146,6 +173,9 @@
         var j;
         for (j = 0; j < files.length; j++) {
           fd.append("files", files[j]);
+        }
+        if (descInput && descInput.value.trim()) {
+          fd.append("description", descInput.value.trim());
         }
         setMsg(msg, "Загрузка и индексация…", "");
         var btn = document.getElementById("btn-knowledge-upload");
@@ -179,6 +209,8 @@
               "ok",
             );
             filesInput.value = "";
+            syncFileNames();
+            if (descInput) descInput.value = "";
             loadList(listEl);
           })
           .catch(function (e) {
@@ -193,8 +225,10 @@
     if (listEl) {
       listEl.addEventListener("click", function (ev) {
         var t = ev.target;
-        if (!t || !t.classList || !t.classList.contains("knowledge-del")) return;
-        var tr = t.closest("tr");
+        if (!t || !t.closest) return;
+        var delBtn = t.closest(".knowledge-del");
+        if (!delBtn) return;
+        var tr = delBtn.closest("tr");
         var id = tr && tr.getAttribute("data-id");
         if (id) deleteRow(id, tr, listEl);
       });

@@ -12,6 +12,9 @@
     MAX_BOT_TOKEN: "MAX_BOT_TOKEN",
     MAX_USE_POLLING: "MAX_USE_POLLING",
     MAX_CONTEXT_LIMIT: "MAX_CONTEXT_LIMIT",
+    MAX_BOT_USERNAME: "MAX_BOT_USERNAME",
+    MAX_GROUP_CHAT_ID: "MAX_GROUP_CHAT_ID",
+    MAX_GROUP_ADDITIONAL_PROMPT: "MAX_GROUP_ADDITIONAL_PROMPT",
     SALUTESPEECH_AUTH_KEY: "SALUTESPEECH_AUTH_KEY",
     SALUTESPEECH_SCOPE: "SALUTESPEECH_SCOPE",
     SALUTESPEECH_VOICE: "SALUTESPEECH_VOICE",
@@ -102,6 +105,22 @@
       var pv = mPoll && mPoll.value ? String(mPoll.value).trim().toLowerCase() : "1";
       pollEl.checked = pv === "1" || pv === "true" || pv === "yes" || pv === "on";
     }
+
+    var mbu = map[KEYS.MAX_BOT_USERNAME];
+    var mbuEl = byId("max-bot-username");
+    if (mbuEl) {
+      mbuEl.value = mbu && mbu.value != null ? String(mbu.value) : "";
+    }
+    var mgc = map[KEYS.MAX_GROUP_CHAT_ID];
+    var mgcEl = byId("max-group-chat-id");
+    if (mgcEl) {
+      mgcEl.value = mgc && mgc.value != null ? String(mgc.value) : "";
+    }
+    var mgp = map[KEYS.MAX_GROUP_ADDITIONAL_PROMPT];
+    var mgpEl = byId("max-group-prompt");
+    if (mgpEl) {
+      mgpEl.value = mgp && mgp.value != null ? String(mgp.value) : "";
+    }
   }
 
   async function loadSettings() {
@@ -138,6 +157,13 @@
     if (pollChk) {
       values[KEYS.MAX_USE_POLLING] = pollChk.checked ? "1" : "0";
     }
+
+    var mbuEl2 = byId("max-bot-username");
+    if (mbuEl2) values[KEYS.MAX_BOT_USERNAME] = mbuEl2.value.trim();
+    var mgcEl2 = byId("max-group-chat-id");
+    if (mgcEl2) values[KEYS.MAX_GROUP_CHAT_ID] = mgcEl2.value.trim();
+    var mgpEl2 = byId("max-group-prompt");
+    if (mgpEl2) values[KEYS.MAX_GROUP_ADDITIONAL_PROMPT] = mgpEl2.value;
 
     [
       KEYS.DEEPSEEK_API_KEY,

@@ -4,11 +4,9 @@ import logging
 import sys
 from typing import Any
 
-from src.core.logger import attach_ws_log_handlers
-
 
 def setup_logging(*, debug: bool = False) -> None:
-    """Настраивает корневой логгер: уровень, stderr и трансляцию в WebSocket (панель «Боты»)."""
+    """Настраивает корневой логгер: уровень и вывод в stderr."""
     level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(
         level=level,
@@ -17,7 +15,6 @@ def setup_logging(*, debug: bool = False) -> None:
         stream=sys.stderr,
         force=True,
     )
-    attach_ws_log_handlers(debug=debug)
 
 
 def get_logger(name: str) -> logging.Logger:

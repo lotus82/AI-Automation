@@ -18,6 +18,11 @@ MAX_BOT_TOKEN = "MAX_BOT_TOKEN"
 MAX_CONTEXT_LIMIT = "MAX_CONTEXT_LIMIT"
 # «1»/«true» — опрос GET /updates; «0»/«false» — не дергать API (Webhook или пауза)
 MAX_USE_POLLING = "MAX_USE_POLLING"
+# Подстрока упоминания в группе (например @id…_bot); в группах без неё входящие не обрабатываются.
+MAX_BOT_USERNAME = "MAX_BOT_USERNAME"
+# Совпадение session_id (str(chat_id)) — подмешивание MAX_GROUP_ADDITIONAL_PROMPT к системному промпту.
+MAX_GROUP_CHAT_ID = "MAX_GROUP_CHAT_ID"
+MAX_GROUP_ADDITIONAL_PROMPT = "MAX_GROUP_ADDITIONAL_PROMPT"
 
 # Разрешённые к обновлению через API (безопасность)
 UPDATABLE_KEYS = frozenset(
@@ -35,6 +40,9 @@ UPDATABLE_KEYS = frozenset(
         MAX_BOT_TOKEN,
         MAX_CONTEXT_LIMIT,
         MAX_USE_POLLING,
+        MAX_BOT_USERNAME,
+        MAX_GROUP_CHAT_ID,
+        MAX_GROUP_ADDITIONAL_PROMPT,
     }
 )
 

@@ -135,6 +135,7 @@ class DynamicLLMService(ILLMService):
         *,
         tools: list[dict],
     ) -> tuple[str | None, list[LLMToolCall]]:
+        """Системный текст задаётся первым элементом ``messages`` (см. ``ProcessTextMessageUseCase``, группы MAX — фаза 17)."""
         client, model = await self._client_and_model()
         if not client:
             return (

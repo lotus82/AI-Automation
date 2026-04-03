@@ -253,13 +253,42 @@
     };
   }
 
+  function initTabs() {
+    var tabBtns = document.querySelectorAll(".bots-tabs__btn[data-tab]");
+    var panels = {
+      max: byId("bots-tab-max"),
+      telegram: byId("bots-tab-telegram"),
+      vk: byId("bots-tab-vk"),
+    };
+    tabBtns.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var key = btn.getAttribute("data-tab");
+        if (!key) return;
+        closeHistory();
+        tabBtns.forEach(function (b) {
+          var on = b === btn;
+          b.classList.toggle("bots-tabs__btn--active", on);
+          b.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        Object.keys(panels).forEach(function (k) {
+          var p = panels[k];
+          if (p) p.hidden = k !== key;
+        });
+      });
+    });
+  }
+
   function init() {
+    initTabs();
     loadSessions();
     connectWs();
     var closeBtn = byId("bots-history-close");
     if (closeBtn) closeBtn.addEventListener("click", closeHistory);
     var backdrop = byId("bots-history-backdrop");
     if (backdrop) backdrop.addEventListener("click", closeHistory);
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape") closeHistory();
+    });
   }
 
   if (document.readyState === "loading") {

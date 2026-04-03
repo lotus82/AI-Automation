@@ -125,6 +125,30 @@ async def update_settings(
             )
         normalized[sk.MAX_USE_POLLING] = "1" if v in ("1", "true", "yes", "on") else "0"
 
+    if sk.MAX_BOT_USERNAME in normalized:
+        u = (normalized[sk.MAX_BOT_USERNAME] or "").strip()
+        if len(u) > 128:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MAX_BOT_USERNAME слишком длинный (максимум 128 символов)",
+            )
+
+    if sk.MAX_GROUP_CHAT_ID in normalized:
+        gid = (normalized[sk.MAX_GROUP_CHAT_ID] or "").strip()
+        if len(gid) > 64:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MAX_GROUP_CHAT_ID слишком длинный (максимум 64 символа)",
+            )
+
+    if sk.MAX_GROUP_ADDITIONAL_PROMPT in normalized:
+        gp = normalized[sk.MAX_GROUP_ADDITIONAL_PROMPT] or ""
+        if len(gp) > 32000:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MAX_GROUP_ADDITIONAL_PROMPT слишком длинный (максимум 32000 символов)",
+            )
+
     try:
         await repo.upsert_values(normalized)
     except KeyError as e:

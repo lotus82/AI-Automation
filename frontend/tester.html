@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <link rel="stylesheet" href="/static/css/dashboard.css" />
   <!-- protobufjs — сериализация кадров Pipecat в браузере -->
   <script src="https://cdn.jsdelivr.net/npm/protobufjs@7.4.0/dist/protobuf.min.js"></script>
@@ -14,35 +15,35 @@
 <body>
   <div class="dashboard">
     <aside class="dashboard__sidebar">
-      <div class="dashboard__brand">Sales AI — панель</div>
+      <div class="dashboard__brand">AI Assistant</div>
       <nav>
         <ul class="nav">
           <li class="nav__item">
-            <a class="nav__link" href="/" data-nav="home">Главная</a>
+            <a class="nav__link" href="/" data-nav="home"><i class="fa-solid fa-house nav__icon" aria-hidden="true"></i><span>Главная</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/settings.html" data-nav="settings">Настройки</a>
+            <a class="nav__link" href="/settings.html" data-nav="settings"><i class="fa-solid fa-sliders nav__icon" aria-hidden="true"></i><span>Настройки</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/knowledge.html" data-nav="knowledge">База знаний</a>
+            <a class="nav__link" href="/knowledge.html" data-nav="knowledge"><i class="fa-solid fa-book nav__icon" aria-hidden="true"></i><span>База знаний</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/telephony.html" data-nav="telephony">Телефония</a>
+            <a class="nav__link" href="/telephony.html" data-nav="telephony"><i class="fa-solid fa-phone nav__icon" aria-hidden="true"></i><span>Телефония</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/scenarios.html" data-nav="scenarios">Сценарии тренажёра</a>
+            <a class="nav__link" href="/scenarios.html" data-nav="scenarios"><i class="fa-solid fa-clipboard-list nav__icon" aria-hidden="true"></i><span>Сценарии тренажёра</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/tester.html" data-nav="tester">Тест ИИ-агента</a>
+            <a class="nav__link" href="/tester.html" data-nav="tester"><i class="fa-solid fa-microphone-lines nav__icon" aria-hidden="true"></i><span>Тест ИИ-агента</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/bots.html" data-nav="bots">Боты</a>
+            <a class="nav__link" href="/bots.html" data-nav="bots"><i class="fa-solid fa-robot nav__icon" aria-hidden="true"></i><span>Боты</span></a>
           </li>
         </ul>
       </nav>
     </aside>
     <main class="dashboard__main">
-      <h1 class="dashboard__title">Тест голосового агента</h1>
+      <h1 class="dashboard__title"><i class="fa-solid fa-microphone-lines" aria-hidden="true"></i>Тест голосового агента</h1>
       <p class="dashboard__lead">
         Подключение к <code>/voice/stream</code> через Nginx (тот же хост): Pipecat Protobuf, микрофон → PCM 16 kHz → WebSocket,
         воспроизведение ответа (PCM с сервера, обычно 24 kHz). Нужны ключи Deepgram и TTS (см. README).
@@ -92,21 +93,14 @@
           <button type="button" class="btn btn--danger btn--lg" id="btn-end-call" disabled>Завершить звонок</button>
         </div>
 
-        <section class="voice-transcript panel" aria-labelledby="voice-transcript-heading">
-          <h2 class="dashboard__subtitle voice-transcript__title" id="voice-transcript-heading">
-            Транскрипция разговора
-          </h2>
-          <p class="voice-transcript__hint">
-            Фразы появляются после того, как распознавание речи отдаёт финальный текст (не побуквенно).
-          </p>
-          <div
-            class="voice-transcript__body"
-            id="voice-transcript-body"
-            role="log"
-            aria-live="polite"
-            aria-relevant="additions"
-          ></div>
-        </section>
+        <h2 class="dashboard__subtitle voice-transcript__title" id="voice-transcript-heading">
+          Транскрипция разговора
+        </h2>
+        <p class="voice-transcript__hint">
+          Фразы появляются после того, как распознавание речи отдаёт финальный текст (не побуквенно).
+        </p>
+        <div class="voice-transcript__body" id="voice-transcript-body" role="log" aria-live="polite" aria-relevant="additions"></div>
+
 
         <h2 class="dashboard__subtitle" style="margin-top:1.5rem;">Журнал</h2>
         <div class="log-box" id="voice-log" aria-live="polite"></div>

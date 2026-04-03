@@ -1,6 +1,7 @@
 """Точка входа FastAPI: JSON API и WebSocket (без Jinja2 и раздачи статики)."""
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -14,6 +15,8 @@ from src.api.dependencies import build_max_long_poll_stack
 from src.core.config import get_settings
 from src.core.logging import setup_logging
 from src.infrastructure.database import AsyncSessionLocal
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -42,24 +45,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             run_ari_event_listener(settings, app.state.redis, app.state.ari_stop_event),
             name="ari-event-listener",
         )
-    if settings.max_use_polling:
-        app.state.max_poll_stop = asyncio.Event()
-        sess_cm = AsyncSessionLocal()
-        app.state.max_poll_session_cm = sess_cm
-        app.state.max_poll_session = await sess_cm.__aenter__()
-        uc, mx_client = build_max_long_poll_stack(
-            app.state.max_poll_session,
-            app.state.redis,
-            settings,
-        )
-        app.state.max_poll_task = asyncio.create_task(
-            mx_client.start_polling(
-                uc,
-                session=app.state.max_poll_session,
-                stop_event=app.state.max_poll_stop,
-            ),
-            name="max-long-polling",
-        )
+    # Long poll MAX всегда поднимаем фоновой задачей; реально дергается /updates только если
+    # MAX_USE_POLLING=1 в system_settings (панель). Раньше при MAX_USE_POLLING=false в .env задача
+    # не создавалась — БД «вкл» игнорировалось, бот молчал без вебхука.
+    app.state.max_poll_stop = asyncio.Event()
+    sess_cm = AsyncSessionLocal()
+    app.state.max_poll_session_cm = sess_cm
+    app.state.max_poll_session = await sess_cm.__aenter__()
+    uc, mx_client = build_max_long_poll_stack(
+        app.state.max_poll_session,
+        app.state.redis,
+        settings,
+    )
+    app.state.max_poll_task = asyncio.create_task(
+        mx_client.start_polling(
+            uc,
+            session=app.state.max_poll_session,
+            stop_event=app.state.max_poll_stop,
+        ),
+        name="max-long-polling",
+    )
+    logger.info(
+        "Задача MAX long polling запущена; опрос platform-api при MAX_USE_POLLING в БД; "
+        "переменная окружения MAX_USE_POLLING больше не отключает создание воркера (см. README)."
+    )
     try:
         yield
     finally:

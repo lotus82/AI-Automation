@@ -135,6 +135,10 @@ class ICallRecordRepository(ABC):
     ) -> list[tuple[CallRecord, CallAnalytics | None]]:
         """Последние записи с опциональной аналитикой (для таблицы в панели)."""
 
+    @abstractmethod
+    async def delete_by_id(self, call_id: UUID) -> bool:
+        """Удаляет запись звонка и связанную аналитику (CASCADE); ``True`` если строка была."""
+
 
 class IChatMemoryRepository(ABC):
     """Порт памяти диалога: Redis (кэш с TTL) + PostgreSQL (долговременная копия)."""

@@ -100,6 +100,7 @@ def _knowledge_to_domain(row: KnowledgeItemModel) -> KnowledgeItem:
         content=row.content,
         embedding=_embedding_to_list(row.embedding),
         created_at=getattr(row, "created_at", None),
+        description=getattr(row, "description", None),
     )
 
 
@@ -202,6 +203,14 @@ class SqlAlchemyCallRecordRepository(ICallRecordRepository):
             out.append((dom_r, dom_a))
         return out
 
+    async def delete_by_id(self, call_id: UUID) -> bool:
+        row = await self._session.get(CallRecordModel, call_id)
+        if row is None:
+            return False
+        await self._session.delete(row)
+        await self._session.flush()
+        return True
+
 
 class SqlAlchemyKnowledgeRepository(IKnowledgeRepository):
     """Репозиторий элементов знаний."""
@@ -217,6 +226,7 @@ class SqlAlchemyKnowledgeRepository(IKnowledgeRepository):
         model = KnowledgeItemModel(
             title=item.title.strip(),
             content=item.content,
+            description=(item.description or "").strip() or None,
             embedding=item.embedding,
         )
         self._session.add(model)

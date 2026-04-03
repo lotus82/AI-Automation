@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile, status
 
 from src.api.dependencies import (
     AsyncSessionDep,
@@ -23,6 +23,13 @@ router = APIRouter(tags=["knowledge"])
 
 _MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 _PREVIEW_LEN = 220
+
+
+def _embedding_source_text(description: str | None, content: str) -> str:
+    d = (description or "").strip()
+    if d:
+        return f"{d}\n\n{content}"
+    return content
 
 
 def _preview(content: str) -> str:
@@ -56,6 +63,7 @@ async def list_knowledge_items(
             KnowledgeItemResponse(
                 id=r.id,
                 title=r.title,
+                description=(r.description or "").strip() or None,
                 content_preview=_preview(r.content),
                 has_embedding=_embedding_ok(r.embedding),
                 created_at=r.created_at,
@@ -78,9 +86,14 @@ async def upload_knowledge(
         ...,
         description="Один или несколько файлов .txt / .xlsx",
     ),
+    description: str | None = Form(
+        default=None,
+        description="Общее описание для всех фрагментов из этой загрузки (попадает в RAG вместе с текстом)",
+    ),
 ) -> KnowledgeUploadResponse:
     if not files:
         raise HTTPException(status_code=400, detail="Добавьте хотя бы один файл")
+    desc_common = (description or "").strip() or None
     created: list[KnowledgeUploadCreatedItem] = []
     for uf in files:
         raw = await uf.read()
@@ -97,9 +110,15 @@ async def upload_knowledge(
         if not pairs:
             continue
         for title, content in pairs:
-            emb = await embedding.generate_embedding(content)
+            emb_src = _embedding_source_text(desc_common, content)
+            emb = await embedding.generate_embedding(emb_src)
             saved = await repo.save(
-                KnowledgeItem(title=title, content=content, embedding=emb),
+                KnowledgeItem(
+                    title=title,
+                    content=content,
+                    description=desc_common,
+                    embedding=emb,
+                ),
             )
             if saved.id is None:
                 msg = "Не удалось получить id после сохранения"

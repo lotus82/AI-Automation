@@ -1,6 +1,6 @@
 # AI Voice & Text Agent (отдел продаж)
 
-Сервис для голосового и текстового ИИ-агента отдела продаж. **Текущее состояние: фаза 16** — на панели **`bots.html`** добавлен **режим отладки MAX**: симулятор **`POST /api/max/webhook`**, поток логов **`WS /api/ws/logs`** (модули вебхука, **`ProcessTextMessageUseCase`**, **`dynamic_llm`** / OpenAI-совместимый LLM), место под виджет MAX. Сохранена **фаза 15** — персистентная история чатов (**`chat_messages`** в PostgreSQL), лимит контекста LLM **`MAX_CONTEXT_LIMIT`**, мониторинг (**`WS /api/ws/monitoring`**), REST **`GET /api/chats`**. Сохранена **фаза 14** — **MAX** (VK): вебхук **`POST /api/max/webhook`**, токен **`MAX_BOT_TOKEN`**, исходящие сообщения через **`httpx`**. Бот MAX использует тот же **`ProcessTextMessageUseCase`**, что текстовый чат и голос (промпт **`DEFAULT_CONSULTANT_PROMPT`**, RAG, **`record_lead`** → Bitrix24, **`session_id = str(chat_id)`**). Сохранена **фаза 13**: **SaluteSpeech (Сбер SmartSpeech)** для потокового STT/TTS в Pipecat: **`SaluteSpeechAuthManager`** (OAuth `ngw.devices.sberbank.ru`, кэш токена в **Redis**, TTL **25 мин**), кастомные **`SaluteSpeechSTTService`** и **`SaluteSpeechTTSService`** на **`grpc.aio`** (RPC **`Recognize`** / **`Synthesize`**, хост **`SALUTESPEECH_GRPC_TARGET`**, обычно **smartspeech.sber.ru:443**). Proto см. **`src/infrastructure/voice/sber_protos/`**. Ключ **`SALUTESPEECH_AUTH_KEY`**, **`SALUTESPEECH_SCOPE`**, голос **`SALUTESPEECH_VOICE`** — в **`.env`** и в **`system_settings`** (миграция **`006`**). Сохранены **фазы 5–12**. Локальные Whisper/Torch/CUDA **не используются**.
+Сервис для голосового и текстового ИИ-агента отдела продаж. **Текущее состояние: фаза 17** — для **MAX** в **групповых** чатах ответ только при **явном @упоминании** (**`MAX_BOT_USERNAME`**) и опциональный доп. промпт для выбранного **`MAX_GROUP_CHAT_ID`**; см. подраздел ниже в разделе MAX. **Фаза 15** — персистентная история чатов (**`chat_messages`** в PostgreSQL), лимит контекста LLM **`MAX_CONTEXT_LIMIT`**, панель **`bots.html`**: мониторинг сессий (**`WS /api/ws/monitoring`**), REST **`GET /api/chats`**. Сохранена **фаза 14** — **MAX** (VK): вебхук **`POST /api/max/webhook`**, токен **`MAX_BOT_TOKEN`**, исходящие сообщения через **`httpx`**. Бот MAX использует тот же **`ProcessTextMessageUseCase`**, что текстовый чат и голос (промпт **`DEFAULT_CONSULTANT_PROMPT`**, RAG, **`record_lead`** → Bitrix24, **`session_id = str(chat_id)`**). Сохранена **фаза 13**: **SaluteSpeech (Сбер SmartSpeech)** для потокового STT/TTS в Pipecat: **`SaluteSpeechAuthManager`** (OAuth `ngw.devices.sberbank.ru`, кэш токена в **Redis**, TTL **25 мин**), кастомные **`SaluteSpeechSTTService`** и **`SaluteSpeechTTSService`** на **`grpc.aio`** (RPC **`Recognize`** / **`Synthesize`**, хост **`SALUTESPEECH_GRPC_TARGET`**, обычно **smartspeech.sber.ru:443**). Proto см. **`src/infrastructure/voice/sber_protos/`**. Ключ **`SALUTESPEECH_AUTH_KEY`**, **`SALUTESPEECH_SCOPE`**, голос **`SALUTESPEECH_VOICE`** — в **`.env`** и в **`system_settings`** (миграция **`006`**). Сохранены **фазы 5–12**. Локальные Whisper/Torch/CUDA **не используются**.
 
 ---
 
@@ -50,8 +50,8 @@
 
 ## Фронтенд и Nginx (фаза 8)
 
-- **Каталог**: корневой **`frontend/`** — **`index.html`**, **`settings.html`**, **`bots.html`** (мониторинг + отладка MAX), **`telephony.html`**, **`tester.html`**, **`scenarios.html`**, **`static/js/settings.js`**, **`bots_app.js`**, **`debug_app.js`**. Таблица звонков: **`fetch("/api/calls")`**; настройки: **`fetch("/api/settings")`**. В настройках отдельное поле **«Дополнение для текстовых ботов MAX и Telegram»** (`TEXT_BOT_SYSTEM_SUPPLEMENT`) — дописывается к системному промпту при вызовах сценария из MAX (вебхук и long polling); для будущего Telegram-роутера нужно передавать тот же флаг **`append_text_messenger_system_supplement=True`** в **`ProcessTextMessageUseCase.execute`**.
-- **Docker Compose**: сервис **`frontend`** (образ **`nginx:alpine`**) публикует **`8080:80`**. Откройте **`http://localhost:8080/`** — запросы к **`/api/...`** и **`/voice/...`** уходят на внутренний сервис **`web:8000`** (см. **`frontend/nginx.conf`**). WebSocket: **`Upgrade`** / **`Connection`** для **`/voice/stream`** и для **`/api/ws/`** (мониторинг ботов и поток логов **`/api/ws/logs`**). Путь **`/api/max/webhook`** обрабатывается **`location /api/`**.
+- **Каталог**: корневой **`frontend/`** — **`index.html`**, **`settings.html`**, **`bots.html`** (мониторинг чатов), **`telephony.html`**, **`tester.html`**, **`scenarios.html`**, **`static/js/settings.js`**, **`bots_app.js`**. Таблица звонков: **`fetch("/api/calls")`**; настройки: **`fetch("/api/settings")`**. В настройках отдельное поле **«Дополнение для текстовых ботов MAX и Telegram»** (`TEXT_BOT_SYSTEM_SUPPLEMENT`) — дописывается к системному промпту при вызовах сценария из MAX (вебхук и long polling); для будущего Telegram-роутера нужно передавать тот же флаг **`append_text_messenger_system_supplement=True`** в **`ProcessTextMessageUseCase.execute`**.
+- **Docker Compose**: сервис **`frontend`** (образ **`nginx:alpine`**) публикует **`8080:80`**. Откройте **`http://localhost:8080/`** — запросы к **`/api/...`** и **`/voice/...`** уходят на внутренний сервис **`web:8000`** (см. **`frontend/nginx.conf`**). WebSocket: **`Upgrade`** / **`Connection`** для **`/voice/stream`** и для **`/api/ws/monitoring`**. Путь **`/api/max/webhook`** обрабатывается **`location /api/`**.
 - **# TODO (MAX Messenger, рус.):** API доставки вебхуков MAX **строго** ожидает **HTTPS (порт 443)** и **доверенный** SSL-сертификат (например **Let's Encrypt**). На **порту 80** или с **самоподписанным** сертификатом платформа может **тихо** не доставлять события; для продакшена указывайте публичный **https://** URL вебхука.
 - **Сервис `web`**: с хоста **порт 8000 не проброшен** (имитация продакшена); при отладке можно раскомментировать **`ports: "8000:8000"`** в **`docker-compose.yml`**.
 - **Микрофон в браузере**: страница должна открываться с **`localhost`**, **`127.0.0.1`** или **HTTPS**.
@@ -63,9 +63,9 @@
 
 - **Назначение**: текстовый бот в официальном деловом мессенджере **MAX** (VK) с **той же** бизнес-логикой, что у голосового и веб-чата: **`ProcessTextMessageUseCase`** (системный промпт **`DEFAULT_CONSULTANT_PROMPT`** + опционально **`TEXT_BOT_SYSTEM_SUPPLEMENT`** из панели настроек для правил формата ответа в мессенджере, RAG по векторной **`knowledge_items`**, вызов инструмента **`record_lead`** и передача лида в **Bitrix24** при заданном **`BITRIX24_WEBHOOK_URL`**; история — **Redis** + **`chat_messages`**, см. фазу **15**).
 - **Токен**: ключ **`MAX_BOT_TOKEN`** в панели **`settings.html`** / **`system_settings`** (миграция **`009`**); маскируется в **`GET /api/settings`**. Дополнительно можно задать **`MAX_BOT_TOKEN`** в **`.env`**: используется, если в БД значение пустое; непустое значение в панели имеет приоритет.
-- **Вебхук (продакшен)**: **`POST /api/max/webhook`** — см. **`src/api/routers/max_bot.py`**. Входящие события **`message_created`** и **`message_callback`** (payload кнопки) разбираются в **`parse_max_webhook_incoming`**; идентификатор чата **`chat_id`** становится **`session_id`** для памяти и мониторинга. Требуется публичный **HTTPS** (см. README про ngrok / домен).
-- **Long polling (локальная отладка, Docker без внешнего HTTPS)**: фоновая задача в **`lifespan`** вызывает **`MaxMessengerClient.start_polling`** — опрос **`GET https://platform-api.max.ru/updates`** с заголовком **`Authorization: <токен>`** (см. [документацию MAX](https://dev.max.ru/docs-api/methods/GET/updates)). Каждое обновление обрабатывается **так же**, как тело вебхука: **`ProcessTextMessageUseCase.execute`** → **`send_message`**. По правилам платформы **Webhook и long polling одновременно использовать нельзя** — для продакшена отключайте опрос и подписывайтесь на Webhook.
-- **Переменная `MAX_USE_POLLING` в `.env`**: по умолчанию **включена** (`true`); при **`false`** задача long polling **не создаётся** (типичный продакшен только с Webhook). В панели настроек ключ **`MAX_USE_POLLING`** в **`system_settings`** (миграция **`011`**) — чекбокс «Использовать Long Polling»: при **`0`** в БД цикл **не дергает** API (пауза без перезапуска контейнера). Чтобы не поднимать воркер вообще, задайте **`MAX_USE_POLLING=false`** в окружении.
+- **Вебхук (продакшен)**: **`POST /api/max/webhook`** — см. **`src/api/routers/max_bot.py`**. Входящие события **`message_created`** и **`message_callback`** (payload кнопки) разбираются в **`parse_max_webhook_incoming`** (в т.ч. признак группового чата); идентификатор чата **`chat_id`** становится **`session_id`** для памяти и мониторинга. Требуется публичный **HTTPS** (см. README про ngrok / домен).
+- **Long polling (локальная отладка, Docker без внешнего HTTPS)**: фоновая задача в **`lifespan`** всегда создаётся и вызывает **`MaxMessengerClient.start_polling`**; реальный опрос **`GET https://platform-api.max.ru/updates`** выполняется только если в панели включён **`MAX_USE_POLLING`** в **`system_settings`** (миграция **`011`**). Каждое обновление обрабатывается **так же**, как тело вебхука: **`ProcessTextMessageUseCase.execute`** → **`send_message`**. По правилам платформы **Webhook и long polling одновременно использовать нельзя** — для продакшена выключите опрос в панели и подписывайтесь на Webhook.
+- **Переменная `MAX_USE_POLLING` в `.env`**: больше **не отключает** создание воркера (избегаем ситуации «в панели опрос включён, а процесс не поднят»). Источник истины — чекбокс в настройках / **`system_settings`**. Значение в **`.env`** оставлено в **`Settings`** для совместимости и не влияет на запуск задачи.
 - **Исходящие сообщения**: **`MaxMessengerClient.send_message`** — **`POST https://platform-api.max.ru/messages?chat_id=…`** с **`Authorization: <токен>`** и телом **`{"text": "…"}`** (как в [документации MAX](https://dev.max.ru/docs-api/methods/POST/messages)). База задаётся **`MAX_PLATFORM_API_BASE`** (по умолчанию **`https://platform-api.max.ru`**). Переменная **`MAX_API_BASE`** в **`.env`** сохранена для совместимости, на отправку не влияет.
 
 Пример для администратора (команды в комментариях на русском; уточните URL и формат тела в [документации MAX](https://dev.max.ru/)):
@@ -76,6 +76,16 @@
 #   -H "Content-Type: application/json" \
 #   -d '{"url":"https://example.com/api/max/webhook"}'
 ```
+
+### Групповые чаты (фаза 17)
+
+- **Цель**: бот может состоять в **группах** MAX (например чат отдела продаж), но **не реагирует** на обычные реплики — только если в тексте есть настраиваемая подстрока упоминания (**`MAX_BOT_USERNAME`**, по умолчанию вид **`@id…_bot`**). В **личных** чатах правило упоминания **не действует** (как раньше).
+- **Где решается**: **`apply_max_group_mention_rules`** и **`detect_max_group_chat`** — **`src/infrastructure/services/max_incoming_group.py`**. Вызываются из **`POST /api/max/webhook`** (**`max_bot.py`**) и из **long polling** (**`MaxMessengerClient.start_polling`**). Если группа без упоминания — ответ **`{"ok": true, "skipped": true}`**, сценарий и **запись в `chat_messages` / Redis** **не выполняются**.
+- **Текст для LLM и памяти**: упоминание **удаляется** из строки до вызова **`ProcessTextMessageUseCase.execute`**; в историю попадает уже **очищенный** вопрос.
+- **Дополнительный системный контекст**: при совпадении **`session_id`** с **`MAX_GROUP_CHAT_ID`** (строка с числовым **`chat_id`** группы из панели «Боты») к базовому промпту консультанта и блоку CRM добавляется **`MAX_GROUP_ADDITIONAL_PROMPT`**; затем — при включённом флаге мессенджера — **`TEXT_BOT_SYSTEM_SUPPLEMENT`**. Реализация: **`ProcessTextMessageUseCase._maybe_append_max_group_prompt`** (**`src/use_cases/chat.py`**).
+- **Миграция сидов**: **`014_max_group_chat`** вставляет ключи **`MAX_BOT_USERNAME`**, **`MAX_GROUP_CHAT_ID`**, **`MAX_GROUP_ADDITIONAL_PROMPT`** в **`system_settings`**.
+
+> **TODO (рус., архитектура):** сейчас заданы **один** идентификатор группы (**`MAX_GROUP_CHAT_ID`**) и **одно** дополнение к промпту; имя бота для проверки упоминания **общее** для всех групп. Дальнейшее развитие — отдельная сущность/таблица **`GroupChatConfig`** (несколько групп, разные промпты и при необходимости разные шаблоны `@username`).
 
 ---
 
@@ -90,30 +100,7 @@
 
 ---
 
-## Отладка MAX и Docker (фаза 16)
-
-### Инструменты на панели «Боты»
-
-- Включите **«Режим отладки»** на **`bots.html`**: откроются три панели (сетка на широком экране, колонка на узком).
-- **Панель A** — контейнер **`#bots-max-widget-root`**: сюда вручную вставляется официальный JS-сниппет виджета MAX (см. комментарий `# TODO` в HTML и [документацию MAX](https://dev.max.ru/)).
-- **Панель B — симулятор вебхука**: отправляет **`POST /api/max/webhook`** с JSON в том же формате, что ожидает **`parse_max_webhook_incoming`** (событие **`message_created`** и т.д.). Ответ бэкенда и код HTTP отображаются под кнопкой. Логика обработки **та же**, что у реального MAX.
-- **Панель C — логи сервера**: WebSocket **`WS /api/ws/logs`**; в поток попадают записи **`logging`** из модулей **`src.use_cases.chat`**, **`src.api.routers.max_bot`**, **`src.infrastructure.services.dynamic_llm`** (в т.ч. путь **OpenAILLMService**). Исключения уходят в поток **с полным traceback** (форматирование в **`WebSocketLogHandler`**, **`src/core/logger.py`**).
-
-### Бэкенд
-
-- Роут WebSocket: **`src/api/routers/notifications.py`** — эндпоинт **`/ws/logs`** (итоговый путь **`/api/ws/logs`**).
-- Широковещатель: **`src/infrastructure/monitoring/log_ws_broadcaster.py`**.
-- Подключение обработчика: **`attach_ws_log_handlers`** из **`src/core/logger.py`** вызывается из **`setup_logging`** (**`src/core/logging.py`**).
-- CORS для симулятора: глобально **`allow_origins=["*"]`** в **`src/api/main.py`** — запросы с фронта на **`/api/max/webhook`** разрешены.
-
-### Скрипты фронтенда
-
-- **`frontend/static/js/debug_app.js`** — симулятор и клиент логов (цвета уровней: ERROR — красный, INFO — светлый текст, DEBUG — серый).
-- **`frontend/static/js/bots_app.js`** — без изменений логики мониторинга; подключается вместе с **`debug_app.js`** на **`bots.html`**.
-
----
-
-> **ВНИМАНИЕ (Docker на локальном ПК, рус.):** серверы **MAX не могут вызвать** вебхук по адресу вида `http://localhost:8080` внутри вашей машины. Чтобы реальные события доходили до контейнера, нужен **публичный HTTPS-URL**. Практичный вариант — туннель, например **[ngrok](https://ngrok.com/)**: после `ngrok http 8080` (если снаружи открыт порт **8080** с **Nginx** из **`docker-compose`**) скопируйте выданный **`https://....ngrok-free.app`** и укажите в настройках бота MAX вебхук **`https://....ngrok-free.app/api/max/webhook`**. Без туннеля или без реального домена с доверенным сертификатом входящие вебхуки **не появятся** в логах — используйте **симулятор** на панели «Боты» для проверки пайплайна локально.
+> **ВНИМАНИЕ (Docker на локальном ПК, рус.):** серверы **MAX не могут вызвать** вебхук по адресу вида `http://localhost:8080` внутри вашей машины. Чтобы реальные события доходили до контейнера, нужен **публичный HTTPS-URL**. Практичный вариант — туннель, например **[ngrok](https://ngrok.com/)**: после `ngrok http 8080` (если снаружи открыт порт **8080** с **Nginx** из **`docker-compose`**) скопируйте выданный **`https://....ngrok-free.app`** и укажите в настройках бота MAX вебхук **`https://....ngrok-free.app/api/max/webhook`**. Для локальной проверки обработчика без MAX можно вызвать **`POST /api/max/webhook`** вручную (**`curl`**, Postman и т.п.) с телом в формате **`parse_max_webhook_incoming`**.
 
 ---
 

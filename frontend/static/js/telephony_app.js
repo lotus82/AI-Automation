@@ -8,26 +8,21 @@
   var API_UPLOAD = "/api/dialer/queue/upload";
   var API_START = "/api/dialer/campaign/start";
 
-  function setNavActive() {
-    var path = window.location.pathname.replace(/\/$/, "") || "/";
-    document.querySelectorAll(".nav__link[data-nav]").forEach(function (a) {
-      var key = a.getAttribute("data-nav");
-      var active =
-        (key === "telephony" && path.indexOf("telephony") !== -1) ||
-        (key === "scenarios" && path.indexOf("scenarios") !== -1) ||
-        (key === "tester" && path.indexOf("tester") !== -1) ||
-        (key === "settings" && path.indexOf("settings") !== -1) ||
-        (key === "knowledge" && path.indexOf("knowledge") !== -1) ||
-        (key === "home" && (path === "/" || path.endsWith("/index.html")));
-      a.classList.toggle("nav__link--active", active);
-    });
-  }
-
   function initUpload() {
     var form = document.getElementById("upload-form");
     var msg = document.getElementById("upload-msg");
     var input = document.getElementById("phones-file");
+    var nameEl = document.getElementById("phones-file-name");
     if (!form || !input) return;
+
+    function syncName() {
+      if (!nameEl) return;
+      var f = input.files && input.files[0];
+      nameEl.textContent = f ? f.name : "Файл не выбран";
+    }
+    input.addEventListener("change", syncName);
+    syncName();
+
     form.addEventListener("submit", function (ev) {
       ev.preventDefault();
       if (!input.files || !input.files[0]) return;
@@ -47,6 +42,8 @@
         })
         .then(function (data) {
           if (msg) msg.textContent = "Добавлено номеров: " + (data.inserted != null ? data.inserted : "?");
+          input.value = "";
+          syncName();
         })
         .catch(function (e) {
           if (msg) msg.textContent = "Ошибка: " + (e.message || e);
@@ -75,7 +72,6 @@
   }
 
   function init() {
-    setNavActive();
     initUpload();
     initCampaign();
   }

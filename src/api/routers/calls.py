@@ -111,3 +111,34 @@ async def delete_call_recording(
                 ) from None
     await call_repo.update_audio_filename(call_id, None)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/calls/{call_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    summary="Удалить запись диалога/звонка целиком",
+)
+async def delete_call(
+    call_id: UUID,
+    call_repo: CallRecordRepositoryDep,
+    settings: SettingsDep,
+) -> Response:
+    record = await call_repo.get_by_id(call_id)
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запись не найдена")
+    base = settings.call_recordings_dir
+    if base and record.audio_filename:
+        path = resolved_recording_file(Path(base), record.audio_filename)
+        if path is not None and path.is_file():
+            try:
+                path.unlink()
+            except OSError:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Не удалось удалить файл записи",
+                ) from None
+    ok = await call_repo.delete_by_id(call_id)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запись не найдена")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

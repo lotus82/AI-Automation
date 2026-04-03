@@ -61,7 +61,7 @@ class Settings(BaseSettings):
         validation_alias="TELEGRAM_BOT_TOKEN",
     )
 
-    # MAX Messenger: фоновый long polling (GET /updates на platform-api); в продакшене обычно false + Webhook
+    # Устарело для запуска воркера: задача long poll всегда создаётся в lifespan; вкл/выкл — MAX_USE_POLLING в БД.
     max_use_polling: bool = Field(default=True, validation_alias="MAX_USE_POLLING")
     max_platform_api_base: str = Field(
         default="https://platform-api.max.ru",

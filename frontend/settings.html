@@ -7,40 +7,41 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <link rel="stylesheet" href="/static/css/dashboard.css" />
 </head>
 <body>
   <div class="dashboard">
     <aside class="dashboard__sidebar">
-      <div class="dashboard__brand">Sales AI — панель</div>
+      <div class="dashboard__brand">AI Assistant</div>
       <nav>
         <ul class="nav">
           <li class="nav__item">
-            <a class="nav__link" href="/" data-nav="home">Главная</a>
+            <a class="nav__link" href="/" data-nav="home"><i class="fa-solid fa-house nav__icon" aria-hidden="true"></i><span>Главная</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/settings.html" data-nav="settings">Настройки</a>
+            <a class="nav__link" href="/settings.html" data-nav="settings"><i class="fa-solid fa-sliders nav__icon" aria-hidden="true"></i><span>Настройки</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/knowledge.html" data-nav="knowledge">База знаний</a>
+            <a class="nav__link" href="/knowledge.html" data-nav="knowledge"><i class="fa-solid fa-book nav__icon" aria-hidden="true"></i><span>База знаний</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/telephony.html" data-nav="telephony">Телефония</a>
+            <a class="nav__link" href="/telephony.html" data-nav="telephony"><i class="fa-solid fa-phone nav__icon" aria-hidden="true"></i><span>Телефония</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/scenarios.html" data-nav="scenarios">Сценарии тренажёра</a>
+            <a class="nav__link" href="/scenarios.html" data-nav="scenarios"><i class="fa-solid fa-clipboard-list nav__icon" aria-hidden="true"></i><span>Сценарии тренажёра</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/tester.html" data-nav="tester">Тест ИИ-агента</a>
+            <a class="nav__link" href="/tester.html" data-nav="tester"><i class="fa-solid fa-microphone-lines nav__icon" aria-hidden="true"></i><span>Тест ИИ-агента</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/bots.html" data-nav="bots">Боты</a>
+            <a class="nav__link" href="/bots.html" data-nav="bots"><i class="fa-solid fa-robot nav__icon" aria-hidden="true"></i><span>Боты</span></a>
           </li>
         </ul>
       </nav>
     </aside>
     <main class="dashboard__main">
-      <h1 class="dashboard__title">Настройки системы</h1>
+      <h1 class="dashboard__title"><i class="fa-solid fa-sliders" aria-hidden="true"></i>Настройки системы</h1>
       <p class="dashboard__lead">
         Параметры LLM, API-ключи и системные промпты хранятся в базе данных и кэшируются в Redis.
         По умолчанию используется <strong>DeepSeek</strong> (совместимый с OpenAI SDK, <code>base_url=https://api.deepseek.com</code>).
@@ -51,7 +52,11 @@
 
       <div id="settings-status" class="dashboard__lead dashboard__status-slot" aria-live="polite"></div>
 
-      <form id="settings-form" class="voice-tester panel" style="max-width:48rem;">
+      <form id="settings-form" class="voice-tester settings-form-wrap" style="max-width:48rem;">
+        <section class="settings-section panel" aria-labelledby="settings-keys-title">
+          <h2 id="settings-keys-title" class="settings-section__title dashboard__subtitle">
+            <i class="fa-solid fa-key" aria-hidden="true"></i> Ключи API
+          </h2>
         <div class="voice-tester__field">
           <label class="voice-tester__label" for="llm-provider">Провайдер LLM</label>
           <select id="llm-provider" class="voice-tester__input" name="LLM_PROVIDER">
@@ -106,6 +111,32 @@
           <input class="voice-tester__input" type="number" id="max-context-limit" min="1" max="200" step="1" value="10" />
         </div>
 
+        <div class="voice-tester__field">
+          <label class="voice-tester__label" for="max-bot-username">Упоминание бота в группе MAX (MAX_BOT_USERNAME)</label>
+          <p class="dashboard__lead dashboard__lead--small" style="margin-top:0;">
+            Подстрока в тексте (например <code>@id…_bot</code>). В <strong>групповых</strong> чатах бот обрабатывает сообщение только при наличии этого упоминания; в личных диалогах правило не применяется.
+          </p>
+          <input class="voice-tester__input" type="text" id="max-bot-username" autocomplete="off"
+                 placeholder="@id6451417302_bot" />
+        </div>
+
+        <div class="voice-tester__field">
+          <label class="voice-tester__label" for="max-group-chat-id">ID группы для доп. промпта (MAX_GROUP_CHAT_ID)</label>
+          <p class="dashboard__lead dashboard__lead--small" style="margin-top:0;">
+            Числовой <code>chat_id</code> группы MAX (как в панели «Боты»). Если <code>session_id</code> совпадает с этим значением, к базовому промпту консультанта добавляется текст ниже. Оставьте пустым, если не нужно.
+          </p>
+          <input class="voice-tester__input" type="text" id="max-group-chat-id" autocomplete="off"
+                 placeholder="Например -1001234567890" />
+        </div>
+
+        <div class="voice-tester__field">
+          <label class="voice-tester__label" for="max-group-prompt">Дополнительный промпт для группы (MAX_GROUP_ADDITIONAL_PROMPT)</label>
+          <p class="dashboard__lead dashboard__lead--small" style="margin-top:0;">
+            Вставляется в системное сообщение после основного промпта консультанта и инструкций по CRM, до дополнения для текстовых ботов.
+          </p>
+          <textarea id="max-group-prompt" class="voice-tester__input" rows="3" style="resize:vertical;"></textarea>
+        </div>
+
         <h2 class="dashboard__subtitle">Голос: SaluteSpeech (Сбер)</h2>
         <p class="dashboard__lead dashboard__lead--tight" style="font-size:0.9rem;">
           При <code>VOICE_STT_PROVIDER=salutespeech</code> и/или <code>VOICE_TTS_PROVIDER=salutespeech</code> в <code>.env</code>
@@ -130,7 +161,12 @@
           <input class="voice-tester__input" type="text" id="salutespeech-voice" autocomplete="off"
                  placeholder="Ost_24000" />
         </div>
+        </section>
 
+        <section class="settings-section panel" aria-labelledby="settings-prompts-title">
+          <h2 id="settings-prompts-title" class="settings-section__title dashboard__subtitle">
+            <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Промпты
+          </h2>
         <div class="voice-tester__field">
           <label class="voice-tester__label" for="consultant-prompt">Промпт консультанта (DEFAULT_CONSULTANT_PROMPT)</label>
           <textarea id="consultant-prompt" class="voice-tester__input" rows="6" style="resize:vertical;"></textarea>
@@ -151,9 +187,10 @@
           <label class="voice-tester__label" for="analyst-prompt">Промпт ОКК (ANALYST_QA_PROMPT)</label>
           <textarea id="analyst-prompt" class="voice-tester__input" rows="8" style="resize:vertical;"></textarea>
         </div>
+        </section>
 
-        <div class="voice-tester__actions">
-          <button type="submit" class="voice-tester__btn" id="btn-save">Сохранить</button>
+        <div class="voice-tester__actions" style="margin-top:1rem;">
+          <button type="submit" class="voice-tester__btn" id="btn-save"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Сохранить</button>
         </div>
       </form>
     </main>

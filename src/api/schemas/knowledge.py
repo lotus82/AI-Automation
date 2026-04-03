@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 class KnowledgeItemResponse(BaseModel):
     id: UUID
     title: str
+    description: str | None = Field(default=None, description="Краткое описание фрагмента (задаётся при загрузке)")
     content_preview: str = Field(description="Короткий фрагмент текста для списка")
     has_embedding: bool
     created_at: datetime | None = None

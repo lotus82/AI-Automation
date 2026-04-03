@@ -7,68 +7,82 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <link rel="stylesheet" href="/static/css/dashboard.css" />
 </head>
 <body>
   <div class="dashboard">
     <aside class="dashboard__sidebar">
-      <div class="dashboard__brand">Sales AI — панель</div>
+      <div class="dashboard__brand">AI Assistant</div>
       <nav>
         <ul class="nav">
           <li class="nav__item">
-            <a class="nav__link" href="/" data-nav="home">Главная</a>
+            <a class="nav__link" href="/" data-nav="home"><i class="fa-solid fa-house nav__icon" aria-hidden="true"></i><span>Главная</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/settings.html" data-nav="settings">Настройки</a>
+            <a class="nav__link" href="/settings.html" data-nav="settings"><i class="fa-solid fa-sliders nav__icon" aria-hidden="true"></i><span>Настройки</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/knowledge.html" data-nav="knowledge">База знаний</a>
+            <a class="nav__link" href="/knowledge.html" data-nav="knowledge"><i class="fa-solid fa-book nav__icon" aria-hidden="true"></i><span>База знаний</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/telephony.html" data-nav="telephony">Телефония</a>
+            <a class="nav__link" href="/telephony.html" data-nav="telephony"><i class="fa-solid fa-phone nav__icon" aria-hidden="true"></i><span>Телефония</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/scenarios.html" data-nav="scenarios">Сценарии тренажёра</a>
+            <a class="nav__link" href="/scenarios.html" data-nav="scenarios"><i class="fa-solid fa-clipboard-list nav__icon" aria-hidden="true"></i><span>Сценарии тренажёра</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/tester.html" data-nav="tester">Тест ИИ-агента</a>
+            <a class="nav__link" href="/tester.html" data-nav="tester"><i class="fa-solid fa-microphone-lines nav__icon" aria-hidden="true"></i><span>Тест ИИ-агента</span></a>
           </li>
           <li class="nav__item">
-            <a class="nav__link" href="/bots.html" data-nav="bots">Боты</a>
+            <a class="nav__link" href="/bots.html" data-nav="bots"><i class="fa-solid fa-robot nav__icon" aria-hidden="true"></i><span>Боты</span></a>
           </li>
         </ul>
       </nav>
     </aside>
     <main class="dashboard__main">
-      <h1 class="dashboard__title">База знаний</h1>
+      <h1 class="dashboard__title"><i class="fa-solid fa-book" aria-hidden="true"></i>База знаний</h1>
       <p class="dashboard__lead">
         Загрузите прайс-листы (<strong>.xlsx</strong>) и текстовые документы (<strong>.txt</strong>). Фрагменты индексируются для ответов бота (RAG).
         Для векторного поиска нужен ключ <strong>OpenAI</strong> в настройках или в <code>OPENAI_API_KEY</code>.
       </p>
 
       <section class="panel knowledge-upload">
-        <h2 class="dashboard__subtitle">Загрузка файлов</h2>
+        <h2 class="dashboard__subtitle"><i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i> Загрузка файлов</h2>
         <form id="knowledge-upload-form" class="knowledge-upload__form">
           <div class="knowledge-upload__field">
-            <label class="voice-tester__label" for="knowledge-files">Файлы (.txt, .xlsx)</label>
-            <input
-              class="voice-tester__input"
-              type="file"
-              id="knowledge-files"
-              name="files"
-              accept=".txt,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
-              multiple
-              required
-            />
+            <span class="voice-tester__label">Файлы (.txt, .xlsx)</span>
+            <div class="file-input__wrap">
+              <input
+                class="file-input__native"
+                type="file"
+                id="knowledge-files"
+                name="files"
+                accept=".txt,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
+                multiple
+                required
+              />
+              <label for="knowledge-files" class="btn btn--secondary btn--lg file-input__btn">
+                <i class="fa-solid fa-folder-open" aria-hidden="true"></i> Выбрать файлы
+              </label>
+              <span id="knowledge-file-names" class="file-input__names">Файлы не выбраны</span>
+            </div>
+          </div>
+          <div class="voice-tester__field knowledge-desc-field">
+            <label class="voice-tester__label" for="knowledge-description">Описание (для всех фрагментов из этой загрузки)</label>
+            <textarea id="knowledge-description" class="voice-tester__input" rows="2" style="resize:vertical;"
+                      placeholder="Кратко: откуда документ, для каких вопросов использовать (попадёт в контекст RAG вместе с текстом)"></textarea>
           </div>
           <div class="voice-tester__row">
-            <button type="submit" class="btn btn--primary btn--lg" id="btn-knowledge-upload">Загрузить в базу</button>
+            <button type="submit" class="btn btn--primary btn--lg" id="btn-knowledge-upload">
+              <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i> Загрузить в базу
+            </button>
           </div>
         </form>
         <p id="knowledge-upload-msg" class="knowledge-upload__msg" aria-live="polite"></p>
       </section>
 
-      <h2 class="dashboard__subtitle">Загруженные фрагменты</h2>
+      <h2 class="dashboard__subtitle"><i class="fa-solid fa-list" aria-hidden="true"></i> Загруженные фрагменты</h2>
       <div class="panel knowledge-list-wrap">
         <div id="knowledge-list" class="knowledge-list">Загрузка…</div>
       </div>

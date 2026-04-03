@@ -80,6 +80,16 @@ class ProcessTextMessageUseCase:
         self._settings_repo = settings_repository
         self._monitor = chat_monitoring
 
+    async def _maybe_append_max_group_prompt(self, session_id: str, system_text: str) -> str:
+        """Если ``session_id`` совпадает с **MAX_GROUP_CHAT_ID**, добавляет **MAX_GROUP_ADDITIONAL_PROMPT**."""
+        configured = (await self._settings_repo.get_value(sk.MAX_GROUP_CHAT_ID) or "").strip()
+        if not configured or session_id.strip() != configured:
+            return system_text
+        extra = (await self._settings_repo.get_value(sk.MAX_GROUP_ADDITIONAL_PROMPT) or "").strip()
+        if not extra:
+            return system_text
+        return f"{system_text}\n\n---\n\n{extra}"
+
     async def _context_message_limit(self) -> int:
         raw = (await self._settings_repo.get_value(sk.MAX_CONTEXT_LIMIT) or "").strip()
         if not raw:
@@ -136,7 +146,13 @@ class ProcessTextMessageUseCase:
         else:
             embedding = await self._embeddings.generate_embedding(user_text)
             items = await self._knowledge.search_similar(embedding, limit=3)
-            context_chunks = [f"{item.title}\n{item.content}" for item in items]
+            context_chunks = []
+            for item in items:
+                parts = [item.title]
+                if (item.description or "").strip():
+                    parts.append(item.description.strip())
+                parts.append(item.content)
+                context_chunks.append("\n".join(parts))
             user_content = self._build_user_content(user_text, context_chunks)
 
         if (system_prompt_override or "").strip():
@@ -147,6 +163,8 @@ class ProcessTextMessageUseCase:
             db_prompt = (await self._settings_repo.get_value(sk.DEFAULT_CONSULTANT_PROMPT) or "").strip()
             consultant_base = db_prompt or FALLBACK_DEFAULT_CONSULTANT_PROMPT
             system_text = consultant_base + (SALES_TOOLS_INSTRUCTION_RU if use_crm_tools else "")
+
+        system_text = await self._maybe_append_max_group_prompt(session_id, system_text)
 
         if append_text_messenger_system_supplement:
             supplement = (await self._settings_repo.get_value(sk.TEXT_BOT_SYSTEM_SUPPLEMENT) or "").strip()

@@ -174,7 +174,7 @@ class CallAnalyticsModel(Base):
 class SystemSettingModel(Base):
     """Динамические настройки (LLM, промпты, ключи API) — правка из панели.
 
-    Известные ключи см. ``src.domain.system_setting_keys`` (в т.ч. **MAX_BOT_TOKEN**, **MAX_CONTEXT_LIMIT**, **TEXT_BOT_SYSTEM_SUPPLEMENT**).
+    Известные ключи см. ``src.domain.system_setting_keys`` (в т.ч. **MAX_BOT_TOKEN**, **MAX_BOT_USERNAME**, **MAX_GROUP_CHAT_ID**, **MAX_GROUP_ADDITIONAL_PROMPT**, **MAX_CONTEXT_LIMIT**, **TEXT_BOT_SYSTEM_SUPPLEMENT**).
     """
 
     __tablename__ = "system_settings"
@@ -221,6 +221,7 @@ class KnowledgeItemModel(Base):
     )
     title: Mapped[str] = mapped_column(String(512))
     content: Mapped[str] = mapped_column(Text())
+    description: Mapped[str | None] = mapped_column(Text(), nullable=True)
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(KNOWLEDGE_EMBEDDING_DIM),
         nullable=True,
