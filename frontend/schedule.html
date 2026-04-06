@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Расписание — Sales AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="/static/css/dashboard.css" />
+</head>
+<body>
+  <div class="dashboard">
+    <aside class="dashboard__sidebar">
+      <div class="dashboard__brand">AI Assistant</div>
+      <nav>
+        <ul class="nav">
+          <li class="nav__item">
+            <a class="nav__link" href="/" data-nav="home"><i class="fa-solid fa-house nav__icon" aria-hidden="true"></i><span>Главная</span></a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/settings.html" data-nav="settings"><i class="fa-solid fa-sliders nav__icon" aria-hidden="true"></i><span>Настройки</span></a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/knowledge.html" data-nav="knowledge"><i class="fa-solid fa-book nav__icon" aria-hidden="true"></i><span>База знаний</span></a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/telephony.html" data-nav="telephony"><i class="fa-solid fa-phone nav__icon" aria-hidden="true"></i><span>Телефония</span></a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/scenarios.html" data-nav="scenarios"><i class="fa-solid fa-clipboard-list nav__icon" aria-hidden="true"></i><span>Сценарии тренажёра</span></a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/tester.html" data-nav="tester"><i class="fa-solid fa-microphone-lines nav__icon" aria-hidden="true"></i><span>Тест ИИ-агента</span></a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/bots.html" data-nav="bots"><i class="fa-solid fa-robot nav__icon" aria-hidden="true"></i><span>Боты</span></a>
+          </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/schedule.html" data-nav="schedule"><i class="fa-solid fa-calendar-days nav__icon" aria-hidden="true"></i><span>Расписание</span></a>
+          </li>
+        </ul>
+      </nav>
+    </aside>
+    <main class="dashboard__main">
+      <h1 class="dashboard__title"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i> Расписание</h1>
+      <p class="dashboard__lead">
+        Проактивные сообщения в чат <strong>MAX</strong> по триггерам: события из базы (дни рождения и т.п.), интервал, напоминание до события.
+        Выполнение — воркер <strong>Celery Beat</strong> раз в минуту. Для типов DATABASE и REMINDER загрузите события (CSV/JSON).
+        <strong>Время указывается по Саратову (Europe/Saratov, UTC+4)</strong>, если в ISO-строке нет явного смещения (+03:00, Z и т.д.).
+      </p>
+
+      <section class="panel knowledge-upload">
+        <h2 class="dashboard__subtitle"><i class="fa-solid fa-plus" aria-hidden="true"></i> Новое расписание</h2>
+        <form id="schedule-create-form" class="knowledge-upload__form">
+          <div class="voice-tester__field">
+            <label class="voice-tester__label" for="sch-chat-id">chat_id (MAX)</label>
+            <input type="text" id="sch-chat-id" class="voice-tester__input" required placeholder="Например 123456789" />
+          </div>
+          <div class="voice-tester__field">
+            <label class="voice-tester__label" for="sch-type">Тип триггера</label>
+            <select id="sch-type" class="voice-tester__input">
+              <option value="DATABASE">DATABASE — по дате события (календарь / ежегодно)</option>
+              <option value="INTERVAL">INTERVAL — повтор с интервалом</option>
+              <option value="REMINDER">REMINDER — напоминание до event_datetime</option>
+            </select>
+          </div>
+          <div class="voice-tester__field">
+            <label class="voice-tester__label"><input type="checkbox" id="sch-active" checked /> Активно</label>
+          </div>
+          <div id="sch-interval-block" class="voice-tester__row" style="display:none; flex-wrap:wrap; gap:0.75rem;">
+            <p class="dashboard__lead dashboard__lead--tight" style="width:100%; margin:0 0 0.25rem 0;">
+              Интервал отсчитывается от реального времени; тик планировщика привязан к часовому поясу <strong>Саратов (UTC+4)</strong>.
+            </p>
+            <div class="voice-tester__field" style="flex:1; min-width:6rem;">
+              <label class="voice-tester__label" for="sch-days">Дни</label>
+              <input type="number" id="sch-days" class="voice-tester__input" min="0" value="0" />
+            </div>
+            <div class="voice-tester__field" style="flex:1; min-width:6rem;">
+              <label class="voice-tester__label" for="sch-hours">Часы</label>
+              <input type="number" id="sch-hours" class="voice-tester__input" min="0" value="0" />
+            </div>
+            <div class="voice-tester__field" style="flex:1; min-width:6rem;">
+              <label class="voice-tester__label" for="sch-minutes">Минуты</label>
+              <input type="number" id="sch-minutes" class="voice-tester__input" min="0" value="60" />
+            </div>
+          </div>
+          <div id="sch-reminder-block" class="voice-tester__field" style="display:none;">
+            <label class="voice-tester__label" for="sch-offset">За сколько минут до события напомнить</label>
+            <input type="number" id="sch-offset" class="voice-tester__input" min="0" value="60" />
+            <span class="dashboard__lead dashboard__lead--tight" style="display:block; margin-top:0.35rem;">
+              Момент события в файле — по <strong>Саратову (UTC+4)</strong>, если в дате нет часового пояса.
+            </span>
+          </div>
+          <p id="sch-db-hint" class="dashboard__lead dashboard__lead--tight" style="display:none;">
+            Для ежегодных дат в JSON события укажите <code>annual: true</code> (или <code>ezhegodno: true</code>).
+            Даты в CSV/JSON без смещения считаются <strong>саратовским временем</strong>.
+          </p>
+          <div class="voice-tester__field">
+            <label class="voice-tester__label" for="sch-prompt">Доп. инструкции для LLM</label>
+            <textarea id="sch-prompt" class="voice-tester__input" rows="3" style="resize:vertical;"
+              placeholder="Как сформулировать сообщение, тон, ограничения"></textarea>
+          </div>
+          <div class="voice-tester__field">
+            <label class="voice-tester__label" for="sch-content">Шаблон / описание события</label>
+            <textarea id="sch-content" class="voice-tester__input" rows="3" style="resize:vertical;"
+              placeholder="Базовый текст задачи для модели (контекст рассылки)"></textarea>
+          </div>
+          <div class="voice-tester__row">
+            <button type="submit" class="btn btn--primary btn--lg" id="sch-btn-create">
+              <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Создать
+            </button>
+          </div>
+        </form>
+        <p id="sch-form-msg" class="knowledge-upload__msg" aria-live="polite"></p>
+      </section>
+
+      <h2 class="dashboard__subtitle"><i class="fa-solid fa-list" aria-hidden="true"></i> Существующие расписания</h2>
+      <div class="panel calls-table-wrap">
+        <table class="calls-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>chat_id</th>
+              <th>Тип</th>
+              <th>Активно</th>
+              <th>Последний запуск</th>
+              <th>Запуск / пауза</th>
+              <th>Редактировать</th>
+              <th>Данные / удалить</th>
+            </tr>
+          </thead>
+          <tbody id="sch-tbody">
+            <tr><td colspan="8" class="calls-table__empty">Загрузка…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <input type="file" id="sch-upload-input" accept=".csv,.json,application/json,text/csv" style="display:none" />
+
+      <div id="sch-modal-backdrop" class="bots-modal-backdrop" hidden></div>
+      <div id="sch-edit-modal" class="bots-modal panel" hidden role="dialog" aria-modal="true" aria-labelledby="sch-edit-title">
+        <div class="bots-modal__head">
+          <div class="bots-modal__title-block">
+            <h2 id="sch-edit-title" class="dashboard__subtitle bots-modal__title-h2"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Редактировать расписание</h2>
+          </div>
+          <button type="button" class="bots-modal__close" id="sch-edit-close" aria-label="Закрыть">×</button>
+        </div>
+        <form id="sch-edit-form" class="knowledge-upload__form" style="max-height:70vh; overflow:auto;">
+          <input type="hidden" id="sch-edit-id" />
+          <div class="voice-tester__field">
+            <label class="voice-tester__label" for="sch-edit-chat-id">chat_id (MAX)</label>
+            <input type="text" id="sch-edit-chat-id" class="voice-tester__input" required />
+          </div>
+          <div class="voice-tester__field">
+            <label class="voice-tester__label" for="sch-edit-type">Тип триггера</label>
+            <select id="sch-edit-type" class="voice-tester__input">
+              <option value="DATABASE">DATABASE — по дате события</option>
+              <option value="INTERVAL">INTERVAL — повтор с интервалом</option>
+              <option value="REMINDER">REMINDER — напоминание</option>
+            </select>
+          </div>
+          <div class="voice-tester__field">
+            <label class="voice-tester__label"><input type="checkbox" id="sch-edit-active" /> Активно</label>
+          </div>
+          <div id="sch-edit-interval-block" class="voice-tester__row" style="display:none; flex-wrap:wrap; gap:0.75rem;">
+            <div class="voice-tester__field" style="flex:1; min-width:6rem;">
+              <label class="voice-tester__label" for="sch-edit-days">Дни</label>
+              <input type="number" id="sch-edit-days" class="voice-tester__input" min="0" value="0" />
+            </div>
+            <div class="voice-tester__field" style="flex:1; min-width:6rem;">
+              <label class="voice-tester__label" for="sch-edit-hours">Часы</label>
+              <input type="number" id="sch-edit-hours" class="voice-tester__input" min="0" value="0" />
+            </div>
+            <div class="voice-tester__field" style="flex:1; min-width:6rem;">
+              <label class="voice-tester__label" for="sch-edit-minutes">Минуты</label>
+              <input type="number" id="sch-edit-minutes" class="voice-tester__input" min="0" value="0" />
+            </div>
+          </div>
+          <div id="sch-edit-reminder-block" class="voice-tester__field" style="display:none;">
+            <label class="voice-tester__label" for="sch-edit-offset">За сколько минут до события напомнить</label>
+            <input type="number" id="sch-edit-offset" class="voice-tester__input" min="0" value="0" />
+          </div>
+          <p id="sch-edit-db-hint" class="dashboard__lead dashboard__lead--tight" style="display:none;">
+            Для ежегодных дат в событиях: <code>annual: true</code>. Время — по Саратову, если без смещения в ISO.
+          </p>
+          <div class="voice-tester__field">
+            <label class="voice-tester__label" for="sch-edit-prompt">Доп. инструкции для LLM</label>
+            <textarea id="sch-edit-prompt" class="voice-tester__input" rows="3" style="resize:vertical;"></textarea>
+          </div>
+          <div class="voice-tester__field">
+            <label class="voice-tester__label" for="sch-edit-content">Шаблон / описание</label>
+            <textarea id="sch-edit-content" class="voice-tester__input" rows="3" style="resize:vertical;"></textarea>
+          </div>
+          <p id="sch-edit-msg" class="knowledge-upload__msg" aria-live="polite"></p>
+          <div class="voice-tester__row" style="gap:0.5rem;">
+            <button type="submit" class="btn btn--primary" id="sch-edit-save"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Сохранить</button>
+            <button type="button" class="btn btn--secondary" id="sch-edit-cancel">Отмена</button>
+          </div>
+        </form>
+      </div>
+    </main>
+  </div>
+  <script src="/static/js/voice_nav.js"></script>
+  <script src="/static/js/schedule_app.js"></script>
+</body>
+</html>
