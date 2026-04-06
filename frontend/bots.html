@@ -37,6 +37,9 @@
           <li class="nav__item">
             <a class="nav__link" href="/bots.html" data-nav="bots"><i class="fa-solid fa-robot nav__icon" aria-hidden="true"></i><span>Боты</span></a>
           </li>
+          <li class="nav__item">
+            <a class="nav__link" href="/schedule.html" data-nav="schedule"><i class="fa-solid fa-calendar-days nav__icon" aria-hidden="true"></i><span>Расписание</span></a>
+          </li>
         </ul>
       </nav>
     </aside>
@@ -49,7 +52,9 @@
 
       <div class="bots-tabs" role="tablist" aria-label="Канал бота">
         <button type="button" class="bots-tabs__btn bots-tabs__btn--active" role="tab" aria-selected="true" data-tab="max" id="bots-tab-btn-max">
-          <i class="fa-solid fa-message" aria-hidden="true"></i> MAX
+          <object type="image/svg+xml" data="static/img/Max_logo.svg" style="width: 1em; height: 1em;">
+            MAX
+          </object> MAX
         </button>
         <button type="button" class="bots-tabs__btn" role="tab" aria-selected="false" data-tab="telegram" id="bots-tab-btn-telegram">
           <i class="fa-brands fa-telegram" aria-hidden="true"></i> Telegram
@@ -101,10 +106,12 @@
       <div id="bots-history-backdrop" class="bots-modal-backdrop" hidden></div>
       <div id="bots-history-modal" class="bots-modal panel" hidden role="dialog" aria-modal="true" aria-labelledby="bots-history-title">
         <div class="bots-modal__head">
-          <h2 id="bots-history-title" class="dashboard__subtitle" style="margin:0;"><i class="fa-solid fa-comments" aria-hidden="true"></i> История диалога</h2>
+          <div class="bots-modal__title-block">
+            <h2 id="bots-history-title" class="dashboard__subtitle bots-modal__title-h2"><i class="fa-solid fa-comments" aria-hidden="true"></i> История диалога</h2>
+            <p id="bots-history-session" class="bots-history-session-line"></p>
+          </div>
           <button type="button" class="bots-modal__close" id="bots-history-close" aria-label="Закрыть">×</button>
         </div>
-        <p id="bots-history-session" class="dashboard__lead dashboard__lead--tight"></p>
         <div id="bots-history-body" class="bots-history-body"></div>
       </div>
     </main>

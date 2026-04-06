@@ -23,11 +23,23 @@ MAX_BOT_USERNAME = "MAX_BOT_USERNAME"
 # Совпадение session_id (str(chat_id)) — подмешивание MAX_GROUP_ADDITIONAL_PROMPT к системному промпту.
 MAX_GROUP_CHAT_ID = "MAX_GROUP_CHAT_ID"
 MAX_GROUP_ADDITIONAL_PROMPT = "MAX_GROUP_ADDITIONAL_PROMPT"
+# «1»/«true» — разрешить инструмент search_web в текстовом чате и голосе (консультант)
+ENABLE_WEB_SEARCH = "ENABLE_WEB_SEARCH"
+# Температура сэмплирования для чата консультанта и generate_response (расписание): строка с float 0.0–1.0
+LLM_TEMPERATURE = "LLM_TEMPERATURE"
+# «1»/«true» — после текстового ответа в MAX отправлять озвучку (SaluteSpeech → WAV → uploads → audio)
+MAX_VOICE_REPLY_ENABLED = "MAX_VOICE_REPLY_ENABLED"
+# Задержка «снятия трубки» для входящего VoIP-звонка MAX (секунды, целое число)
+MAX_CALL_ANSWER_DELAY = "MAX_CALL_ANSWER_DELAY"
+# Первая фраза голосового пайплайна после ответа на звонок (до первого запроса к LLM)
+MAX_CALL_GREETING_PHRASE = "MAX_CALL_GREETING_PHRASE"
 
 # Разрешённые к обновлению через API (безопасность)
 UPDATABLE_KEYS = frozenset(
     {
         LLM_PROVIDER,
+        LLM_TEMPERATURE,
+        MAX_VOICE_REPLY_ENABLED,
         DEEPSEEK_API_KEY,
         OPENAI_API_KEY,
         TELEGRAM_BOT_TOKEN,
@@ -43,6 +55,9 @@ UPDATABLE_KEYS = frozenset(
         MAX_BOT_USERNAME,
         MAX_GROUP_CHAT_ID,
         MAX_GROUP_ADDITIONAL_PROMPT,
+        ENABLE_WEB_SEARCH,
+        MAX_CALL_ANSWER_DELAY,
+        MAX_CALL_GREETING_PHRASE,
     }
 )
 

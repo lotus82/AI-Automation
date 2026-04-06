@@ -2,7 +2,7 @@
 FROM nginx:alpine
 
 COPY nginx.conf /etc/nginx/nginx.conf
-COPY index.html tester.html scenarios.html telephony.html settings.html knowledge.html bots.html /usr/share/nginx/html/
+COPY index.html tester.html scenarios.html telephony.html settings.html knowledge.html bots.html schedule.html /usr/share/nginx/html/
 COPY static /usr/share/nginx/html/static/
 
 EXPOSE 80

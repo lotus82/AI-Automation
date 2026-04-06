@@ -1,6 +1,8 @@
 """Управление конфигурацией через Pydantic Settings."""
 
+from datetime import datetime
 from functools import lru_cache
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,6 +20,12 @@ class Settings(BaseSettings):
     # Окружение и режим отладки
     app_env: str = Field(default="development", validation_alias="APP_ENV")
     app_debug: bool = Field(default=False, validation_alias="APP_DEBUG")
+    # Часовой пояс пользователей и групповых чатов (IANA), например Саратов UTC+4
+    app_timezone: str = Field(
+        default="Europe/Saratov",
+        validation_alias="APP_TIMEZONE",
+        description="IANA TZ для бизнес-логики, Celery Beat и подсказок LLM о текущем времени.",
+    )
 
     # Инфраструктура
     postgres_uri: str = Field(
@@ -135,7 +143,7 @@ class Settings(BaseSettings):
     salutespeech_rest_base_url: str = Field(
         default="https://smartspeech.sber.ru/rest/v1/",
         validation_alias="SALUTESPEECH_REST_BASE_URL",
-        description="Не используется для STT/TTS; оставлено для совместимости .env.",
+        description="База REST SaluteSpeech: **text:synthesize** (Opus для MAX); STT/TTS в звонке — gRPC.",
     )
     salutespeech_grpc_target: str = Field(
         default="smartspeech.sber.ru:443",
@@ -235,6 +243,32 @@ class Settings(BaseSettings):
             raise ValueError("ASTERISK_RTP_PORT_MAX должен быть >= ASTERISK_RTP_PORT_MIN")
         return self
 
+    @field_validator("app_timezone", mode="before")
+    @classmethod
+    def _normalize_app_timezone(cls, value: object) -> str:
+        """Пустая строка из .env — дефолт Europe/Saratov."""
+        if value is None or value == "":
+            return "Europe/Saratov"
+        if not isinstance(value, str):
+            return "Europe/Saratov"
+        s = value.strip()
+        return s or "Europe/Saratov"
+
+    @field_validator("app_timezone", mode="after")
+    @classmethod
+    def _validate_app_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as e:
+            msg = f"Неизвестный часовой пояс APP_TIMEZONE: {value}"
+            raise ValueError(msg) from e
+        return value
+
+    @property
+    def app_zoneinfo(self) -> ZoneInfo:
+        """ZoneInfo для ``app_timezone`` (без кэша — строка уже провалидирована)."""
+        return ZoneInfo(self.app_timezone)
+
     @field_validator("openai_api_key", mode="before")
     @classmethod
     def _normalize_openai_api_key(cls, value: object) -> object:
@@ -314,3 +348,14 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Возвращает закэшированный экземпляр настроек (удобно для DI в FastAPI)."""
     return Settings()
+
+
+def llm_system_time_prefix() -> str:
+    """Префикс в начале system prompt: локальные дата/время и часовой пояс приложения."""
+    s = get_settings()
+    tz = s.app_zoneinfo
+    current_time = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S (%A)")
+    return (
+        f"Системная информация: Текущая дата и время {current_time}. "
+        f"Часовой пояс: {s.app_timezone}. Учитывай это при ответах.\n\n"
+    )

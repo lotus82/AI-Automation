@@ -69,6 +69,23 @@ async def update_settings(
                 detail="LLM_PROVIDER должен быть deepseek или openai",
             )
 
+    if sk.LLM_TEMPERATURE in normalized:
+        raw_t = (normalized[sk.LLM_TEMPERATURE] or "").strip().replace(",", ".")
+        try:
+            temp = float(raw_t)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="LLM_TEMPERATURE должен быть числом (например 0.2)",
+            ) from None
+        if temp < 0.0 or temp > 1.0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="LLM_TEMPERATURE допустим от 0.0 до 1.0",
+            )
+        # Шаг 0.1 для предсказуемости в UI
+        normalized[sk.LLM_TEMPERATURE] = str(round(temp * 10) / 10)
+
     if sk.SALUTESPEECH_SCOPE in normalized:
         sc = (normalized[sk.SALUTESPEECH_SCOPE] or "").strip()
         if not sc or len(sc) > 128:
@@ -125,6 +142,15 @@ async def update_settings(
             )
         normalized[sk.MAX_USE_POLLING] = "1" if v in ("1", "true", "yes", "on") else "0"
 
+    if sk.MAX_VOICE_REPLY_ENABLED in normalized:
+        v = (normalized[sk.MAX_VOICE_REPLY_ENABLED] or "").strip().lower()
+        if v not in ("0", "1", "true", "false", "yes", "no", "on", "off"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MAX_VOICE_REPLY_ENABLED: укажите 0/1, true/false, yes/no, on/off",
+            )
+        normalized[sk.MAX_VOICE_REPLY_ENABLED] = "1" if v in ("1", "true", "yes", "on") else "0"
+
     if sk.MAX_BOT_USERNAME in normalized:
         u = (normalized[sk.MAX_BOT_USERNAME] or "").strip()
         if len(u) > 128:
@@ -147,6 +173,30 @@ async def update_settings(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="MAX_GROUP_ADDITIONAL_PROMPT слишком длинный (максимум 32000 символов)",
+            )
+
+    if sk.MAX_CALL_ANSWER_DELAY in normalized:
+        raw_d = (normalized[sk.MAX_CALL_ANSWER_DELAY] or "").strip()
+        try:
+            d = int(raw_d)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MAX_CALL_ANSWER_DELAY должен быть целым числом (секунды)",
+            ) from None
+        if d < 0 or d > 120:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MAX_CALL_ANSWER_DELAY допустим от 0 до 120 секунд",
+            )
+        normalized[sk.MAX_CALL_ANSWER_DELAY] = str(d)
+
+    if sk.MAX_CALL_GREETING_PHRASE in normalized:
+        gr = normalized[sk.MAX_CALL_GREETING_PHRASE] or ""
+        if len(gr) > 4000:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MAX_CALL_GREETING_PHRASE слишком длинный (максимум 4000 символов)",
             )
 
     try:

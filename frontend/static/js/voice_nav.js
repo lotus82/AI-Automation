@@ -12,6 +12,7 @@
       (key === "scenarios" && path.indexOf("scenarios") !== -1) ||
       (key === "knowledge" && path.indexOf("knowledge") !== -1) ||
       (key === "settings" && path.indexOf("settings") !== -1) ||
+      (key === "schedule" && path.indexOf("schedule") !== -1) ||
       (key === "bots" && path.indexOf("bots") !== -1) ||
       (key === "home" && (path === "/" || path.endsWith("/index.html")));
     a.classList.toggle("nav__link--active", active);

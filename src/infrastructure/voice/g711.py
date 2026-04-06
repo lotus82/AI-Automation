@@ -80,3 +80,24 @@ def downsample_pcm16_24k_to_8k(pcm24k_le: bytes) -> bytes:
         v = (samples[i] + samples[i + 1] + samples[i + 2]) // 3
         out.append(int(max(-32768, min(32767, v))))
     return struct.pack(f"<{len(out)}h", *out)
+
+
+def downsample_pcm16_24k_to_16k(pcm24k_le: bytes) -> bytes:
+    """Линейная интерполяция вдоль времени: 24 kHz → 16 kHz, mono int16 LE (шаг позиции 1.5 семпла)."""
+    import struct
+
+    n = len(pcm24k_le) // 2
+    if n < 2:
+        return b""
+    samples = struct.unpack(f"<{n}h", pcm24k_le)
+    out: list[int] = []
+    pos = 0.0
+    while True:
+        i = int(pos)
+        if i >= n - 1:
+            break
+        frac = pos - i
+        s = samples[i] * (1.0 - frac) + samples[i + 1] * frac
+        out.append(int(max(-32768, min(32767, round(s)))))
+        pos += 1.5
+    return struct.pack(f"<{len(out)}h", *out)

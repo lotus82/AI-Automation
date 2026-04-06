@@ -33,6 +33,14 @@ class DialerQueueStatus(str, Enum):
     FAILED = "failed"
 
 
+class ScheduleType(str, Enum):
+    """Тип триггера проактивной рассылки (фаза 18 — расписание)."""
+
+    DATABASE = "DATABASE"
+    INTERVAL = "INTERVAL"
+    REMINDER = "REMINDER"
+
+
 @dataclass(frozen=True, slots=True)
 class Lead:
     """Лид — клиент, заинтересованный в промышленном оборудовании."""
@@ -113,6 +121,34 @@ class SystemSetting:
     value: str
     description: str
     updated_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Schedule:
+    """Расписание: проактивное сообщение в чат MAX по триггеру."""
+
+    chat_id: str
+    is_active: bool
+    type: ScheduleType
+    prompt: str
+    content_template: str
+    id: UUID | None = None
+    interval_settings: dict | None = None
+    reminder_offset_minutes: int | None = None
+    last_run_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ScheduledEvent:
+    """Событие из БД или напоминание: дата/время и полезная нагрузка для LLM."""
+
+    schedule_id: UUID
+    event_datetime: datetime
+    event_data: dict
+    id: UUID | None = None
+    is_processed: bool = False
+    last_triggered_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)

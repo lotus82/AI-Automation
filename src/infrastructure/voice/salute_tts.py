@@ -9,6 +9,7 @@ from typing import Any, AsyncGenerator
 
 import grpc
 import grpc.aio
+import httpx
 from loguru import logger
 from pipecat.frames.frames import (
     ErrorFrame,
@@ -23,9 +24,19 @@ from src.infrastructure.services.salute_auth import SaluteSpeechAuthManager
 from src.infrastructure.voice.salute_grpc_tls import smartspeech_channel_credentials
 from src.infrastructure.voice.sber_protos import synthesis_pb2, synthesis_pb2_grpc
 
+# База REST SaluteSpeech (синтез в файл для MAX — только здесь; Pipecat остаётся на gRPC).
+_DEFAULT_REST_V1_BASE = "https://smartspeech.sber.ru/rest/v1"
+
 
 def _pcm16_mono_resample_linear(pcm: bytes, src_rate: int, dst_rate: int) -> bytes:
     """Линейный ресэмплинг int16 mono (без numpy/scipy)."""
+    if src_rate <= 0 or dst_rate <= 0:
+        logger.warning(
+            "Ресэмплинг PCM: пропуск при некорректных частотах src_rate=%s dst_rate=%s",
+            src_rate,
+            dst_rate,
+        )
+        return pcm
     if src_rate == dst_rate or not pcm:
         return pcm
     n_in = len(pcm) // 2
@@ -33,6 +44,8 @@ def _pcm16_mono_resample_linear(pcm: bytes, src_rate: int, dst_rate: int) -> byt
         return pcm
     samples = struct.unpack(f"<{n_in}h", pcm)
     ratio = dst_rate / src_rate
+    if ratio <= 0:
+        return pcm
     n_out = max(1, int(n_in * ratio))
     out: list[int] = []
     for j in range(n_out):
@@ -50,10 +63,12 @@ def _infer_pcm_rate_from_voice(voice: str) -> int:
     m = re.search(r"_(\d{4,6})$", (voice or "").strip())
     if m:
         try:
-            return int(m.group(1))
+            hz = int(m.group(1))
+            if hz > 0:
+                return hz
         except ValueError:
             pass
-    return 16000
+    return 24000
 
 
 class SaluteSpeechTTSService(TTSService):
@@ -67,16 +82,29 @@ class SaluteSpeechTTSService(TTSService):
         voice: str = "Ost_24000",
         language: str = "ru-RU",
         smartspeech_verify_ssl: bool = True,
+        rest_base_url: str | None = None,
         **kwargs: Any,
     ) -> None:
+        # Pipecat TTSService: не даём передать sample_rate=0 (или другое) поверх нашей частоты выхода.
+        kwargs.pop("sample_rate", None)
         super().__init__(sample_rate=24000, **kwargs)
+        # sample_rate у TTSService в Pipecat — свойство без сеттера; при 0 используем _effective_output_sample_rate().
         self._auth = auth_manager
         self._grpc_target = grpc_target.strip()
         self.set_voice(voice)
         self._language = language
         self._verify_ssl = smartspeech_verify_ssl
+        self._rest_base_url = (rest_base_url or _DEFAULT_REST_V1_BASE).strip().rstrip("/")
         self._api_pcm_rate = _infer_pcm_rate_from_voice(self._voice_id)
         self.set_model_name("salutespeech-tts-grpc")
+
+    def _effective_output_sample_rate(self) -> int:
+        """Целевая частота PCM после ресэмплинга (24000 Гц); если у родителя sample_rate некорректен — запасной 24000."""
+        try:
+            sr = int(self.sample_rate)
+        except (TypeError, ValueError):
+            sr = 0
+        return sr if sr > 0 else 24000
 
     def can_generate_metrics(self) -> bool:
         return True
@@ -118,14 +146,13 @@ class SaluteSpeechTTSService(TTSService):
                 raw = bytes(resp.data) if resp.data else b""
                 if not raw:
                     continue
-                pcm_out = _pcm16_mono_resample_linear(
-                    raw, self._api_pcm_rate, self.sample_rate
-                )
+                out_sr = self._effective_output_sample_rate()
+                pcm_out = _pcm16_mono_resample_linear(raw, self._api_pcm_rate, out_sr)
                 if first_audio:
                     yield TTSStartedFrame()
                     first_audio = False
                 await self.stop_ttfb_metrics()
-                yield TTSAudioRawFrame(pcm_out, self.sample_rate, num_channels=1)
+                yield TTSAudioRawFrame(pcm_out, out_sr, num_channels=1)
             if first_audio:
                 yield ErrorFrame("SaluteSpeech TTS: пустой поток аудио")
             else:
@@ -140,3 +167,57 @@ class SaluteSpeechTTSService(TTSService):
             yield ErrorFrame(f"SaluteSpeech TTS: {exc}")
         finally:
             await channel.close()
+
+    async def synthesize_to_file(self, text: str) -> bytes:
+        """Синтез через **REST** ``text:synthesize`` → **Opus в OGG** (для MAX CDN; gRPC **run_tts** для Pipecat не трогаем).
+
+        Формат ``format=opus`` — поддерживаемый REST SaluteSpeech (варианты ``mp3…`` дают HTTP 400).
+        TLS: ``verify=self._verify_ssl`` (на VPS без корней Минцифры обычно ``false``, как в настройках SaluteSpeech).
+        """
+        body = (text or "").strip()
+        if not body:
+            return b""
+        max_chars = 4000
+        if len(body) > max_chars:
+            logger.info("SaluteSpeech synthesize_to_file: текст усечён с %s до %s символов", len(body), max_chars)
+            body = body[:max_chars]
+
+        fmt = "opus"
+        url = f"{self._rest_base_url}/text:synthesize?format={fmt}"
+
+        token = await self._auth.get_access_token()
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/text",
+        }
+        timeout = httpx.Timeout(120.0, connect=30.0)
+
+        async def _post(bearer: str) -> httpx.Response:
+            h = {**headers, "Authorization": f"Bearer {bearer}"}
+            async with httpx.AsyncClient(verify=self._verify_ssl, timeout=timeout, trust_env=False) as client:
+                return await client.post(url, headers=h, content=body.encode("utf-8"))
+
+        try:
+            resp = await _post(token)
+            if resp.status_code == 401:
+                await self._auth.invalidate_cache()
+                token = await self._auth.get_access_token()
+                resp = await _post(token)
+            if resp.status_code >= 400:
+                logger.error(
+                    "SaluteSpeech REST synthesize HTTP %s: %s",
+                    resp.status_code,
+                    (resp.text or "")[:500],
+                )
+                return b""
+            data = resp.content
+            if not data:
+                logger.warning("SaluteSpeech synthesize_to_file: пустое тело ответа REST")
+                return b""
+            return data
+        except httpx.HTTPError as exc:
+            logger.exception("SaluteSpeech synthesize_to_file REST: {}", exc)
+            return b""
+        except Exception as exc:
+            logger.exception("SaluteSpeech synthesize_to_file: {}", exc)
+            return b""

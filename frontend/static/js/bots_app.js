@@ -136,6 +136,24 @@
       });
   }
 
+  function sessionTitleLine(sessionId) {
+    var rec = sessionMap[sessionId];
+    var name = rec && rec.user_label ? String(rec.user_label).trim() : "";
+    return "Сессия: " + sessionId + (name ? " (" + name + ")" : "");
+  }
+
+  function scrollHistoryThreadToBottom() {
+    var body = byId("bots-history-body");
+    if (!body) return;
+    var thread = body.querySelector(".bots-history-thread");
+    if (!thread) return;
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        thread.scrollTop = thread.scrollHeight;
+      });
+    });
+  }
+
   function openHistory(sessionId) {
     selectedSessionId = sessionId;
     var modal = byId("bots-history-modal");
@@ -143,7 +161,7 @@
     var titleEl = byId("bots-history-session");
     var body = byId("bots-history-body");
     if (!modal || !body) return;
-    titleEl.textContent = "Сессия: " + sessionId;
+    if (titleEl) titleEl.textContent = sessionTitleLine(sessionId);
     body.innerHTML = "<p class=\"calls-table__empty\">Загрузка…</p>";
     modal.hidden = false;
     backdrop.hidden = false;
@@ -169,23 +187,34 @@
       body.innerHTML = "<p class=\"calls-table__empty\">Нет сообщений.</p>";
       return;
     }
-    var html = '<div class="bots-history-list">';
+    var html = '<div class="bots-history-thread" role="log" aria-relevant="additions" aria-label="Сообщения чата">';
     messages.forEach(function (m) {
-      var roleRu = m.role === "user" ? "Пользователь" : m.role === "assistant" ? "Ассистент" : m.role;
+      var role = m.role || "";
+      var bubbleMod =
+        role === "user"
+          ? "bots-history-msg--user"
+          : role === "assistant"
+            ? "bots-history-msg--assistant"
+            : "bots-history-msg--system";
+      var roleRu =
+        role === "user" ? "Пользователь" : role === "assistant" ? "ИИ-агент" : role;
       html +=
-        '<div class="bots-history-msg">' +
+        '<div class="bots-history-msg ' +
+        bubbleMod +
+        '">' +
         '<div class="bots-history-msg__meta">' +
         escapeHtml(roleRu) +
         " · " +
         escapeHtml(formatDate(m.created_at)) +
         "</div>" +
-        '<pre class="bots-history-msg__text">' +
+        '<div class="bots-history-msg__text">' +
         escapeHtml(m.content || "") +
-        "</pre>" +
+        "</div>" +
         "</div>";
     });
     html += "</div>";
     body.innerHTML = html;
+    scrollHistoryThreadToBottom();
   }
 
   function closeHistory() {
@@ -206,6 +235,8 @@
       var uinfo = data.user_info || "";
       upsertSessionRow(sid, preview, now, uinfo || null);
       if (selectedSessionId === sid) {
+        var sessEl = byId("bots-history-session");
+        if (sessEl) sessEl.textContent = sessionTitleLine(sid);
         fetch(API_CHATS + "/" + encodeURIComponent(sid), { credentials: "same-origin" })
           .then(function (r) {
             return r.json();

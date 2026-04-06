@@ -9,6 +9,7 @@ import re
 from openai import AsyncOpenAI
 
 from src.core.config import Settings
+from src.core.llm_chat_messages import memory_history_to_openai_messages
 from src.domain.default_system_prompts import FALLBACK_ANALYST_QA_PROMPT
 from src.domain import system_setting_keys as sk
 from src.use_cases.interfaces import ILLMService, ISettingsRepository, LLMToolCall
@@ -80,6 +81,17 @@ class DynamicLLMService(ILLMService):
             self._client_sig = sig
         return self._client, model
 
+    async def _resolve_chat_temperature(self) -> float:
+        """Температура для диалога консультанта и ``generate_response`` (ключ **LLM_TEMPERATURE**, 0.0–1.0)."""
+        raw = (await self._repo.get_value(sk.LLM_TEMPERATURE) or "").strip().replace(",", ".")
+        if not raw:
+            return 0.2
+        try:
+            t = float(raw)
+        except ValueError:
+            return 0.2
+        return max(0.0, min(1.0, t))
+
     async def generate_response(
         self,
         prompt: str,
@@ -115,16 +127,14 @@ class DynamicLLMService(ILLMService):
         )
         messages: list[dict[str, str]] = [{"role": "system", "content": system}]
         if history:
-            for turn in history:
-                role = turn.get("role")
-                content = turn.get("content")
-                if role in ("user", "assistant") and isinstance(content, str) and content.strip():
-                    messages.append({"role": role, "content": content.strip()})
+            messages.extend(memory_history_to_openai_messages(history))
         messages.append({"role": "user", "content": user_content})
 
+        temperature = await self._resolve_chat_temperature()
         completion = await client.chat.completions.create(
             model=model,
             messages=messages,
+            temperature=temperature,
         )
         choice = completion.choices[0].message.content
         return (choice or "").strip()
@@ -135,7 +145,11 @@ class DynamicLLMService(ILLMService):
         *,
         tools: list[dict],
     ) -> tuple[str | None, list[LLMToolCall]]:
-        """Системный текст задаётся первым элементом ``messages`` (см. ``ProcessTextMessageUseCase``, группы MAX — фаза 17)."""
+        """Передаёт ``messages`` в API как список объектов чата (system / user / assistant / tool).
+
+        Историю диалога нельзя склеивать в одну строку: каждая реплика — отдельное сообщение с полем ``role``.
+        Первый элемент обычно ``role=system`` (см. ``ProcessTextMessageUseCase``; группы MAX — фаза 17).
+        """
         client, model = await self._client_and_model()
         if not client:
             return (
@@ -143,13 +157,19 @@ class DynamicLLMService(ILLMService):
                 [],
             )
 
-        kwargs: dict = {"model": model, "messages": messages}
+        temperature = await self._resolve_chat_temperature()
+        kwargs: dict = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+        }
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
         logger.info(
-            "LLM (продажи + инструменты): model=%s, сообщений в запросе=%s, инструментов=%s",
+            "LLM (продажи + инструменты): model=%s, temperature=%s, сообщений в запросе=%s, инструментов=%s",
             model,
+            temperature,
             len(messages),
             len(tools),
         )
@@ -195,6 +215,7 @@ class DynamicLLMService(ILLMService):
                     "content": f"Текст диалога (user/assistant по порядку):\n\n{transcript_text}",
                 },
             ],
+            temperature=0.0,
             response_format={"type": "json_object"},
         )
         raw = completion.choices[0].message.content or "{}"
@@ -235,6 +256,7 @@ class DynamicLLMService(ILLMService):
                     "content": f"Текст диалога (user = менеджер, assistant = ИИ-клиент):\n\n{transcript_text}",
                 },
             ],
+            temperature=0.0,
             response_format={"type": "json_object"},
         )
         raw = completion.choices[0].message.content or "{}"

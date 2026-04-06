@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Awaitable, Callable
 
+from redis.asyncio import Redis
+
+from src.core.config import Settings, llm_system_time_prefix
+from src.core.llm_chat_messages import memory_history_to_openai_messages
+from src.core.utils.text_cleaner import remove_markdown
 from src.domain.default_system_prompts import FALLBACK_DEFAULT_CONSULTANT_PROMPT
 from src.domain import system_setting_keys as sk
 from src.use_cases.interfaces import (
@@ -14,6 +20,8 @@ from src.use_cases.interfaces import (
     IEmbeddingService,
     IKnowledgeRepository,
     ILLMService,
+    IMaxVoiceSynthesizer,
+    ISearchService,
     ISettingsRepository,
 )
 
@@ -22,6 +30,14 @@ SALES_TOOLS_INSTRUCTION_RU = (
     "\n\nЕсли клиент явно оставил номер телефона и согласие на обратную связь, "
     "вызови инструмент record_lead с полями phone, name (имя или компания), notes (краткий контекст). "
     "После успешной передачи контактов в CRM ответь по-русски одним коротким подтверждением."
+)
+
+# Инструкция для инструмента веб-поиска (фаза 19).
+WEB_SEARCH_TOOL_INSTRUCTION_RU = (
+    "\n\nЕсли для ответа нужны актуальные сведения из открытого интернета (новости, статистика, "
+    "общедоступные факты), а во внутренней базе знаний недостаточно данных, вызови инструмент "
+    "search_web с полем query (краткий поисковый запрос). После получения сниппетов сформируй ответ "
+    "самостоятельно, по-русски, без выдумывания источников."
 )
 
 # Инструмент передачи лида в CRM (OpenAI tools schema).
@@ -54,7 +70,46 @@ _RECORD_LEAD_TOOL: dict = {
     },
 }
 
-_MAX_TOOL_ROUNDS = 4
+# Инструмент веб-поиска (DuckDuckGo, публичные сниппеты).
+_SEARCH_WEB_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "search_web",
+        "description": (
+            "Используй этот инструмент для поиска актуальной информации в интернете "
+            "(новости, статистика, факты), если не знаешь ответа."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Поисковый запрос (ключевые слова)",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+_MAX_TOOL_ROUNDS = 6
+
+# Дословно из ТЗ фазы 20; не дублируем, если строка уже есть в промпте из БД / FALLBACK / миграции 017.
+_LAST_MESSAGE_FOCUS_MARKER = "very last message from the user"
+_LAST_MESSAGE_FOCUS_RULE_EN = (
+    "\n\nFocus ONLY on answering the very last message from the user. "
+    "Do not re-answer or summarize previous questions from the chat history."
+)
+
+# Дополнение к промпту консультанта (фаза 21); не дублируем, если уже есть в БД / FALLBACK / миграции 019.
+_GROUNDING_MARKER_RU = "никогда не выдумывай факты"
+_GROUNDING_RULE_RU = (
+    "\n\nНикогда не выдумывай факты, которых нет в базе знаний или в результатах поиска. "
+    "Если не уверен — скажи, что не знаешь."
+)
+
+# Текст промежуточного сообщения при вызове search_web (текстовые каналы; голос задаёт свой вариант).
+_DEFAULT_SEARCH_PENDING_MESSAGE = "Подождите, ищу информацию в интернете..."
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +126,9 @@ class ProcessTextMessageUseCase:
         crm_service: ICRMService,
         settings_repository: ISettingsRepository,
         chat_monitoring: IChatMonitoringPublisher,
+        search_service: ISearchService,
+        redis_client: Redis | None = None,
+        app_settings: Settings | None = None,
     ) -> None:
         self._embeddings = embedding_service
         self._knowledge = knowledge_repository
@@ -79,6 +137,11 @@ class ProcessTextMessageUseCase:
         self._crm = crm_service
         self._settings_repo = settings_repository
         self._monitor = chat_monitoring
+        self._search = search_service
+        self._redis = redis_client
+        self._app_settings = app_settings
+        self._max_voice_synth_cache: IMaxVoiceSynthesizer | None = None
+        self._max_voice_synth_resolved = False
 
     async def _maybe_append_max_group_prompt(self, session_id: str, system_text: str) -> str:
         """Если ``session_id`` совпадает с **MAX_GROUP_CHAT_ID**, добавляет **MAX_GROUP_ADDITIONAL_PROMPT**."""
@@ -89,6 +152,36 @@ class ProcessTextMessageUseCase:
         if not extra:
             return system_text
         return f"{system_text}\n\n---\n\n{extra}"
+
+    async def _web_search_enabled(self) -> bool:
+        """Читает ENABLE_WEB_SEARCH; по умолчанию True, если ключа ещё нет в БД."""
+        raw = (await self._settings_repo.get_value(sk.ENABLE_WEB_SEARCH) or "").strip().lower()
+        if not raw:
+            return True
+        return raw not in ("0", "false", "no", "off")
+
+    async def _max_voice_reply_enabled(self) -> bool:
+        """Читает MAX_VOICE_REPLY_ENABLED; по умолчанию выключено, если ключа нет в БД."""
+        raw = (await self._settings_repo.get_value(sk.MAX_VOICE_REPLY_ENABLED) or "").strip().lower()
+        if not raw:
+            return False
+        return raw in ("1", "true", "yes", "on")
+
+    async def _get_max_voice_synthesizer(self) -> IMaxVoiceSynthesizer | None:
+        """Ленивая сборка SaluteSpeech для озвучки MAX (нужны Redis и Settings процесса)."""
+        if self._max_voice_synth_resolved:
+            return self._max_voice_synth_cache
+        self._max_voice_synth_resolved = True
+        if not self._redis or not self._app_settings:
+            return None
+        from src.infrastructure.services.max_voice_synthesis import create_salute_max_voice_synthesizer
+
+        self._max_voice_synth_cache = await create_salute_max_voice_synthesizer(
+            self._settings_repo,
+            self._redis,
+            self._app_settings,
+        )
+        return self._max_voice_synth_cache
 
     async def _context_message_limit(self) -> int:
         raw = (await self._settings_repo.get_value(sk.MAX_CONTEXT_LIMIT) or "").strip()
@@ -123,9 +216,19 @@ class ProcessTextMessageUseCase:
         use_crm_tools: bool = True,
         skip_rag: bool = False,
         interaction_user_label: str | None = None,
+        user_name: str | None = None,
         append_text_messenger_system_supplement: bool = False,
+        on_intermediate_message: Callable[[str], Awaitable[None]] | None = None,
+        intermediate_search_message: str | None = None,
+        on_voice_generated: Callable[[bytes], Awaitable[None]] | None = None,
     ) -> str:
-        """История (лимит из MAX_CONTEXT_LIMIT) → RAG → LLM → запись в Redis и PostgreSQL → мониторинг WS."""
+        """История (лимит из MAX_CONTEXT_LIMIT) → RAG → LLM → запись в Redis и PostgreSQL → мониторинг WS.
+
+        ``user_name`` — опционально (например из MAX); усиливает персонализацию в системном промпте.
+        История в LLM передаётся списком сообщений с ролями, не одной строкой.
+        ``on_intermediate_message`` — опционально: например мгновенная отправка текста в MAX или TTS до веб-поиска.
+        ``on_voice_generated`` — если включено **MAX_VOICE_REPLY_ENABLED**, после итогового ответа передаётся WAV (SaluteSpeech).
+        """
         user_text = message.strip()
         logger.info(
             "Текстовое сообщение: session_id=%s, длина текста=%s, skip_rag=%s",
@@ -164,6 +267,10 @@ class ProcessTextMessageUseCase:
             consultant_base = db_prompt or FALLBACK_DEFAULT_CONSULTANT_PROMPT
             system_text = consultant_base + (SALES_TOOLS_INSTRUCTION_RU if use_crm_tools else "")
 
+        include_web_tool = (not skip_rag) and (await self._web_search_enabled())
+        if include_web_tool:
+            system_text += WEB_SEARCH_TOOL_INSTRUCTION_RU
+
         system_text = await self._maybe_append_max_group_prompt(session_id, system_text)
 
         if append_text_messenger_system_supplement:
@@ -171,15 +278,33 @@ class ProcessTextMessageUseCase:
             if supplement:
                 system_text = f"{system_text}\n\n---\n\n{supplement}"
 
+        system_text = llm_system_time_prefix() + system_text
+
+        un = (user_name or "").strip()
+        if un:
+            system_text += (
+                f"\nСистемная информация: Имя собеседника - {un}. "
+                "Если это уместно и диалог только начинается, обращайся к нему по имени. "
+                "Не нужно повторять имя в каждом сообщении."
+            )
+
+        if _LAST_MESSAGE_FOCUS_MARKER.lower() not in system_text.lower():
+            system_text += _LAST_MESSAGE_FOCUS_RULE_EN
+
+        if _GROUNDING_MARKER_RU not in system_text.lower():
+            system_text += _GROUNDING_RULE_RU
+
+        history_messages = memory_history_to_openai_messages(history)
         messages: list[dict] = [{"role": "system", "content": system_text}]
-        for turn in history:
-            role = turn.get("role")
-            content = turn.get("content")
-            if role in ("user", "assistant") and isinstance(content, str) and content.strip():
-                messages.append({"role": role, "content": content.strip()})
+        messages.extend(history_messages)
         messages.append({"role": "user", "content": user_content})
 
-        tools = [_RECORD_LEAD_TOOL] if use_crm_tools else []
+        tools: list[dict] = []
+        if use_crm_tools:
+            tools.append(_RECORD_LEAD_TOOL)
+        if include_web_tool:
+            tools.append(_SEARCH_WEB_TOOL)
+
         final_reply = ""
 
         for _ in range(_MAX_TOOL_ROUNDS):
@@ -190,6 +315,18 @@ class ProcessTextMessageUseCase:
             if not tool_calls:
                 final_reply = (text or "").strip()
                 break
+
+            if on_intermediate_message and any(tc.name == "search_web" for tc in tool_calls):
+                pending_txt = (
+                    (intermediate_search_message or _DEFAULT_SEARCH_PENDING_MESSAGE).strip()
+                    or _DEFAULT_SEARCH_PENDING_MESSAGE
+                )
+                try:
+                    await on_intermediate_message(pending_txt)
+                except Exception:
+                    logger.exception(
+                        "Не удалось отправить промежуточное уведомление о веб-поиске; сценарий продолжается"
+                    )
 
             openai_tool_calls = []
             for tc in tool_calls:
@@ -227,6 +364,14 @@ class ProcessTextMessageUseCase:
                             {"ok": False, "error": str(exc)},
                             ensure_ascii=False,
                         )
+                elif tc.name == "search_web":
+                    sq = str(tc.arguments.get("query", "")).strip()
+                    try:
+                        result_text = await self._search.search(sq, max_results=3)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.exception("Сбой ISearchService.search")
+                        result_text = f"Ошибка поиска: {exc!s}"
+                    payload = result_text
                 else:
                     payload = json.dumps(
                         {"ok": False, "error": f"Неизвестный инструмент: {tc.name}"},
@@ -245,6 +390,9 @@ class ProcessTextMessageUseCase:
                 or "Прошу прощения, не удалось завершить обработку запроса. Попробуйте ещё раз."
             )
 
+        # Один канал текста для БД, MAX и TTS: без Markdown (DeepSeek и др. часто вставляют **, #, `).
+        final_reply = remove_markdown(final_reply)
+
         label = (interaction_user_label or "").strip() or None
         await self._memory.save_message(
             session_id, "user", user_text, user_display=label
@@ -262,6 +410,22 @@ class ProcessTextMessageUseCase:
             content=final_reply,
             user_info=label,
         )
+
+        if (
+            await self._max_voice_reply_enabled()
+            and on_voice_generated is not None
+            and final_reply.strip()
+        ):
+            synth = await self._get_max_voice_synthesizer()
+            if synth is not None:
+                try:
+                    audio = await synth.synthesize_to_file(final_reply)
+                    if audio:
+                        await on_voice_generated(audio)
+                except Exception:
+                    logger.exception(
+                        "Сбой синтеза голосового ответа MAX (SaluteSpeech); текстовый ответ уже сохранён"
+                    )
 
         logger.info(
             "Текстовый ответ сохранён: session_id=%s, длина ответа=%s",

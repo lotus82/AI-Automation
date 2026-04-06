@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
-from src.api.routers import calls, chat, chats, dialer, health, knowledge, leads, max_bot, notifications, telephony, training, voice
+from src.api.routers import calls, chat, chats, dialer, health, knowledge, leads, max_bot, notifications, schedules, telephony, training, voice
 from src.api.routers import settings as settings_router
 from src.api.dependencies import build_max_long_poll_stack
 from src.core.config import get_settings
@@ -62,6 +62,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             uc,
             session=app.state.max_poll_session,
             stop_event=app.state.max_poll_stop,
+            redis=app.state.redis,
+            app_settings=settings,
         ),
         name="max-long-polling",
     )
@@ -121,6 +123,7 @@ def create_app() -> FastAPI:
     application.include_router(settings_router.router, prefix="/api", tags=["settings"])
     application.include_router(max_bot.router, prefix="/api")
     application.include_router(chats.router, prefix="/api")
+    application.include_router(schedules.router, prefix="/api")
     application.include_router(notifications.router, prefix="/api")
     application.include_router(voice.router, prefix="/voice", tags=["voice"])
 

@@ -26,6 +26,7 @@ from src.infrastructure.services.bitrix24 import build_crm_service
 from src.infrastructure.services.dynamic_llm import DynamicLLMService
 from src.infrastructure.services.max_messenger import MaxMessengerClient
 from src.infrastructure.services.openai_embedding import OpenAIEmbeddingService
+from src.infrastructure.services.web_search import DuckDuckGoSearchService
 from src.use_cases.chat import ProcessTextMessageUseCase
 from src.use_cases.interfaces import (
     ICallRecordRepository,
@@ -38,6 +39,7 @@ from src.use_cases.interfaces import (
     IKnowledgeRepository,
     ILeadRepository,
     ILLMService,
+    ISearchService,
     ISettingsRepository,
     ITrainingScenarioRepository,
 )
@@ -124,6 +126,14 @@ def get_crm_service(settings: SettingsDep) -> ICRMService:
 CRMDep = Annotated[ICRMService, Depends(get_crm_service)]
 
 
+def get_web_search_service() -> ISearchService:
+    """Веб-поиск для инструмента ``search_web`` (DuckDuckGo, без скрейпинга магазинов)."""
+    return DuckDuckGoSearchService()
+
+
+SearchServiceDep = Annotated[ISearchService, Depends(get_web_search_service)]
+
+
 def get_dialer_queue_repository(session: AsyncSessionDep) -> IDialerQueueRepository:
     """Очередь автообзвона."""
     return SqlAlchemyDialerQueueRepository(session)
@@ -208,6 +218,9 @@ def get_process_text_message_use_case(
     crm_service: CRMDep,
     settings_repository: SettingsRepositoryDep,
     chat_monitoring: ChatMonitoringPublisherDep,
+    search_service: SearchServiceDep,
+    redis: RedisDep,
+    settings: SettingsDep,
 ) -> ProcessTextMessageUseCase:
     """Сценарий текстового RAG с историей в Redis."""
     return ProcessTextMessageUseCase(
@@ -218,6 +231,9 @@ def get_process_text_message_use_case(
         crm_service=crm_service,
         settings_repository=settings_repository,
         chat_monitoring=chat_monitoring,
+        search_service=search_service,
+        redis_client=redis,
+        app_settings=settings,
     )
 
 
@@ -258,6 +274,9 @@ def build_max_long_poll_stack(
         crm_service=build_crm_service(settings.bitrix24_webhook_url),
         settings_repository=settings_repo,
         chat_monitoring=get_chat_events_broadcaster(),
+        search_service=DuckDuckGoSearchService(),
+        redis_client=redis,
+        app_settings=settings,
     )
     client = MaxMessengerClient(
         settings_repository=settings_repo,

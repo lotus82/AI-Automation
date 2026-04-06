@@ -1,4 +1,9 @@
-"""ORM-модели SQLAlchemy, соответствующие доменным сущностям."""
+"""ORM-модели SQLAlchemy, соответствующие доменным сущностям.
+
+Все поля моментов времени — ``DateTime(timezone=True)`` (PostgreSQL ``timestamptz``).
+В коде приложения при записи используйте только timezone-aware ``datetime``
+(например ``datetime.now(get_settings().app_zoneinfo)`` из ``src.core.config``), без наивных значений.
+"""
 
 from __future__ import annotations
 
@@ -6,8 +11,8 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 # Размерность вектора под типичные эмбеддинги OpenAI; при смене локальной модели скорректировать миграцию.
@@ -174,7 +179,7 @@ class CallAnalyticsModel(Base):
 class SystemSettingModel(Base):
     """Динамические настройки (LLM, промпты, ключи API) — правка из панели.
 
-    Известные ключи см. ``src.domain.system_setting_keys`` (в т.ч. **MAX_BOT_TOKEN**, **MAX_BOT_USERNAME**, **MAX_GROUP_CHAT_ID**, **MAX_GROUP_ADDITIONAL_PROMPT**, **MAX_CONTEXT_LIMIT**, **TEXT_BOT_SYSTEM_SUPPLEMENT**).
+    Известные ключи см. ``src.domain.system_setting_keys`` (в т.ч. **LLM_TEMPERATURE**, **MAX_VOICE_REPLY_ENABLED**, **MAX_CALL_ANSWER_DELAY**, **MAX_CALL_GREETING_PHRASE**, **MAX_BOT_TOKEN**, **MAX_BOT_USERNAME**, **MAX_GROUP_CHAT_ID**, **MAX_GROUP_ADDITIONAL_PROMPT**, **MAX_CONTEXT_LIMIT**, **TEXT_BOT_SYSTEM_SUPPLEMENT**).
     """
 
     __tablename__ = "system_settings"
@@ -187,6 +192,60 @@ class SystemSettingModel(Base):
         server_default=text("now()"),
         onupdate=func.now(),
     )
+
+
+class ScheduleModel(Base):
+    """Проактивные рассылки в MAX: триггеры DATABASE / INTERVAL / REMINDER (фаза 18)."""
+
+    __tablename__ = "schedules"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    chat_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    schedule_type: Mapped[str] = mapped_column("type", String(32), nullable=False)
+    prompt: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    content_template: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    interval_settings: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    reminder_offset_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+    )
+
+    events: Mapped[list["ScheduledEventModel"]] = relationship(
+        "ScheduledEventModel",
+        back_populates="schedule",
+        cascade="all, delete-orphan",
+    )
+
+
+class ScheduledEventModel(Base):
+    """События для типов DATABASE и REMINDER (дни рождения, напоминания и т.п.)."""
+
+    __tablename__ = "scheduled_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    schedule_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schedules.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    event_datetime: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    event_data: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    is_processed: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    last_triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    schedule: Mapped["ScheduleModel"] = relationship("ScheduleModel", back_populates="events")
 
 
 class ChatMessageModel(Base):

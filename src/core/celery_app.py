@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from celery import Celery
+from celery.schedules import crontab
 
 from src.core.config import get_settings
 
@@ -18,9 +19,16 @@ app.conf.update(
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
-    timezone="UTC",
     enable_utc=True,
+    beat_schedule={
+        "check_and_execute_schedules": {
+            "task": "check_and_execute_schedules",
+            "schedule": crontab(minute="*"),
+        },
+    },
 )
+# Расписание Beat в локальном часовом поясе приложения (например Europe/Saratov)
+app.conf.timezone = _settings.app_timezone
 
 # Регистрация задач после создания `app`, чтобы избежать циклического импорта
 import src.workers.tasks  # noqa: E402, F401

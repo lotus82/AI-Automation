@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
+from src.core.config import get_settings
 from src.domain.entities import Lead, LeadStatus
 from src.domain.exceptions import DomainValidationError
 from src.use_cases.interfaces import ILeadRepository
@@ -35,7 +36,7 @@ class CreateLeadUseCase:
             raise DomainValidationError("Номер телефона не должен превышать 64 символа")
 
         effective_status = status or LeadStatus.NEW
-        now = datetime.now(UTC)
+        now = datetime.now(get_settings().app_zoneinfo)
 
         lead = Lead(
             name=cleaned_name,

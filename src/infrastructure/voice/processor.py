@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+
+# Колбэк для реплики до основного ответа (например фраза «ищу в интернете» при search_web).
+IntermediateTTSCallback = Callable[[str], Awaitable[None]]
+# STT → сценарий: второй аргумент — отправка промежуточной фразы в TTS (Pipecat).
+FinalTranscriptHandler = Callable[[str, IntermediateTTSCallback], Awaitable[str]]
 from pathlib import Path
 from typing import Literal
 
@@ -30,6 +35,7 @@ from pipecat.services.openai import OpenAITTSService
 from pipecat.transcriptions.language import Language
 
 from src.core.config import Settings
+from src.core.utils.text_cleaner import remove_markdown
 from src.domain.entities import TrainingScenario
 from src.infrastructure.services.salute_auth import SaluteSpeechAuthManager
 from src.infrastructure.voice.conversation_recording import (
@@ -69,7 +75,7 @@ class LLMUserResponseAggregator(FrameProcessor):
     def __init__(
         self,
         *,
-        on_final_transcript: Callable[[str], Awaitable[str]],
+        on_final_transcript: FinalTranscriptHandler,
         name: str | None = None,
     ) -> None:
         super().__init__(name=name)
@@ -96,9 +102,18 @@ class LLMUserResponseAggregator(FrameProcessor):
                 await self.push_frame(frame, direction)
                 async with self._turn_lock:
                     try:
-                        reply = await self._on_final(text)
-                        if reply.strip():
-                            await self.push_frame(TTSSpeakFrame(reply.strip()))
+
+                        async def push_intermediate_tts(spoken: str) -> None:
+                            # В Pipecat 0.0.60 для озвучки текста используется TTSSpeakFrame (см. также TTSTextFrame в новых версиях).
+                            clean_i = remove_markdown((spoken or "").strip())
+                            if clean_i:
+                                await self.push_frame(TTSSpeakFrame(clean_i))
+
+                        reply = await self._on_final(text, push_intermediate_tts)
+                        # Дубль очистки: сценарий уже санитизирует ответ; на случай других колбэков.
+                        clean = remove_markdown((reply or "").strip())
+                        if clean:
+                            await self.push_frame(TTSSpeakFrame(clean))
                     except Exception as exc:  # noqa: BLE001 — логируем и продолжаем сессию
                         logger.exception("Ошибка RAG/LLM в голосовом агрегаторе: %s", exc)
                         await self.push_frame(
@@ -154,6 +169,7 @@ class VoicePipelineOrchestrator:
         aggregator: LLMUserResponseAggregator,
         tts: OpenAITTSService | ElevenLabsHttpTTSService | SaluteSpeechTTSService,
         stereo_recorder: ConversationStereoRecorder | None = None,
+        fixed_greeting_phrase: str | None = None,
     ) -> None:
         if stereo_recorder is not None:
             user_tap = UserAudioRecordingTap(stereo_recorder, name="user_recording")
@@ -199,19 +215,32 @@ class VoicePipelineOrchestrator:
             await task.queue_frame(EndFrame())
 
         runner = PipelineRunner(handle_sigint=False)
-        await runner.run(task)
+        run_co = asyncio.create_task(runner.run(task))
+        greet = (fixed_greeting_phrase or "").strip()
+        if greet:
+            clean_g = remove_markdown(greet)
+            if clean_g:
+                # Небольшая пауза, чтобы пайплайн принял StartFrame до первой реплики TTS.
+                # TODO (рус.): при смене версии Pipecat проверить порядок кадров (TTSSpeakFrame / TTSTextFrame).
+                await asyncio.sleep(0.12)
+                try:
+                    await task.queue_frame(TTSSpeakFrame(clean_g))
+                except Exception:
+                    logger.exception("Не удалось поставить фиксированное приветствие в очередь пайплайна")
+        await run_co
 
     async def run(
         self,
         *,
         voice_transport: IVoiceTransport,
-        on_final_transcript: Callable[[str], Awaitable[str]],
+        on_final_transcript: FinalTranscriptHandler,
         voice_mode: Literal["consultant", "trainer_client"] = "consultant",
         training_scenario: TrainingScenario | None = None,
         salute_auth: SaluteSpeechAuthManager | None = None,
         salutespeech_voice: str | None = None,
         voice_stt_provider_effective: str | None = None,
         recording_session_id: str | None = None,
+        fixed_greeting_phrase: str | None = None,
     ) -> None:
         """Запускает runner до завершения сессии (браузер: WebSocket; Asterisk: UDP RTP).
 
@@ -289,6 +318,7 @@ class VoicePipelineOrchestrator:
                 grpc_target=self._settings.salutespeech_grpc_target,
                 voice=voice_id,
                 smartspeech_verify_ssl=self._settings.salutespeech_smartspeech_verify_ssl,
+                rest_base_url=self._settings.salutespeech_rest_base_url,
             )
             await self._run_pipeline(
                 voice_transport=voice_transport,
@@ -296,6 +326,7 @@ class VoicePipelineOrchestrator:
                 aggregator=aggregator,
                 tts=tts,
                 stereo_recorder=stereo_recorder,
+                fixed_greeting_phrase=fixed_greeting_phrase,
             )
         elif self._settings.voice_tts_provider == "elevenlabs":
             async with aiohttp.ClientSession() as http_session:
@@ -306,6 +337,7 @@ class VoicePipelineOrchestrator:
                     aggregator=aggregator,
                     tts=tts,
                     stereo_recorder=stereo_recorder,
+                    fixed_greeting_phrase=fixed_greeting_phrase,
                 )
         else:
             tts = self._build_openai_tts()
@@ -315,6 +347,7 @@ class VoicePipelineOrchestrator:
                 aggregator=aggregator,
                 tts=tts,
                 stereo_recorder=stereo_recorder,
+                fixed_greeting_phrase=fixed_greeting_phrase,
             )
 
         if stereo_recorder is not None and recording_session_id:

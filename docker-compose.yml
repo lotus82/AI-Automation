@@ -51,6 +51,7 @@ services:
     environment:
       APP_ENV: development
       APP_DEBUG: "true"
+      APP_TIMEZONE: Europe/Saratov
       POSTGRES_URI: postgresql+asyncpg://sales:sales@postgres:5432/sales_agent
       REDIS_URI: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
@@ -122,6 +123,7 @@ services:
       - .env
     environment:
       APP_ENV: development
+      APP_TIMEZONE: Europe/Saratov
       POSTGRES_URI: postgresql+asyncpg://sales:sales@postgres:5432/sales_agent
       REDIS_URI: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
@@ -131,6 +133,8 @@ services:
       - ./src:/app/src
       - ./data/recordings:/app/data/recordings
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_started
     command:
@@ -139,6 +143,33 @@ services:
         "-A",
         "src.core.celery_app",
         "worker",
+        "--loglevel=info",
+      ]
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      APP_ENV: development
+      APP_TIMEZONE: Europe/Saratov
+      POSTGRES_URI: postgresql+asyncpg://sales:sales@postgres:5432/sales_agent
+      REDIS_URI: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      redis:
+        condition: service_started
+    command:
+      [
+        "celery",
+        "-A",
+        "src.core.celery_app",
+        "beat",
         "--loglevel=info",
       ]
 

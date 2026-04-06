@@ -9,10 +9,12 @@ from redis.asyncio import Redis
 from sqlalchemy import desc, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import uuid
 from uuid import UUID
 
 from datetime import datetime, timezone
 
+from src.core.config import get_settings
 from src.domain import system_setting_keys as sk
 from src.domain.entities import (
     CallAnalytics,
@@ -24,6 +26,9 @@ from src.domain.entities import (
     KnowledgeItem,
     Lead,
     LeadStatus,
+    Schedule,
+    ScheduleType,
+    ScheduledEvent,
     SystemSetting,
     TrainingScenario,
     TrainingSession,
@@ -36,6 +41,8 @@ from src.infrastructure.models import (
     DialerQueueModel,
     KnowledgeItemModel,
     LeadModel,
+    ScheduleModel,
+    ScheduledEventModel,
     SystemSettingModel,
     TrainingScenarioModel,
     TrainingSessionModel,
@@ -47,6 +54,7 @@ from src.use_cases.interfaces import (
     IDialerQueueRepository,
     IKnowledgeRepository,
     ILeadRepository,
+    IScheduleRepository,
     ISettingsRepository,
     ITrainingScenarioRepository,
     ITrainingSessionRepository,
@@ -602,6 +610,152 @@ class SqlAlchemyDialerQueueRepository(IDialerQueueRepository):
         await self._session.flush()
 
 
+def _schedule_to_domain(row: ScheduleModel) -> Schedule:
+    return Schedule(
+        id=row.id,
+        chat_id=row.chat_id,
+        is_active=bool(row.is_active),
+        type=ScheduleType(row.schedule_type),
+        prompt=row.prompt or "",
+        content_template=row.content_template or "",
+        interval_settings=dict(row.interval_settings or {}),
+        reminder_offset_minutes=row.reminder_offset_minutes,
+        last_run_at=row.last_run_at,
+        created_at=row.created_at,
+    )
+
+
+def _event_to_domain(row: ScheduledEventModel) -> ScheduledEvent:
+    return ScheduledEvent(
+        id=row.id,
+        schedule_id=row.schedule_id,
+        event_datetime=row.event_datetime,
+        event_data=dict(row.event_data or {}),
+        is_processed=bool(row.is_processed),
+        last_triggered_at=row.last_triggered_at,
+    )
+
+
+class SqlAlchemyScheduleRepository(IScheduleRepository):
+    """Расписания и события в PostgreSQL."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def list_schedules(self, *, active_only: bool = False) -> list[Schedule]:
+        stmt = select(ScheduleModel).order_by(ScheduleModel.created_at.desc())
+        if active_only:
+            stmt = stmt.where(ScheduleModel.is_active.is_(True))
+        result = await self._session.scalars(stmt)
+        return [_schedule_to_domain(r) for r in result.all()]
+
+    async def get_by_id(self, schedule_id: UUID) -> Schedule | None:
+        row = await self._session.get(ScheduleModel, schedule_id)
+        return _schedule_to_domain(row) if row else None
+
+    async def create(self, schedule: Schedule) -> Schedule:
+        if schedule.id is not None:
+            msg = "Создание расписания: поле id должно быть None"
+            raise ValueError(msg)
+        new_id = uuid.uuid4()
+        interval = schedule.interval_settings if schedule.interval_settings is not None else {}
+        model = ScheduleModel(
+            id=new_id,
+            chat_id=schedule.chat_id.strip(),
+            is_active=schedule.is_active,
+            schedule_type=schedule.type.value,
+            prompt=schedule.prompt or "",
+            content_template=schedule.content_template or "",
+            interval_settings=interval,
+            reminder_offset_minutes=schedule.reminder_offset_minutes,
+            last_run_at=schedule.last_run_at,
+        )
+        self._session.add(model)
+        await self._session.flush()
+        row = await self._session.get(ScheduleModel, new_id)
+        assert row is not None
+        return _schedule_to_domain(row)
+
+    async def update(self, schedule: Schedule) -> Schedule | None:
+        if schedule.id is None:
+            msg = "Обновление расписания: нужен id"
+            raise ValueError(msg)
+        row = await self._session.get(ScheduleModel, schedule.id)
+        if row is None:
+            return None
+        row.chat_id = schedule.chat_id.strip()
+        row.is_active = schedule.is_active
+        row.schedule_type = schedule.type.value
+        row.prompt = schedule.prompt or ""
+        row.content_template = schedule.content_template or ""
+        row.interval_settings = dict(schedule.interval_settings or {})
+        row.reminder_offset_minutes = schedule.reminder_offset_minutes
+        await self._session.flush()
+        refreshed = await self._session.get(ScheduleModel, schedule.id)
+        assert refreshed is not None
+        return _schedule_to_domain(refreshed)
+
+    async def delete(self, schedule_id: UUID) -> bool:
+        row = await self._session.get(ScheduleModel, schedule_id)
+        if row is None:
+            return False
+        await self._session.delete(row)
+        await self._session.flush()
+        return True
+
+    async def update_last_run_at(self, schedule_id: UUID, when: datetime) -> None:
+        await self._session.execute(
+            update(ScheduleModel)
+            .where(ScheduleModel.id == schedule_id)
+            .values(last_run_at=when),
+        )
+        await self._session.flush()
+
+    async def list_pending_events(self, schedule_id: UUID) -> list[ScheduledEvent]:
+        stmt = (
+            select(ScheduledEventModel)
+            .where(
+                ScheduledEventModel.schedule_id == schedule_id,
+                ScheduledEventModel.is_processed.is_(False),
+            )
+            .order_by(ScheduledEventModel.event_datetime.asc())
+        )
+        result = await self._session.scalars(stmt)
+        return [_event_to_domain(r) for r in result.all()]
+
+    async def add_events_bulk(self, schedule_id: UUID, events: list[ScheduledEvent]) -> int:
+        n = 0
+        for ev in events:
+            self._session.add(
+                ScheduledEventModel(
+                    schedule_id=schedule_id,
+                    event_datetime=ev.event_datetime,
+                    event_data=dict(ev.event_data or {}),
+                    is_processed=False,
+                    last_triggered_at=ev.last_triggered_at,
+                ),
+            )
+            n += 1
+        await self._session.flush()
+        return n
+
+    async def mark_event_processed(self, event_id: UUID) -> None:
+        await self._session.execute(
+            update(ScheduledEventModel)
+            .where(ScheduledEventModel.id == event_id)
+            .values(is_processed=True),
+        )
+        await self._session.flush()
+
+    async def update_event_last_triggered(self, event_id: UUID, when: datetime) -> None:
+        await self._session.execute(
+            update(ScheduledEventModel)
+            .where(ScheduledEventModel.id == event_id)
+            .values(last_triggered_at=when),
+        )
+        await self._session.flush()
+
+
 def _system_setting_to_domain(row: SystemSettingModel) -> SystemSetting:
     return SystemSetting(
         key=row.key,
@@ -642,7 +796,7 @@ class PostgresSettingsRepository(ISettingsRepository):
 
     async def upsert_values(self, updates: dict[str, str]) -> None:
         """Обновляет значения; для ключей из UPDATABLE_KEYS создаёт строку, если миграция-сид ещё не вставила её."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(get_settings().app_zoneinfo)
         for raw_key, value in updates.items():
             k = raw_key.strip()
             row = await self._session.get(SystemSettingModel, k)

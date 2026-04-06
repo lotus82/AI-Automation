@@ -34,6 +34,9 @@ openai>=1.40.0,<2.0.0
 # HTTP-клиент для Bitrix24 REST (вебхук) и ARI Asterisk
 httpx>=0.27.0,<1.0.0
 
+# Лёгкий веб-поиск для инструмента LLM (DuckDuckGo, без браузера)
+duckduckgo-search>=6.0,<9.0
+
 # WebSocket-клиент для потока событий ARI
 websockets>=12.0,<14.0
 

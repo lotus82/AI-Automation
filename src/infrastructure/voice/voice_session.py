@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Literal, cast
 from uuid import UUID
 
@@ -21,6 +22,7 @@ from src.infrastructure.repositories import (
     SqlAlchemyTrainingScenarioRepository,
 )
 from src.infrastructure.services.bitrix24 import build_crm_service
+from src.infrastructure.services.web_search import DuckDuckGoSearchService
 from src.infrastructure.services.dynamic_llm import DynamicLLMService
 from src.infrastructure.services.openai_embedding import OpenAIEmbeddingService
 from src.infrastructure.services.salute_auth import SaluteSpeechAuthManager
@@ -93,6 +95,8 @@ async def run_voice_pipeline_session(
     voice_mode: _VoiceModeLit,
     training_scenario: TrainingScenario | None,
     voice_stt_provider_effective: str | None = None,
+    fixed_greeting_phrase: str | None = None,
+    voice_user_name: str | None = None,
 ) -> None:
     """STT → RAG/тренажёр → TTS; в конце постановка analyze_conversation_task."""
     from src.infrastructure.voice.processor import VoicePipelineOrchestrator
@@ -110,7 +114,10 @@ async def run_voice_pipeline_session(
         else None
     )
 
-    async def on_final_transcript(text: str) -> str:
+    async def on_final_transcript(
+        text: str,
+        send_intermediate: Callable[[str], Awaitable[None]],
+    ) -> str:
         async with AsyncSessionLocal() as session:
             try:
                 knowledge = SqlAlchemyKnowledgeRepository(session)
@@ -131,6 +138,9 @@ async def run_voice_pipeline_session(
                     crm_service=crm,
                     settings_repository=settings_repo,
                     chat_monitoring=get_chat_events_broadcaster(),
+                    search_service=DuckDuckGoSearchService(),
+                    redis_client=redis,
+                    app_settings=settings,
                 )
                 if voice_mode == "trainer_client" and trainer_system:
                     reply = await use_case.execute(
@@ -141,7 +151,14 @@ async def run_voice_pipeline_session(
                         skip_rag=True,
                     )
                 else:
-                    reply = await use_case.execute(text, session_id)
+                    reply = await use_case.execute(
+                        text,
+                        session_id,
+                        on_intermediate_message=send_intermediate,
+                        intermediate_search_message="Минутку, сейчас уточню в интернете",
+                        user_name=voice_user_name,
+                        interaction_user_label=voice_user_name,
+                    )
                 await session.commit()
                 return reply
             except Exception:
@@ -194,6 +211,7 @@ async def run_voice_pipeline_session(
         salutespeech_voice=salute_voice,
         voice_stt_provider_effective=stt_eff,
         recording_session_id=session_id,
+        fixed_greeting_phrase=fixed_greeting_phrase,
     )
 
 

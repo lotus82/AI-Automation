@@ -6,6 +6,7 @@ Long polling GET ``/updates`` на ``platform-api.max.ru`` — транспор�
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import socket
@@ -13,8 +14,10 @@ from collections import Counter
 from typing import Any
 
 import httpx
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import Settings
 from src.domain import system_setting_keys as sk
 from src.infrastructure.services.max_incoming_group import (
     apply_max_group_mention_rules,
@@ -32,7 +35,67 @@ logger = logging.getLogger(__name__)
 
 _POLL_LIMIT = 100
 _POLL_LONG_TIMEOUT_SEC = 30
-_POLL_TYPES = ("message_created", "message_callback")
+_POLL_TYPES = (
+    "message_created",
+    "message_callback",
+    "voice_call_incoming",
+    "VOICE_CALL_INCOMING",
+    "call_incoming",
+    "CALL_INCOMING",
+)
+
+# Лимит текста в POST /messages: платформа MAX считает **байты UTF-8** (часто ≤4096), не «символы».
+# Обрезка [:4000] по символам для кириллицы даёт >8000 байт → 400 Bad Request.
+_MAX_OUTGOING_MESSAGE_UTF8_BYTES = 3800
+# MAX CDN для type=audio: сжатый поток; синтез SaluteSpeech REST — Opus в OGG (не WAV).
+_MAX_VOICE_UPLOAD_FILENAME = "voice.ogg"
+_MAX_VOICE_UPLOAD_MIME = "audio/ogg"
+
+
+def _max_cdn_attachment_token(body: Any) -> str | None:
+    """Идентификатор вложения из JSON CDN: ``fileId`` / ``file_id`` или ``token`` (в ``/messages`` для audio всё равно поле ``payload.token``)."""
+    if not isinstance(body, dict):
+        return None
+    for key in ("fileId", "file_id", "token"):
+        v = body.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
+
+
+def _truncate_utf8_for_max_api(text: str, max_bytes: int = _MAX_OUTGOING_MESSAGE_UTF8_BYTES) -> str:
+    """Укладывает текст в лимит байт UTF-8, не ломая суррогаты и многобайтовые символы."""
+    s = (text or "").strip()
+    if not s:
+        return ""
+    raw = s.encode("utf-8")
+    if len(raw) <= max_bytes:
+        return s
+    suffix = "…"
+    suf_b = suffix.encode("utf-8")
+    budget = max_bytes - len(suf_b)
+    if budget <= 0:
+        return suffix if max_bytes >= len(suf_b) else raw[:max_bytes].decode("utf-8", errors="ignore")
+    cut = budget
+    while cut > 0:
+        try:
+            return raw[:cut].decode("utf-8") + suffix
+        except UnicodeDecodeError:
+            cut -= 1
+    return suffix
+
+
+async def _post_max_voice_multipart(
+    client: httpx.AsyncClient,
+    upload_url: str,
+    audio_data: bytes,
+) -> httpx.Response:
+    """POST **multipart/form-data** на URL из ``/uploads``: поле **file**, **.ogg** + **audio/ogg** (Opus из REST SaluteSpeech)."""
+    # Ключ ``file`` + кортеж с именем даёт ``filename=`` в Content-Disposition; общий Content-Type не задаём — httpx выставляет boundary.
+    files = {
+        "file": (_MAX_VOICE_UPLOAD_FILENAME, audio_data, _MAX_VOICE_UPLOAD_MIME),
+    }
+    return await client.post(upload_url, files=files)
 
 
 def _max_instance_tag() -> str:
@@ -80,6 +143,41 @@ def _max_markup_mention_snippets(body: dict[str, Any]) -> str:
             if un and str(un).strip():
                 parts.append("@" + str(un).strip().lstrip("@"))
     return " ".join(parts).strip()
+
+
+def extract_max_sender_display_name(sender: Any, *, _depth: int = 0) -> str | None:
+    """Извлекает имя (или ник) отправителя из объекта ``sender`` / ``user`` в payload MAX.
+
+    Пробуем поля в порядке от наиболее «человеческого» отображения к запасным вариантам API.
+    Если данных нет — ``None`` (как и пустая строка после ``strip``).
+    """
+    if _depth > 4:
+        return None
+    if not isinstance(sender, dict):
+        return None
+    if sender.get("is_bot") is True:
+        return None
+    name = (sender.get("name") or "").strip()
+    if name:
+        return name
+    sender_name = (sender.get("sender_name") or "").strip()
+    if sender_name:
+        return sender_name
+    first = (sender.get("first_name") or "").strip()
+    last = (sender.get("last_name") or "").strip()
+    if first and last:
+        return f"{first} {last}".strip()
+    if first:
+        return first
+    user_block = sender.get("user")
+    if isinstance(user_block, dict):
+        nested = extract_max_sender_display_name(user_block, _depth=_depth + 1)
+        if nested:
+            return nested
+    username = (sender.get("username") or "").strip()
+    if username:
+        return username.lstrip("@")
+    return None
 
 
 def _max_effective_message_text(body: dict[str, Any]) -> str:
@@ -160,11 +258,7 @@ def parse_max_webhook_incoming(
         text = _max_effective_message_text(body)
         if not text:
             return None
-        user_info: str | None = None
-        if isinstance(sender, dict):
-            user_info = (
-                (sender.get("name") or sender.get("first_name") or "").strip() or None
-            )
+        user_info = extract_max_sender_display_name(sender) if isinstance(sender, dict) else None
         cid = int(chat_id)
         is_group = detect_max_group_chat(
             chat_id=cid,
@@ -188,11 +282,7 @@ def parse_max_webhook_incoming(
         if chat_id is None or not payload_str:
             return None
         cb_user = callback.get("user")
-        user_info = None
-        if isinstance(cb_user, dict):
-            user_info = (
-                (cb_user.get("name") or cb_user.get("first_name") or "").strip() or None
-            )
+        user_info = extract_max_sender_display_name(cb_user) if isinstance(cb_user, dict) else None
         cid = int(chat_id)
         is_group = detect_max_group_chat(
             chat_id=cid,
@@ -202,6 +292,58 @@ def parse_max_webhook_incoming(
         return cid, payload_str, user_info, is_group
 
     return None
+
+
+_VOICE_CALL_UPDATE_TYPES = frozenset(
+    {
+        "voice_call_incoming",
+        "VOICE_CALL_INCOMING",
+        "call_incoming",
+        "CALL_INCOMING",
+        "incoming_call",
+        "INCOMING_CALL",
+    }
+)
+
+
+def parse_max_voice_call_incoming(payload: dict[str, Any]) -> tuple[str, str | None] | None:
+    """Распознаёт событие входящего VoIP-звонка MAX и извлекает ``call_id`` и имя абонента.
+
+    Возвращает ``(call_id, user_display_name | None)`` или ``None``, если это не звонок или нет id.
+
+    # TODO (рус.): Сверить ``update_type`` и вложенные поля с официальным webhook/long poll MAX.
+    """
+    ut_raw = (payload.get("update_type") or "").strip()
+    ut_lower = ut_raw.lower()
+    if ut_raw not in _VOICE_CALL_UPDATE_TYPES:
+        if (
+            "voice_call" not in ut_lower
+            and "call_incoming" not in ut_lower
+            and "incoming_call" != ut_lower
+        ):
+            return None
+
+    call_id: str | None = None
+    call_block = payload.get("call") or payload.get("voice_call") or payload.get("voiceCall")
+    if isinstance(call_block, dict):
+        cid = call_block.get("call_id") or call_block.get("id") or call_block.get("callId")
+        if cid is not None and str(cid).strip():
+            call_id = str(cid).strip()
+    if not call_id:
+        for key in ("call_id", "callId", "voice_call_id"):
+            v = payload.get(key)
+            if v is not None and str(v).strip():
+                call_id = str(v).strip()
+                break
+    if not call_id:
+        return None
+
+    user_name: str | None = None
+    user_block = payload.get("user") or payload.get("sender") or payload.get("caller")
+    if isinstance(user_block, dict):
+        user_name = extract_max_sender_display_name(user_block)
+
+    return call_id, user_name
 
 
 class MaxMessengerClient:
@@ -235,12 +377,48 @@ class MaxMessengerClient:
         low = str(raw).strip().lower()
         return low not in ("0", "false", "no", "off")
 
+    async def answer_call(self, call_id: str) -> None:
+        """Принять входящий вызов: команда ``accept`` к Platform API после задержки ``MAX_CALL_ANSWER_DELAY``.
+
+        # TODO (рус.): Уточнить точный путь (например ``/v1/...``) и тело запроса в документации MAX.
+        """
+        token = await self._resolve_bot_token()
+        if not token:
+            raise ValueError(
+                "MAX_BOT_TOKEN не задан: укажите в панели «Настройки» или в переменной окружения MAX_BOT_TOKEN (.env)"
+            )
+        cid = (call_id or "").strip()
+        if not cid:
+            raise ValueError("call_id пустой")
+
+        url = f"{self._platform_api_base}/calls/{cid}/accept"
+        headers = {
+            "Authorization": token,
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            response = await client.post(url, headers=headers, json={})
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                logger.error(
+                    "MAX answer_call: HTTP %s call_id=%s URL=%s ответ: %s",
+                    exc.response.status_code,
+                    cid,
+                    url,
+                    (exc.response.text or "")[:800],
+                )
+                raise
+        logger.info("MAX answer_call: вызов принят call_id=%s", cid)
+
     async def start_polling(
         self,
         use_case: ProcessTextMessageUseCase,
         *,
         session: AsyncSession,
         stop_event: asyncio.Event,
+        redis: Redis,
+        app_settings: Settings,
     ) -> None:
         """Бесконечный long poll ``GET /updates``; для каждого события — ``use_case.execute`` + ``send_message``.
 
@@ -382,6 +560,29 @@ class MaxMessengerClient:
                     break
                 if not isinstance(raw_update, dict):
                     continue
+                parsed_call = parse_max_voice_call_incoming(raw_update)
+                if parsed_call is not None:
+                    call_id_v, user_label_v = parsed_call
+
+                    async def _voip_bg(c_id: str, u_lab: str | None) -> None:
+                        from src.infrastructure.voice.max_call_session import (
+                            run_max_inbound_call_background,
+                        )
+
+                        await run_max_inbound_call_background(
+                            call_id=c_id,
+                            user_label=u_lab,
+                            redis=redis,
+                            settings=app_settings,
+                        )
+
+                    asyncio.create_task(_voip_bg(call_id_v, user_label_v))
+                    logger.info(
+                        "MAX long poll: запланирована обработка VoIP call_id=%s instance=%s",
+                        call_id_v,
+                        instance_tag,
+                    )
+                    continue
                 parsed = parse_max_webhook_incoming(raw_update)
                 if parsed is None:
                     if logger.isEnabledFor(logging.DEBUG):
@@ -403,15 +604,41 @@ class MaxMessengerClient:
                     )
                     continue
                 session_id = str(chat_id)
+
+                async def on_intermediate(msg: str) -> None:
+                    await self.send_message(chat_id, msg)
+
+                voice_audio: list[bytes] = []
+
+                async def on_voice_generated(data: bytes) -> None:
+                    voice_audio.append(data)
+
                 try:
                     reply = await use_case.execute(
                         processed,
                         session_id,
                         interaction_user_label=user_label,
+                        user_name=user_label,
                         append_text_messenger_system_supplement=True,
+                        on_intermediate_message=on_intermediate,
+                        on_voice_generated=on_voice_generated,
                     )
-                    await self.send_message(chat_id, reply)
+                except Exception:
+                    await session.rollback()
+                    logger.exception("Сбой сценария текста MAX (long poll), chat_id=%s", chat_id)
+                    await asyncio.sleep(5)
+                    continue
+
+                try:
                     await session.commit()
+                except Exception:
+                    await session.rollback()
+                    logger.exception("Сбой commit после ответа LLM (long poll), chat_id=%s", chat_id)
+                    await asyncio.sleep(5)
+                    continue
+
+                try:
+                    await self.send_message(chat_id, reply)
                     replies_sent += 1
                     logger.info(
                         "MAX long poll: ответ отправлен chat_id=%s len(reply)=%s instance=%s",
@@ -419,10 +646,23 @@ class MaxMessengerClient:
                         len(reply or ""),
                         instance_tag,
                     )
+                    if voice_audio:
+                        try:
+                            await self.send_voice_message(chat_id, voice_audio[0])
+                        except Exception:
+                            logger.exception(
+                                "MAX long poll: не удалось отправить голосовое вложение, chat_id=%s",
+                                chat_id,
+                            )
+                except httpx.HTTPStatusError as exc:
+                    logger.error(
+                        "MAX long poll: сообщение не доставлено HTTP %s chat_id=%s тело ответа API: %s",
+                        exc.response.status_code,
+                        chat_id,
+                        (exc.response.text or "")[:800],
+                    )
                 except Exception:
-                    await session.rollback()
-                    logger.exception("Сбой обработки обновления MAX (long poll), chat_id=%s", chat_id)
-                    await asyncio.sleep(5)
+                    logger.exception("Сбой send_message MAX (long poll), chat_id=%s", chat_id)
 
             if n_updates > 0:
                 logger.info(
@@ -447,7 +687,16 @@ class MaxMessengerClient:
             "Authorization": token,
             "Content-Type": "application/json",
         }
-        payload = {"text": (text or "")[:4000]}
+        raw_text = (text or "").strip()
+        safe = _truncate_utf8_for_max_api(raw_text)
+        if safe != raw_text:
+            logger.info(
+                "MAX send_message: текст усечён по UTF-8 до %s байт (было %s байт), chat_id=%s",
+                _MAX_OUTGOING_MESSAGE_UTF8_BYTES,
+                len(raw_text.encode("utf-8")),
+                chat_id,
+            )
+        payload = {"text": safe}
 
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
@@ -457,7 +706,16 @@ class MaxMessengerClient:
                     json=payload,
                     headers=headers,
                 )
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    logger.error(
+                        "MAX send_message: HTTP %s chat_id=%s тело ответа: %s",
+                        exc.response.status_code,
+                        chat_id,
+                        (exc.response.text or "")[:800],
+                    )
+                    raise
         except httpx.ConnectError as exc:
             logger.error(
                 "MAX send_message: нет TCP/TLS до %s (DNS, файрвол, прокси Docker). Подробности: %s",
@@ -465,3 +723,159 @@ class MaxMessengerClient:
                 exc,
             )
             raise
+
+    async def send_voice_message(
+        self,
+        chat_id: int,
+        audio_data: bytes,
+        *,
+        filename: str = "voice.ogg",
+    ) -> None:
+        """Загружает **Opus OGG** через **POST /uploads?type=audio** и **POST /messages** с вложением **audio** (см. dev.max.ru).
+
+        Имя части multipart на CDN фиксировано (**voice.ogg**); параметр ``filename`` оставлен для совместимости вызовов.
+        Промежуточные текстовые уведомления не должны вызывать этот метод — только итоговый ответ бота.
+        """
+        # TODO (рус.): при смене контракта MAX (поля token/url) сверить с актуальной документацией platform-api.
+        token = await self._resolve_bot_token()
+        if not token:
+            msg = (
+                "MAX_BOT_TOKEN не задан: укажите в панели «Настройки» или в переменной окружения MAX_BOT_TOKEN (.env)"
+            )
+            raise ValueError(msg)
+        if not audio_data:
+            logger.warning("MAX send_voice_message: пустые аудиоданные, chat_id=%s", chat_id)
+            return
+
+        base = self._platform_api_base.rstrip("/")
+        uploads_url = f"{base}/uploads"
+        messages_url = f"{base}/messages"
+        params = {"chat_id": chat_id}
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            meta = await client.post(
+                uploads_url,
+                params={"type": "audio"},
+                headers={"Authorization": token},
+            )
+            try:
+                meta.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                logger.error(
+                    "MAX send_voice_message: получение URL загрузки HTTP %s: %s",
+                    exc.response.status_code,
+                    (exc.response.text or "")[:800],
+                )
+                raise
+
+            try:
+                meta_body = meta.json()
+            except json.JSONDecodeError:
+                logger.error("MAX send_voice_message: ответ /uploads не JSON")
+                raise ValueError("MAX /uploads: неверный JSON") from None
+
+            upload_url = (meta_body.get("url") or "").strip()
+            if not upload_url:
+                logger.error("MAX send_voice_message: в ответе /uploads нет поля url: %s", meta_body)
+                raise ValueError("MAX /uploads: нет url")
+
+            # Токен вложения иногда приходит сразу в ответе POST /uploads; после загрузки на CDN — в JSON (token / fileId).
+            attach_token = (meta_body.get("token") or "").strip() or None
+
+            # Параметр ``filename`` — для совместимости; multipart на CDN всегда **voice.ogg** (см. константы выше).
+            want = os.path.basename((filename or "").strip()) or _MAX_VOICE_UPLOAD_FILENAME
+            if want != _MAX_VOICE_UPLOAD_FILENAME:
+                logger.debug(
+                    "MAX send_voice_message: для OK CDN используется имя %s, аргумент filename=%r не применяется",
+                    _MAX_VOICE_UPLOAD_FILENAME,
+                    filename,
+                )
+
+            up = await _post_max_voice_multipart(client, upload_url, audio_data)
+            try:
+                up.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                logger.error(
+                    "MAX send_voice_message: загрузка файла HTTP %s: %s",
+                    exc.response.status_code,
+                    (exc.response.text or "")[:800],
+                )
+                raise
+
+            # После успешной загрузки CDN обычно отдаёт JSON с ``token`` или ``fileId``; тело может быть пустым — тогда берём ``token`` из ответа /uploads.
+            raw_cdn = (up.text or "").strip()
+            cdn_body: Any = None
+            if raw_cdn:
+                try:
+                    cdn_body = json.loads(raw_cdn)
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "MAX send_voice_message: тело CDN не JSON, оставляем token из /uploads; chat_id=%s: %s",
+                        chat_id,
+                        raw_cdn[:500],
+                    )
+                else:
+                    cdn_token = _max_cdn_attachment_token(cdn_body)
+                    if cdn_token:
+                        attach_token = cdn_token
+
+            if not attach_token:
+                logger.error(
+                    "MAX send_voice_message: нет token/fileId ни в /uploads, ни в JSON CDN; "
+                    "meta=%s cdn_body=%s",
+                    {k: meta_body.get(k) for k in ("url", "token")},
+                    cdn_body,
+                )
+                raise ValueError("MAX: нет идентификатора вложения audio (token/fileId)")
+
+            # Bot API MAX: вложение audio — ``payload.token``; значение берём из ответа CDN как **fileId** или **token**.
+            payload = {
+                "attachments": [
+                    {
+                        "type": "audio",
+                        "payload": {"token": attach_token},
+                    }
+                ]
+            }
+            delays = (0.0, 0.5, 1.0, 2.0, 4.0)
+            last_err: str | None = None
+            for i, delay_sec in enumerate(delays):
+                if delay_sec > 0:
+                    await asyncio.sleep(delay_sec)
+                resp = await client.post(
+                    messages_url,
+                    params=params,
+                    headers={
+                        "Authorization": token,
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+                if resp.status_code < 400:
+                    return
+                body_snip = (resp.text or "")[:1200]
+                last_err = f"HTTP {resp.status_code} {body_snip}"
+                low = body_snip.lower()
+                if "attachment.not.ready" in low or "not.processed" in low or "file.not.processed" in low:
+                    logger.warning(
+                        "MAX send_voice_message: вложение ещё не готово (попытка %s/%s), chat_id=%s",
+                        i + 1,
+                        len(delays),
+                        chat_id,
+                    )
+                    continue
+                logger.error(
+                    "MAX send_voice_message: отправка сообщения с audio HTTP %s chat_id=%s: %s",
+                    resp.status_code,
+                    chat_id,
+                    body_snip,
+                )
+                resp.raise_for_status()
+
+            logger.error(
+                "MAX send_voice_message: не удалось отправить audio после повторов, chat_id=%s, последняя ошибка=%s",
+                chat_id,
+                last_err,
+            )
+            msg = last_err or "MAX: вложение audio не принято после повторов"
+            raise RuntimeError(msg)

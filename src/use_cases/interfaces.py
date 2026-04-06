@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -16,6 +17,8 @@ from src.domain.entities import (
     DialerQueueStatus,
     KnowledgeItem,
     Lead,
+    Schedule,
+    ScheduledEvent,
     SystemSetting,
     TrainingScenario,
     TrainingSession,
@@ -94,6 +97,22 @@ class ICRMService(ABC):
     @abstractmethod
     async def create_lead(self, phone: str, name: str, description: str) -> str:
         """Создаёт лид; возвращает строковый идентификатор в CRM."""
+
+
+class ISearchService(ABC):
+    """Порт веб-поиска для инструмента LLM (сниппеты, без скрейпинга магазинов)."""
+
+    @abstractmethod
+    async def search(self, query: str, max_results: int = 3) -> str:
+        """Возвращает отформатированную строку с результатами или сообщение об ошибке."""
+
+
+class IMaxVoiceSynthesizer(ABC):
+    """Синтез речи для голосовых вложений MAX (SaluteSpeech и др.), без Pipecat-потока."""
+
+    @abstractmethod
+    async def synthesize_to_file(self, text: str) -> bytes:
+        """Возвращает готовый аудиофайл (например WAV) целиком в памяти; пустые байты при отказе."""
 
 
 class ITelephonyService(ABC):
@@ -254,6 +273,58 @@ class IDialerQueueRepository(ABC):
     @abstractmethod
     async def set_status(self, item_id: UUID, status: DialerQueueStatus) -> None:
         """Обновляет статус строки очереди."""
+
+
+class IProactiveDeliveryMessenger(ABC):
+    """Порт исходящей доставки текста в чат MAX (без знания HTTP-деталей)."""
+
+    @abstractmethod
+    async def send_plain_text(self, chat_id: str, text: str) -> None:
+        """Отправляет готовый текст в указанный числовой ``chat_id`` (строка)."""
+
+
+class IScheduleRepository(ABC):
+    """Порт расписаний и событий (фаза 18 — проактивные сообщения)."""
+
+    @abstractmethod
+    async def list_schedules(self, *, active_only: bool = False) -> list[Schedule]:
+        """Список расписаний; при ``active_only`` — только с ``is_active``."""
+
+    @abstractmethod
+    async def get_by_id(self, schedule_id: UUID) -> Schedule | None:
+        """Расписание по id или None."""
+
+    @abstractmethod
+    async def create(self, schedule: Schedule) -> Schedule:
+        """Создаёт расписание (``id`` должен быть None); возвращает сущность с id."""
+
+    @abstractmethod
+    async def update(self, schedule: Schedule) -> Schedule | None:
+        """Обновляет строку по ``schedule.id``; ``None`` если расписание не найдено."""
+
+    @abstractmethod
+    async def delete(self, schedule_id: UUID) -> bool:
+        """Удаляет расписание и события (CASCADE); ``True`` если строка была."""
+
+    @abstractmethod
+    async def update_last_run_at(self, schedule_id: UUID, when: datetime) -> None:
+        """Обновляет ``last_run_at`` (тип INTERVAL и после любой успешной отправки при необходимости)."""
+
+    @abstractmethod
+    async def list_pending_events(self, schedule_id: UUID) -> list[ScheduledEvent]:
+        """События с ``is_processed=False`` (ежегодные и разовые до обработки)."""
+
+    @abstractmethod
+    async def add_events_bulk(self, schedule_id: UUID, events: list[ScheduledEvent]) -> int:
+        """Пакетная вставка событий; ``schedule_id`` подставляется в каждую строку; возвращает число вставок."""
+
+    @abstractmethod
+    async def mark_event_processed(self, event_id: UUID) -> None:
+        """Помечает событие обработанным (разовые DATABASE / REMINDER)."""
+
+    @abstractmethod
+    async def update_event_last_triggered(self, event_id: UUID, when: datetime) -> None:
+        """Фиксирует время последнего срабатывания (ежегодные DATABASE)."""
 
 
 class IKnowledgeRepository(ABC):
