@@ -15,6 +15,7 @@ from uuid import UUID
 from datetime import datetime, timezone
 
 from src.core.config import get_settings
+from src.core.utils.bitrix import normalize_bitrix_portal_url
 from src.domain import system_setting_keys as sk
 from src.domain.entities import (
     CallAnalytics,
@@ -35,6 +36,7 @@ from src.domain.entities import (
 )
 from src.infrastructure.models import (
     KNOWLEDGE_EMBEDDING_DIM,
+    BitrixPortalModel,
     CallAnalyticsModel,
     CallRecordModel,
     ChatMessageModel,
@@ -817,3 +819,88 @@ class PostgresSettingsRepository(ISettingsRepository):
         await self._session.flush()
         for raw_key in updates:
             await self._redis.delete(self._cache_key(raw_key.strip()))
+
+
+class SqlAlchemyBitrixPortalRepository:
+    """CRUD порталов Bitrix24 (OAuth) для Marketplace Server App."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_by_id(self, portal_id: UUID) -> BitrixPortalModel | None:
+        return await self._session.get(BitrixPortalModel, portal_id)
+
+    async def get_by_member_id(self, member_id: str) -> BitrixPortalModel | None:
+        mid = (member_id or "").strip()
+        if not mid:
+            return None
+        stmt = select(BitrixPortalModel).where(BitrixPortalModel.member_id == mid)
+        return (await self._session.scalars(stmt)).first()
+
+    async def get_by_portal_url(self, portal_url: str) -> BitrixPortalModel | None:
+        url = normalize_bitrix_portal_url(portal_url)
+        if not url:
+            return None
+        stmt = select(BitrixPortalModel).where(BitrixPortalModel.portal_url == url)
+        row = (await self._session.scalars(stmt)).first()
+        if row:
+            return row
+        # Без схемы в БД могли сохранить иначе — запасной поиск по суффиксу хоста не делаем (уникальный portal_url).
+        return None
+
+    async def upsert_install(
+        self,
+        *,
+        portal_url: str,
+        member_id: str,
+        access_token: str,
+        refresh_token: str,
+        expires_at: datetime | None,
+    ) -> BitrixPortalModel:
+        """Создание или обновление записи по ``member_id`` (повторная установка / переустановка)."""
+        now = datetime.now(timezone.utc)
+        existing = await self.get_by_member_id(member_id)
+        if existing:
+            existing.portal_url = portal_url
+            existing.access_token = access_token
+            existing.refresh_token = refresh_token
+            existing.expires_at = expires_at
+            existing.is_active = True
+            existing.updated_at = now
+            await self._session.flush()
+            return existing
+        row = BitrixPortalModel(
+            portal_url=portal_url,
+            member_id=member_id.strip(),
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_at=expires_at,
+            is_active=True,
+            updated_at=now,
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return row
+
+    async def update_tokens(
+        self,
+        portal_id: UUID,
+        *,
+        access_token: str,
+        refresh_token: str,
+        expires_at: datetime | None,
+    ) -> None:
+        """Обновление токенов после refresh OAuth (вызывается из ``Bitrix24Client``)."""
+        now = datetime.now(timezone.utc)
+        stmt = (
+            update(BitrixPortalModel)
+            .where(BitrixPortalModel.id == portal_id)
+            .values(
+                access_token=access_token,
+                refresh_token=refresh_token,
+                expires_at=expires_at,
+                updated_at=now,
+            )
+        )
+        await self._session.execute(stmt)
+        await self._session.flush()

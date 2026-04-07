@@ -15,6 +15,7 @@ from src.infrastructure.repositories import (
     HybridChatMemoryRepository,
     PostgresSettingsRepository,
     RedisChatMemoryRepository,
+    SqlAlchemyBitrixPortalRepository,
     SqlAlchemyCallRecordRepository,
     SqlAlchemyChatSessionRepository,
     SqlAlchemyDialerQueueRepository,
@@ -24,6 +25,7 @@ from src.infrastructure.repositories import (
 )
 from src.infrastructure.services.bitrix24 import build_crm_service
 from src.infrastructure.services.dynamic_llm import DynamicLLMService
+from src.infrastructure.services.trainer_ai import TrainerAIService
 from src.infrastructure.services.max_messenger import MaxMessengerClient
 from src.infrastructure.services.openai_embedding import OpenAIEmbeddingService
 from src.infrastructure.services.web_search import DuckDuckGoSearchService
@@ -46,6 +48,14 @@ from src.use_cases.interfaces import (
 from src.use_cases.leads import CreateLeadUseCase
 
 AsyncSessionDep = Annotated[AsyncSession, Depends(get_async_session)]
+
+
+def get_bitrix_portal_repository(session: AsyncSessionDep) -> SqlAlchemyBitrixPortalRepository:
+    """Репозиторий порталов Bitrix24 (OAuth) для роутера установки и событий."""
+    return SqlAlchemyBitrixPortalRepository(session)
+
+
+BitrixPortalRepoDep = Annotated[SqlAlchemyBitrixPortalRepository, Depends(get_bitrix_portal_repository)]
 
 
 def get_settings_dependency() -> Settings:
@@ -105,6 +115,17 @@ def get_embedding_service(
 
 
 EmbeddingServiceDep = Annotated[IEmbeddingService, Depends(get_embedding_service)]
+
+
+def get_trainer_ai_service(
+    settings: SettingsDep,
+    settings_repository: SettingsRepositoryDep,
+) -> TrainerAIService:
+    """LLM-разбор транскриптов BANT/MEDDIC (те же ключи, что у консультанта)."""
+    return TrainerAIService(settings=settings, settings_repo=settings_repository)
+
+
+TrainerAIServiceDep = Annotated[TrainerAIService, Depends(get_trainer_ai_service)]
 
 
 def get_llm_service(

@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Базовые правила под iframe Битрикс24: без «прокрутки двойного контейнера» */
+html,
+body,
+#root {
+  min-height: 100%;
+}

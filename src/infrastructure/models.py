@@ -148,6 +148,59 @@ class TrainingSessionModel(Base):
     )
 
 
+class TrainerMethodologyModel(Base):
+    """Методика продаж (BANT, MEDDIC): описание и системный промпт роли клиента для симуляций."""
+
+    __tablename__ = "trainer_methodologies"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    client_role_system_prompt: Mapped[str] = mapped_column(
+        Text(),
+        nullable=False,
+        server_default=text("''"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+    )
+
+
+class AiTrainerSessionModel(Base):
+    """Сессия ИИ-тренера: пост-анализ транскрипта или инициация голосовой симуляции."""
+
+    __tablename__ = "ai_trainer_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    manager_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    session_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    result_data: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    methodology_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("trainer_methodologies.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    scenario_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("training_scenarios.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+    )
+
+
 class CallAnalyticsModel(Base):
     """Оценка и рекомендации ОКК по записи звонка/чата."""
 
@@ -288,5 +341,34 @@ class KnowledgeItemModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("now()"),
+        nullable=False,
+    )
+
+
+class BitrixPortalModel(Base):
+    """Портал Bitrix24 (Marketplace Server App): OAuth-токены для REST."""
+
+    __tablename__ = "bitrix_portals"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    portal_url: Mapped[str] = mapped_column(String(512), nullable=False, unique=True, index=True)
+    member_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    access_token: Mapped[str] = mapped_column(Text(), nullable=False)
+    refresh_token: Mapped[str] = mapped_column(Text(), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+        onupdate=func.now(),
         nullable=False,
     )

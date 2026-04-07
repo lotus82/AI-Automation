@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
-from src.api.routers import calls, chat, chats, dialer, health, knowledge, leads, max_bot, notifications, schedules, telephony, training, voice
+from src.api.routers import bitrix, calls, chat, chats, dialer, health, knowledge, leads, max_bot, notifications, schedules, telephony, trainer, training, voice
 from src.api.routers import settings as settings_router
 from src.api.dependencies import build_max_long_poll_stack
 from src.core.config import get_settings
@@ -113,10 +113,12 @@ def create_app() -> FastAPI:
     )
 
     application.include_router(health.router, prefix="/api")
+    application.include_router(bitrix.router, prefix="/api")
     application.include_router(leads.router, prefix="/api/leads", tags=["leads"])
     application.include_router(chat.router, prefix="/api/chat", tags=["chat"])
     application.include_router(calls.router, prefix="/api")
     application.include_router(training.router, prefix="/api", tags=["training"])
+    application.include_router(trainer.router, prefix="/api")
     application.include_router(knowledge.router, prefix="/api", tags=["knowledge"])
     application.include_router(telephony.router, prefix="/api", tags=["telephony"])
     application.include_router(dialer.router, prefix="/api", tags=["dialer"])

@@ -14,6 +14,7 @@ from alembic import context
 from src.core.config import get_settings
 from src.infrastructure.models import (  # noqa: F401
     Base,
+    BitrixPortalModel,
     CallAnalyticsModel,
     CallRecordModel,
     DialerQueueModel,

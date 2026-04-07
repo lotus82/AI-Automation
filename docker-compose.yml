@@ -1,4 +1,4 @@
-# Локальная инфраструктура: API, фронт (Nginx), PostgreSQL (с pgvector), Redis, Asterisk (SIP + ARI).
+# Локальная инфраструктура: API, фронт (Vite dev + HMR на :8080), PostgreSQL (pgvector), Redis, Asterisk (SIP + ARI).
 
 services:
   asterisk:
@@ -173,14 +173,23 @@ services:
         "--loglevel=info",
       ]
 
+  # Vite dev server + HMR: код монтируется с хоста, node_modules — в анонимном томе.
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend/spa:/app
+      - /app/node_modules
     ports:
-      - "8080:80"
+      - "8080:5173"
     depends_on:
       - web
+    environment:
+      # Прокси /api и /voice на API в сети Compose (локально без Docker — см. vite.config.js)
+      VITE_PROXY_TARGET: http://web:8000
+      # Браузер открывает localhost:8080 → WebSocket HMR должен идти на тот же порт
+      VITE_HMR_CLIENT_PORT: "8080"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
 
 volumes:
   postgres_data:

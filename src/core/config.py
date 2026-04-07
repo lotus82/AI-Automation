@@ -182,6 +182,20 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="BITRIX24_WEBHOOK_URL",
     )
+    # Marketplace Server App (OAuth): клиент и секрет с портала разработчика; application_token — секрет проверки вебхуков
+    bitrix24_oauth_client_id: str | None = Field(
+        default=None,
+        validation_alias="BITRIX24_OAUTH_CLIENT_ID",
+    )
+    bitrix24_oauth_client_secret: str | None = Field(
+        default=None,
+        validation_alias="BITRIX24_OAUTH_CLIENT_SECRET",
+    )
+    bitrix24_application_token: str | None = Field(
+        default=None,
+        validation_alias="BITRIX24_APPLICATION_TOKEN",
+        description="Секрет приложения для валидации auth[application_token] во входящих событиях.",
+    )
 
     # SIP (транк MCN.ru / Asterisk / FreeSWITCH) — без локальных кодеков в приложении
     sip_server_ip: str | None = Field(
@@ -282,6 +296,9 @@ class Settings(BaseSettings):
         "elevenlabs_api_key",
         "elevenlabs_voice_id",
         "bitrix24_webhook_url",
+        "bitrix24_oauth_client_id",
+        "bitrix24_oauth_client_secret",
+        "bitrix24_application_token",
         "sip_server_ip",
         "sip_user",
         "sip_password",

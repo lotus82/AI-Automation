@@ -10,8 +10,9 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal, cast
 from urllib.parse import urlparse, urlunparse
+from uuid import UUID
 
 import httpx
 import websockets
@@ -19,11 +20,18 @@ from loguru import logger
 from redis.asyncio import Redis
 
 from src.core.config import Settings
+from src.domain.entities import TrainingScenario
+from src.infrastructure.database import AsyncSessionLocal
+from src.infrastructure.repositories import SqlAlchemyTrainingScenarioRepository
 from src.infrastructure.sip_call_redis import (
     analyst_call_meta_redis_key,
     encode_analyst_call_meta,
     encode_sip_call_map,
     sip_call_map_redis_key,
+)
+from src.infrastructure.training_session_redis import (
+    decode_trainer_meta,
+    trainer_session_redis_key,
 )
 from src.infrastructure.voice.asterisk_rtp_transport import (
     AsteriskRtpPipecatTransport,
@@ -106,6 +114,24 @@ class AriRestClient:
         except httpx.HTTPError as e:
             logger.warning("ARI hangup_channel {}: {}", channel_id, e)
 
+    async def originate_channel(
+        self,
+        *,
+        endpoint: str,
+        app: str,
+        app_args: str | None = None,
+        caller_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Исходящий вызов в Stasis (например Local/xxx или PJSIP/добавочный)."""
+        body: dict[str, Any] = {"endpoint": endpoint.strip(), "app": app.strip()}
+        if app_args:
+            body["appArgs"] = app_args.strip()
+        if caller_id:
+            body["callerId"] = caller_id.strip()
+        r = await self._client.post("/channels", json=body)
+        r.raise_for_status()
+        return r.json()
+
 
 @dataclass
 class _RtpPortPool:
@@ -174,13 +200,59 @@ async def _run_stasis_inbound_call(
     caller = channel.get("caller") or {}
     caller_num = str(caller.get("number") or "").strip()
 
-    telephony = build_telephony_service(settings)
-    session_id = await telephony.handle_inbound_call(channel_id)
+    st_args = list(event.get("args") or [])
+    trainer_mode = len(st_args) >= 3 and str(st_args[0]).strip().lower() == "trainer"
+    training_scenario: TrainingScenario | None = None
+    voice_mode: str = "consultant"
+
+    if trainer_mode:
+        session_id = str(st_args[1]).strip()
+        if not session_id:
+            logger.warning("ARI: trainer StasisStart без session_id")
+            inflight.discard(channel_id)
+            return
+        try:
+            scenario_uuid = UUID(str(st_args[2]).strip())
+        except ValueError:
+            logger.warning("ARI: trainer некорректный scenario_id в appArgs")
+            inflight.discard(channel_id)
+            return
+        raw_trainer = await redis.get(trainer_session_redis_key(session_id))
+        manager_phone = ""
+        if raw_trainer:
+            decoded = decode_trainer_meta(raw_trainer)
+            if decoded:
+                _sc_redis, manager_phone = decoded
+        async with AsyncSessionLocal() as db:
+            try:
+                repo = SqlAlchemyTrainingScenarioRepository(db)
+                training_scenario = await repo.get_by_id(scenario_uuid)
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+        if training_scenario is None:
+            logger.error("ARI: сценарий тренажёра {} не найден", scenario_uuid)
+            inflight.discard(channel_id)
+            try:
+                await rest.hangup_channel(channel_id)
+            except Exception:
+                pass
+            return
+        voice_mode = "trainer_client"
+        remote_phone = (manager_phone or caller_num or "").strip()
+        direction = "outbound_trainer"
+    else:
+        telephony = build_telephony_service(settings)
+        session_id = await telephony.handle_inbound_call(channel_id)
+        remote_phone = caller_num
+        direction = "inbound"
+
     ttl = settings.chat_memory_ttl_seconds
     await redis.setex(
         analyst_call_meta_redis_key(session_id),
         ttl,
-        encode_analyst_call_meta(direction="inbound", remote_phone=caller_num),
+        encode_analyst_call_meta(direction=direction, remote_phone=remote_phone),
     )
     await redis.setex(
         sip_call_map_redis_key(channel_id),
@@ -218,10 +290,11 @@ async def _run_stasis_inbound_call(
                 index[ext_id] = leg
 
                 logger.info(
-                    "ARI: мост SIP {} ↔ RTP {}, session_id={}, ext={}",
+                    "ARI: мост SIP {} ↔ RTP {}, session_id={}, mode={}, ext={}",
                     channel_id,
                     external_host,
                     session_id,
+                    voice_mode,
                     ext_id,
                 )
 
@@ -232,8 +305,11 @@ async def _run_stasis_inbound_call(
                         voice_transport=voice,
                         redis=redis,
                         settings=settings,
-                        voice_mode="consultant",
-                        training_scenario=None,
+                        voice_mode=cast(
+                            Literal["consultant", "trainer_client"],
+                            voice_mode,
+                        ),
+                        training_scenario=training_scenario,
                     )
                 finally:
                     schedule_analyze_after_voice(session_id)
