@@ -10,7 +10,7 @@ from starlette.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from src.api.dependencies import AsyncSessionDep, QuestionnaireLLMServiceDep
+from src.api.dependencies import AsyncSessionDep, QuestionnaireLLMServiceDep, SettingsDep
 from src.api.schemas.questionnaires import (
     AssessRequest,
     AssessResponse,
@@ -18,10 +18,12 @@ from src.api.schemas.questionnaires import (
     QuestionnaireListItem,
     QuestionnairePublic,
     QuestionnaireUpdate,
+    QuestionnaireVerdictPdfBody,
     QuestionOptionPublic,
     QuestionPublic,
 )
 from src.infrastructure.models import QuestionnaireModel, QuestionModel, QuestionOptionModel
+from src.infrastructure.verdict_pdf import build_questionnaire_verdict_pdf
 
 router = APIRouter(tags=["questionnaires"])
 
@@ -115,6 +117,36 @@ async def create_questionnaire(
     loaded = await session.scalar(_stmt_by_id(q_row.id))
     assert loaded is not None
     return questionnaire_to_public(loaded)
+
+
+@router.post("/questionnaires/verdict-pdf")
+async def export_questionnaire_verdict_pdf(
+    body: QuestionnaireVerdictPdfBody,
+    settings: SettingsDep,
+) -> Response:
+    """Скачиваемый PDF с текстом вердикта ИИ (кириллица через DejaVu в Docker-образе)."""
+    try:
+        pdf_bytes, slug = build_questionnaire_verdict_pdf(
+            title=body.title.strip(),
+            analysis=body.analysis,
+            tz=settings.app_zoneinfo,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
+    except Exception as e:
+        logger.exception("verdict pdf build failed")
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка формирования PDF: {e!s}",
+        ) from e
+    filename = f"{slug}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 @router.get("/questionnaires/{questionnaire_id}", response_model=QuestionnairePublic)

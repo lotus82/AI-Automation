@@ -15,6 +15,10 @@ RUN pip install --no-cache-dir --upgrade pip \
 # --- Минимальный runtime-образ ---
 FROM python:3.12-slim-bookworm AS runtime
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 ENV PYTHONPATH=/app \

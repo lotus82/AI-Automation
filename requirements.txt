@@ -34,6 +34,9 @@ openai>=1.40.0,<2.0.0
 # HTTP-клиент для Bitrix24 REST (вебхук) и ARI Asterisk
 httpx>=0.27.0,<1.0.0
 
+# PDF вердикта опросника (кириллица через DejaVu в образе, см. Dockerfile)
+fpdf2>=2.8.0,<3.0.0
+
 # Лёгкий веб-поиск для инструмента LLM (DuckDuckGo, без браузера)
 duckduckgo-search>=6.0,<9.0
 

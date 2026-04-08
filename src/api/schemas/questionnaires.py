@@ -106,3 +106,10 @@ class AssessRequest(BaseModel):
 
 class AssessResponse(BaseModel):
     analysis: str
+
+
+class QuestionnaireVerdictPdfBody(BaseModel):
+    """Тело запроса на PDF с вердиктом ИИ (без хранения на сервере)."""
+
+    title: str = Field(default="", max_length=512)
+    analysis: str = Field(..., min_length=1, max_length=500_000)

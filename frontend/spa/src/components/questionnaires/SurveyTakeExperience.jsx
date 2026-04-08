@@ -33,6 +33,7 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
   const [phase, setPhase] = useState("form");
   const [analysis, setAnalysis] = useState("");
   const [submitError, setSubmitError] = useState("");
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const ordered = useMemo(() => sortQuestions(qn?.questions), [qn]);
 
@@ -208,6 +209,56 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
               }}
             >
               Пройти снова
+            </button>
+            <button
+              type="button"
+              disabled={pdfBusy || !analysis}
+              className="rounded-lg border border-slate-500 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700 disabled:opacity-50"
+              onClick={async () => {
+                setPdfBusy(true);
+                try {
+                  const res = await api.post(
+                    "/questionnaires/verdict-pdf",
+                    { title: (qn?.title || "").trim(), analysis },
+                    { responseType: "blob" },
+                  );
+                  const blob = new Blob([res.data], { type: "application/pdf" });
+                  const url = URL.createObjectURL(blob);
+                  const cd = res.headers["content-disposition"] || res.headers["Content-Disposition"];
+                  let fname = "verdikt-ii.pdf";
+                  if (typeof cd === "string") {
+                    const m = cd.match(/filename="([^"]+)"/i) || cd.match(/filename=([^;]+)/i);
+                    if (m) fname = m[1].trim();
+                  }
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = fname;
+                  a.rel = "noopener";
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  URL.revokeObjectURL(url);
+                } catch (e) {
+                  console.error(e);
+                  let msg = "";
+                  if (e?.response?.data instanceof Blob) {
+                    try {
+                      const t = await e.response.data.text();
+                      const j = JSON.parse(t);
+                      msg = typeof j?.detail === "string" ? j.detail : t;
+                    } catch {
+                      msg = "Ошибка сервера при формировании PDF";
+                    }
+                  } else {
+                    msg = formatApiDetail(e);
+                  }
+                  window.alert(msg || "Не удалось скачать PDF.");
+                } finally {
+                  setPdfBusy(false);
+                }
+              }}
+            >
+              {pdfBusy ? "PDF…" : "Скачать"}
             </button>
             {onClose ? (
               <button
