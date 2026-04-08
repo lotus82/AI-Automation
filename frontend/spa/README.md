@@ -2,6 +2,49 @@
 
 Каркас одностраничного приложения рядом с легаси `frontend/*.html`. Сборка: `npm run build` → каталог `dist/` для раздачи через Nginx.
 
+## Сборка на VPS без Node.js (рекомендуется)
+
+Сборка Vite выполняется **внутри Docker** (образ **Node 22**), на хосте достаточно **Docker Engine** + **Docker Compose v2**.
+
+Из **корня репозитория** (не из `frontend/spa`):
+
+```bash
+# только образ панели (не нужен .env с POSTGRES и не поднимается БД)
+docker compose -f docker-compose.frontend.yml build
+
+# готовый образ по умолчанию: sales-ai-frontend:latest
+docker images | grep sales-ai-frontend
+```
+
+Свой тег или registry:
+
+```bash
+FRONTEND_IMAGE=myregistry.io/company/sales-ui:1.0 docker compose -f docker-compose.frontend.yml build
+```
+
+В составе полного продакшен-стека тот же Dockerfile:
+
+```bash
+docker compose -f docker-compose.prod.yml build frontend
+```
+
+Конфигурация: **`docker-compose.frontend.yml`**, **`frontend/Dockerfile.prod`**, прокси **`/api`** и **`/voice`** на сервис **`web`** — см. **`frontend/nginx.conf`** (в `docker-compose.prod.yml` контейнеры в одной сети).
+
+## Локальная сборка на машине (Node.js)
+
+Нужны **Node.js ≥ 18** и **npm ≥ 8** (рекомендуется **Node 20 или 22 LTS**). На Ubuntu из репозитория часто ставится **Node 12** — с ним `vite build` падает (`Unexpected reserved word` на `await`).
+
+**Обновление Node (nvm):**
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+source ~/.bashrc
+cd frontend/spa && nvm install && nvm use   # читает .nvmrc (22)
+npm ci && npm run build
+```
+
+Или пакет **NodeSource** — см. [NodeSource distributions](https://github.com/nodesource/distributions).
+
 ## Структура
 
 ```
