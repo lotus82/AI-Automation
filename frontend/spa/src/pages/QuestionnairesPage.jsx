@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import api from "../api/client.js";
 import { SurveyTakeExperience } from "../components/questionnaires/SurveyTakeExperience.jsx";
 
@@ -33,9 +34,21 @@ function defaultOptionsForType(type) {
   ];
 }
 
+/** randomUUID() только в secure context (HTTPS/localhost); на http://IP-VPS падает без полифилла. */
+function newQuestionKey() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      /* ignore */
+    }
+  }
+  return `q-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
 function emptyQuestion(order) {
   return {
-    _key: crypto.randomUUID(),
+    _key: newQuestionKey(),
     text: "",
     type: "single",
     order,
@@ -292,7 +305,10 @@ export function QuestionnairesPage() {
     });
   };
 
+  const modalRoot = typeof document !== "undefined" ? document.body : null;
+
   return (
+    <>
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -408,8 +424,9 @@ export function QuestionnairesPage() {
         </table>
       </div>
 
-      {builderOpen ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4">
+      {builderOpen && modalRoot
+        ? createPortal(
+        <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/60 p-4">
           <div className="my-8 w-full max-w-3xl rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-white">
@@ -570,19 +587,25 @@ export function QuestionnairesPage() {
               </div>
             </form>
           </div>
-        </div>
-      ) : null}
+        </div>,
+        modalRoot,
+      )
+        : null}
 
-      {takeId ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4">
+      {takeId && modalRoot
+        ? createPortal(
+        <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/60 p-4">
           <div className="my-8 w-full max-w-2xl">
             <SurveyTakeExperience questionnaireId={takeId} onClose={() => setTakeId(null)} />
           </div>
-        </div>
-      ) : null}
+        </div>,
+        modalRoot,
+      )
+        : null}
 
-      {deleteId ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      {deleteId && modalRoot
+        ? createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-md rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
             <p className="text-sm text-slate-200">Удалить этот опросник? Действие необратимо.</p>
             <div className="mt-4 flex gap-2">
@@ -603,8 +626,11 @@ export function QuestionnairesPage() {
               </button>
             </div>
           </div>
-        </div>
-      ) : null}
+        </div>,
+        modalRoot,
+      )
+        : null}
     </div>
+    </>
   );
 }

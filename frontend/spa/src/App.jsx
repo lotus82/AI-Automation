@@ -5,6 +5,7 @@ import { AITrainerPage } from "./pages/AITrainerPage.jsx";
 import { BotsPage } from "./pages/BotsPage.jsx";
 import { DashboardPage } from "./pages/DashboardPage.jsx";
 import { KnowledgePage } from "./pages/KnowledgePage.jsx";
+import { LogsPage } from "./pages/LogsPage.jsx";
 import { LeadgenPage } from "./pages/LeadgenPage.jsx";
 import { PublicSurveyPage } from "./pages/PublicSurveyPage.jsx";
 import { QuestionnairesPage } from "./pages/QuestionnairesPage.jsx";
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="scenarios" element={<ScenariosPage />} />
         <Route path="telephony" element={<TelephonyPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="logs" element={<LogsPage />} />
         <Route path="knowledge" element={<KnowledgePage />} />
         <Route path="bots" element={<BotsPage />} />
         <Route path="schedule" element={<SchedulePage />} />

@@ -9,6 +9,7 @@ import {
   MessageSquare,
   Mic,
   Phone,
+  ScrollText,
   Settings,
   TrendingUp,
 } from "lucide-react";
@@ -33,6 +34,7 @@ const navigation = [
   { to: "/scenarios", label: "Сценарии", icon: FileText },
   { to: "/telephony", label: "Телефония", icon: Phone },
   { to: "/settings", label: "Настройки", icon: Settings },
+  { to: "/logs", label: "Логи", icon: ScrollText },
   { to: "/knowledge", label: "База знаний", icon: Book },
   { to: "/bots", label: "Боты", icon: MessageSquare },
   { to: "/schedule", label: "Расписание", icon: Calendar },

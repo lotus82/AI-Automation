@@ -62,6 +62,8 @@ services:
       CALL_RECORDINGS_DIR: /app/data/recordings
     volumes:
       - recordings_data:/app/data/recordings
+      # Панель «Логи» (ADMIN_LOGS_TOKEN): только read-only, см. README по безопасности
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
       postgres:
         condition: service_healthy

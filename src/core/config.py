@@ -251,6 +251,20 @@ class Settings(BaseSettings):
         validation_alias="CALL_RECORDINGS_DIR",
     )
 
+    # Панель «Логи»: Docker Engine API по Unix-сокету (монтирование в compose, токен в заголовке)
+    admin_logs_token: str | None = Field(
+        default=None,
+        validation_alias="ADMIN_LOGS_TOKEN",
+    )
+    docker_socket_path: str = Field(
+        default="/var/run/docker.sock",
+        validation_alias="DOCKER_SOCKET_PATH",
+    )
+    docker_api_version: str = Field(
+        default="1.41",
+        validation_alias="DOCKER_API_VERSION",
+    )
+
     @model_validator(mode="after")
     def _asterisk_rtp_port_order(self):
         if self.asterisk_rtp_port_max < self.asterisk_rtp_port_min:
@@ -309,6 +323,7 @@ class Settings(BaseSettings):
         "deepseek_api_key",
         "telegram_bot_token",
         "max_bot_token",
+        "admin_logs_token",
         mode="before",
     )
     @classmethod

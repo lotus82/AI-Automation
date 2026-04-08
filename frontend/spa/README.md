@@ -96,6 +96,7 @@ frontend/spa/
 | `/scenarios`    | Сценарии                          |
 | `/telephony`    | Телефония                         |
 | `/settings`     | Настройки                         |
+| `/logs`         | Логи Docker (отладка VPS)         |
 | `/knowledge`    | База знаний                       |
 | `/bots`         | Боты                              |
 | `/schedule`     | Расписание                        |
