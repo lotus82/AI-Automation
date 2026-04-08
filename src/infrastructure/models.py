@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func, text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func, text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -32,14 +32,14 @@ class LeadModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        server_default=text("gen_random_uuid()"),
+        server_default=sql_text("gen_random_uuid()"),
     )
     name: Mapped[str] = mapped_column(String(255))
     phone_number: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=text("now()"),
+        server_default=sql_text("now()"),
     )
 
 
@@ -51,18 +51,18 @@ class CallRecordModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        server_default=text("gen_random_uuid()"),
+        server_default=sql_text("gen_random_uuid()"),
     )
     session_id: Mapped[str] = mapped_column(String(64), index=True)
-    duration: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    duration: Mapped[int] = mapped_column(Integer, server_default=sql_text("0"))
     status: Mapped[str] = mapped_column(String(32))
     transcript_text: Mapped[str] = mapped_column(Text())
-    direction: Mapped[str] = mapped_column(String(16), server_default=text("'web'"))
-    remote_phone: Mapped[str] = mapped_column(String(64), server_default=text("''"))
+    direction: Mapped[str] = mapped_column(String(16), server_default=sql_text("'web'"))
+    remote_phone: Mapped[str] = mapped_column(String(64), server_default=sql_text("''"))
     audio_filename: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=text("now()"),
+        server_default=sql_text("now()"),
     )
 
     analytics: Mapped["CallAnalyticsModel | None"] = relationship(
@@ -80,17 +80,17 @@ class DialerQueueModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        server_default=text("gen_random_uuid()"),
+        server_default=sql_text("gen_random_uuid()"),
     )
     phone: Mapped[str] = mapped_column(String(32), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), server_default=text("'pending'"))
+    status: Mapped[str] = mapped_column(String(32), server_default=sql_text("'pending'"))
     scheduled_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=text("now()"),
+        server_default=sql_text("now()"),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=text("now()"),
+        server_default=sql_text("now()"),
     )
 
 
@@ -102,14 +102,14 @@ class TrainingScenarioModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        server_default=text("gen_random_uuid()"),
+        server_default=sql_text("gen_random_uuid()"),
     )
     title: Mapped[str] = mapped_column(String(512))
     client_persona_prompt: Mapped[str] = mapped_column(Text())
     objections_to_raise: Mapped[str] = mapped_column(Text())
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=text("now()"),
+        server_default=sql_text("now()"),
     )
 
     training_sessions: Mapped[list["TrainingSessionModel"]] = relationship(
@@ -126,7 +126,7 @@ class TrainingSessionModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        server_default=text("gen_random_uuid()"),
+        server_default=sql_text("gen_random_uuid()"),
     )
     scenario_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -139,7 +139,7 @@ class TrainingSessionModel(Base):
     feedback_text: Mapped[str] = mapped_column(Text(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=text("now()"),
+        server_default=sql_text("now()"),
     )
 
     scenario: Mapped["TrainingScenarioModel"] = relationship(
@@ -156,19 +156,19 @@ class TrainerMethodologyModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        server_default=text("gen_random_uuid()"),
+        server_default=sql_text("gen_random_uuid()"),
     )
     code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
     client_role_system_prompt: Mapped[str] = mapped_column(
         Text(),
         nullable=False,
-        server_default=text("''"),
+        server_default=sql_text("''"),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=text("now()"),
+        server_default=sql_text("now()"),
     )
 
 
@@ -180,11 +180,11 @@ class AiTrainerSessionModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        server_default=text("gen_random_uuid()"),
+        server_default=sql_text("gen_random_uuid()"),
     )
     manager_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     session_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    result_data: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    result_data: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sql_text("'{}'::jsonb"))
     methodology_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("trainer_methodologies.id", ondelete="SET NULL"),
@@ -197,8 +197,92 @@ class AiTrainerSessionModel(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=text("now()"),
+        server_default=sql_text("now()"),
     )
+
+
+class QuestionnaireModel(Base):
+    """Конструктор опросника и критерии для ИИ-оценки."""
+
+    __tablename__ = "questionnaires"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    llm_criteria: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        onupdate=func.now(),
+    )
+
+    questions: Mapped[list["QuestionModel"]] = relationship(
+        "QuestionModel",
+        back_populates="questionnaire",
+        cascade="all, delete-orphan",
+    )
+
+
+class QuestionModel(Base):
+    """Вопрос опросника: single / multiple / text."""
+
+    __tablename__ = "questions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    questionnaire_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("questionnaires.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    text: Mapped[str] = mapped_column(Text(), nullable=False)
+    type: Mapped[str] = mapped_column(String(16), nullable=False)
+    order: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=sql_text("0"))
+    min_score: Mapped[float] = mapped_column(Float(), nullable=False, server_default=sql_text("0"))
+    max_score: Mapped[float] = mapped_column(Float(), nullable=False, server_default=sql_text("10"))
+
+    questionnaire: Mapped["QuestionnaireModel"] = relationship(
+        "QuestionnaireModel",
+        back_populates="questions",
+    )
+    options: Mapped[list["QuestionOptionModel"]] = relationship(
+        "QuestionOptionModel",
+        back_populates="question",
+        cascade="all, delete-orphan",
+    )
+
+
+class QuestionOptionModel(Base):
+    """Вариант ответа для single/multiple."""
+
+    __tablename__ = "question_options"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    question_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("questions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    text: Mapped[str] = mapped_column(Text(), nullable=False)
+    score: Mapped[float] = mapped_column(Float(), nullable=False, server_default=sql_text("0"))
+
+    question: Mapped["QuestionModel"] = relationship("QuestionModel", back_populates="options")
 
 
 class CallAnalyticsModel(Base):
@@ -209,7 +293,7 @@ class CallAnalyticsModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        server_default=text("gen_random_uuid()"),
+        server_default=sql_text("gen_random_uuid()"),
     )
     call_record_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -220,7 +304,7 @@ class CallAnalyticsModel(Base):
     recommendations: Mapped[str] = mapped_column(Text())
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=text("now()"),
+        server_default=sql_text("now()"),
     )
 
     call_record: Mapped["CallRecordModel"] = relationship(
@@ -238,11 +322,11 @@ class SystemSettingModel(Base):
     __tablename__ = "system_settings"
 
     key: Mapped[str] = mapped_column(String(128), primary_key=True)
-    value: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
-    description: Mapped[str] = mapped_column(String(512), nullable=False, server_default=text("''"))
+    value: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    description: Mapped[str] = mapped_column(String(512), nullable=False, server_default=sql_text("''"))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=text("now()"),
+        server_default=sql_text("now()"),
         onupdate=func.now(),
     )
 
@@ -255,19 +339,19 @@ class ScheduleModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        server_default=text("gen_random_uuid()"),
+        server_default=sql_text("gen_random_uuid()"),
     )
     chat_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=sql_text("true"))
     schedule_type: Mapped[str] = mapped_column("type", String(32), nullable=False)
-    prompt: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
-    content_template: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
-    interval_settings: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    prompt: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    content_template: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    interval_settings: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sql_text("'{}'::jsonb"))
     reminder_offset_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=text("now()"),
+        server_default=sql_text("now()"),
     )
 
     events: Mapped[list["ScheduledEventModel"]] = relationship(
@@ -285,7 +369,7 @@ class ScheduledEventModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        server_default=text("gen_random_uuid()"),
+        server_default=sql_text("gen_random_uuid()"),
     )
     schedule_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -294,8 +378,8 @@ class ScheduledEventModel(Base):
         index=True,
     )
     event_datetime: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    event_data: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
-    is_processed: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    event_data: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sql_text("'{}'::jsonb"))
+    is_processed: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=sql_text("false"))
     last_triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     schedule: Mapped["ScheduleModel"] = relationship("ScheduleModel", back_populates="events")
@@ -309,7 +393,7 @@ class ChatMessageModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        server_default=text("gen_random_uuid()"),
+        server_default=sql_text("gen_random_uuid()"),
     )
     session_id: Mapped[str] = mapped_column(String(128), index=True)
     role: Mapped[str] = mapped_column(String(16))
@@ -317,7 +401,7 @@ class ChatMessageModel(Base):
     user_display: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=text("now()"),
+        server_default=sql_text("now()"),
     )
 
 
@@ -329,7 +413,7 @@ class KnowledgeItemModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        server_default=text("gen_random_uuid()"),
+        server_default=sql_text("gen_random_uuid()"),
     )
     title: Mapped[str] = mapped_column(String(512))
     content: Mapped[str] = mapped_column(Text())
@@ -340,7 +424,7 @@ class KnowledgeItemModel(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=text("now()"),
+        server_default=sql_text("now()"),
         nullable=False,
     )
 
@@ -353,22 +437,22 @@ class BitrixPortalModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        server_default=text("gen_random_uuid()"),
+        server_default=sql_text("gen_random_uuid()"),
     )
     portal_url: Mapped[str] = mapped_column(String(512), nullable=False, unique=True, index=True)
     member_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
     access_token: Mapped[str] = mapped_column(Text(), nullable=False)
     refresh_token: Mapped[str] = mapped_column(Text(), nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("true"))
+    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=sql_text("true"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=text("now()"),
+        server_default=sql_text("now()"),
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=text("now()"),
+        server_default=sql_text("now()"),
         onupdate=func.now(),
         nullable=False,
     )

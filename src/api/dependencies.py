@@ -25,6 +25,7 @@ from src.infrastructure.repositories import (
 )
 from src.infrastructure.services.bitrix24 import build_crm_service
 from src.infrastructure.services.dynamic_llm import DynamicLLMService
+from src.infrastructure.services.questionnaire_llm import QuestionnaireLLMService
 from src.infrastructure.services.trainer_ai import TrainerAIService
 from src.infrastructure.services.max_messenger import MaxMessengerClient
 from src.infrastructure.services.openai_embedding import OpenAIEmbeddingService
@@ -126,6 +127,20 @@ def get_trainer_ai_service(
 
 
 TrainerAIServiceDep = Annotated[TrainerAIService, Depends(get_trainer_ai_service)]
+
+
+def get_questionnaire_llm_service(
+    settings: SettingsDep,
+    settings_repository: SettingsRepositoryDep,
+) -> QuestionnaireLLMService:
+    """ИИ-оценка опросников (те же ключи LLM, что у консультанта)."""
+    return QuestionnaireLLMService(settings=settings, settings_repo=settings_repository)
+
+
+QuestionnaireLLMServiceDep = Annotated[
+    QuestionnaireLLMService,
+    Depends(get_questionnaire_llm_service),
+]
 
 
 def get_llm_service(
