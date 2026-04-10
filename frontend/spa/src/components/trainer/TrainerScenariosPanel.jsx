@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useId, useState } from "react";
-import api from "../api/client.js";
+import api from "../../api/client.js";
 
 /**
- * Сценарии тренажёра: создание (POST) и список (GET) через `/api/scenarios`.
+ * Сценарии тренажёра: POST/GET `/api/scenarios`.
+ * @param {{ onScenariosChanged?: () => void }} props
  */
-export function ScenariosPage() {
+export function TrainerScenariosPanel({ onScenariosChanged }) {
   const formId = useId();
 
   const [title, setTitle] = useState("");
@@ -61,6 +62,7 @@ export function ScenariosPage() {
       setClientPersonaPrompt("");
       setObjectionsToRaise("");
       await loadList();
+      onScenariosChanged?.();
     } catch (err) {
       const raw =
         err?.response?.data?.detail != null
@@ -77,22 +79,25 @@ export function ScenariosPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
+    <div
+      className="mx-auto max-w-4xl space-y-8 rounded-b-xl rounded-tr-xl border border-t-0 border-slate-600 bg-slate-800/30 p-5"
+      role="tabpanel"
+    >
       <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold text-white">
+        <h2 className="flex items-center gap-2 text-xl font-semibold text-white">
           <span className="text-emerald-400" aria-hidden>
             ≡
           </span>
           Сценарии тренажёра
-        </h1>
+        </h2>
         <p className="mt-2 text-sm text-slate-400">
-          РОП создаёт персону ИИ-клиента и список возражений. Менеджер отрабатывает их в голосовом тестере (режим
-          «Тренажёр»).
+          РОП создаёт персону ИИ-клиента и список возражений. Менеджер отрабатывает их в голосовой симуляции на вкладке
+          «Голосовая симуляция».
         </p>
       </div>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-slate-200">Новый сценарий</h2>
+        <h3 className="mb-3 text-lg font-semibold text-slate-200">Новый сценарий</h3>
         <form
           id={`${formId}-scenario-form`}
           className="max-w-xl space-y-4 rounded-2xl border border-slate-700/80 bg-slate-900/50 p-5 shadow-lg backdrop-blur-sm"
@@ -169,7 +174,7 @@ export function ScenariosPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-slate-200">Существующие сценарии</h2>
+        <h3 className="mb-3 text-lg font-semibold text-slate-200">Существующие сценарии</h3>
         {listState === "loading" && <p className="text-slate-500">Загрузка…</p>}
         {listState === "error" && (
           <p className="text-red-400">Ошибка загрузки: {listError || "неизвестно"}</p>
@@ -184,7 +189,7 @@ export function ScenariosPage() {
                 key={String(it.id)}
                 className="rounded-xl border border-slate-700/80 bg-slate-900/40 p-4 shadow-md"
               >
-                <h3 className="text-base font-semibold text-white">{it.title}</h3>
+                <h4 className="text-base font-semibold text-white">{it.title}</h4>
                 <p className="mt-2 break-all font-mono text-xs text-slate-500">
                   <code className="rounded bg-slate-950 px-1.5 py-0.5 text-emerald-300/90">{String(it.id)}</code>
                 </p>

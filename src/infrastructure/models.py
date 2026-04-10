@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pgvector.sqlalchemy import Vector
+
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func, text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -445,6 +447,36 @@ class BitrixPortalModel(Base):
     refresh_token: Mapped[str] = mapped_column(Text(), nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=sql_text("true"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class IntegrationModel(Base):
+    """Универсальные интеграции с внешними API: auth / actions / webhooks в ``config`` (JSONB)."""
+
+    __tablename__ = "integrations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    base_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    config: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sql_text("'{}'::jsonb"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=sql_text("now()"),

@@ -32,6 +32,11 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://sales:sales@localhost:5432/sales_agent",
         validation_alias="POSTGRES_URI",
     )
+    # Fernet (URL-safe base64, 44 символа): шифрование секретов интеграций в JSONB (см. cryptography.fernet.Fernet.generate_key)
+    integration_fernet_key: str | None = Field(
+        default=None,
+        validation_alias="INTEGRATION_FERNET_KEY",
+    )
     redis_uri: str = Field(
         default="redis://localhost:6379/0",
         validation_alias="REDIS_URI",
@@ -58,6 +63,11 @@ class Settings(BaseSettings):
     openai_api_key: str | None = Field(
         default=None,
         validation_alias="OPENAI_API_KEY",
+    )
+    openai_agent_model: str = Field(
+        default="gpt-4o-mini",
+        validation_alias="OPENAI_AGENT_MODEL",
+        description="Модель Chat Completions для агента с инструментами (интеграции).",
     )
     # Fallback, если ключ ещё не сохранён в system_settings (панель «Настройки»)
     deepseek_api_key: str | None = Field(

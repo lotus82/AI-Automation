@@ -554,7 +554,7 @@ export function TesterPage() {
               >
                 {scenariosError && <option value="">— Ошибка загрузки /api/scenarios —</option>}
                 {!scenariosError && scenarios.length === 0 && (
-                  <option value="">— Нет сценариев — создайте на странице «Сценарии»</option>
+                  <option value="">— Нет сценариев — создайте в «ИИ-тренер» → «Сценарии»</option>
                 )}
                 {!scenariosError &&
                   scenarios.map((s) => (

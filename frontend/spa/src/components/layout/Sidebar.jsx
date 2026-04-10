@@ -3,12 +3,10 @@ import {
   Book,
   Calendar,
   ClipboardList,
-  FileText,
   GraduationCap,
-  Home,
   MessageSquare,
   Mic,
-  Phone,
+  Plug,
   ScrollText,
   Settings,
   TrendingUp,
@@ -23,16 +21,14 @@ const linkClass = ({ isActive }) =>
       : "text-slate-300 hover:bg-slate-800 hover:text-white",
   ].join(" ");
 
-/** Единый список: дашборд, аналитика, модули — без дублей; переходы через NavLink (SPA). */
+/** Единый список разделов; переходы через NavLink (SPA). */
 const navigation = [
-  { to: "/", label: "Дашборд", icon: Home, end: true },
-  { to: "/qa-analytics", label: "ИИ-контроль (QA)", icon: BarChart3 },
+  { to: "/qa-analytics", label: "QA-аналитика", icon: BarChart3, end: true },
   { to: "/ai-trainer", label: "ИИ-тренер", icon: GraduationCap },
   { to: "/leadgen", label: "ИИ-лидогенератор", icon: TrendingUp },
   { to: "/tester", label: "Тестирование", icon: Mic },
   { to: "/questionnaires", label: "Опросники", icon: ClipboardList },
-  { to: "/scenarios", label: "Сценарии", icon: FileText },
-  { to: "/telephony", label: "Телефония", icon: Phone },
+  { to: "/integrations", label: "Интеграции", icon: Plug },
   { to: "/settings", label: "Настройки", icon: Settings },
   { to: "/logs", label: "Логи", icon: ScrollText },
   { to: "/knowledge", label: "База знаний", icon: Book },

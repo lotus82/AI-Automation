@@ -1,4 +1,4 @@
-"""Доменные сущности отдела продаж и базы знаний (промышленное оборудование)."""
+"""Доменные сущности отдела продаж, базы знаний и интеграций."""
 
 from __future__ import annotations
 
@@ -6,6 +6,50 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from uuid import UUID
+
+from src.domain.entities.integration import (
+    ActionParameter,
+    ActionParamType,
+    ApiKeyAuthConfig,
+    AuthConfig,
+    AuthType,
+    BasicAuthConfig,
+    BearerAuthConfig,
+    IncomingWebhook,
+    Integration,
+    IntegrationAction,
+    NoAuthConfig,
+)
+
+__all__ = [
+    "ActionParameter",
+    "ActionParamType",
+    "ApiKeyAuthConfig",
+    "AuthConfig",
+    "AuthType",
+    "BasicAuthConfig",
+    "BearerAuthConfig",
+    "CallAnalytics",
+    "CallDirection",
+    "CallRecord",
+    "ChatMessage",
+    "ChatSessionSummary",
+    "DialerQueueItem",
+    "DialerQueueStatus",
+    "IncomingWebhook",
+    "Integration",
+    "IntegrationAction",
+    "KnowledgeItem",
+    "Lead",
+    "LeadStatus",
+    "NoAuthConfig",
+    "Schedule",
+    "ScheduledEvent",
+    "ScheduleType",
+    "SystemSetting",
+    "TrainingScenario",
+    "TrainingSession",
+]
 
 
 class LeadStatus(str, Enum):

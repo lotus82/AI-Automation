@@ -18,6 +18,7 @@ from src.infrastructure.models import (  # noqa: F401
     CallAnalyticsModel,
     CallRecordModel,
     DialerQueueModel,
+    IntegrationModel,
     KnowledgeItemModel,
     LeadModel,
     SystemSettingModel,

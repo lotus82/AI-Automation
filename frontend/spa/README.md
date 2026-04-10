@@ -68,12 +68,15 @@ frontend/spa/
     ├── layouts/
     │   └── Layout.jsx        # Sidebar + <Outlet />
     ├── components/
-    │   └── layout/
-    │       └── Sidebar.jsx
+    │   ├── layout/
+    │   │   └── Sidebar.jsx
+    │   └── trainer/
+    │       ├── CallAnalysisTab.jsx
+    │       └── TrainerScenariosPanel.jsx
     └── pages/
-        ├── DashboardPage.jsx
         ├── QAPage.jsx
         ├── AITrainerPage.jsx
+        ├── IntegrationsPage.jsx
         └── LeadgenPage.jsx
 ```
 
@@ -88,13 +91,14 @@ frontend/spa/
 
 | Путь            | Страница                          |
 |-----------------|-----------------------------------|
-| `/`             | Дашборд                           |
-| `/qa-analytics` | ИИ-контроль (QA)                  |
-| `/ai-trainer`   | ИИ-тренер                         |
-| `/leadgen`      | ИИ-лидогенератор                  |
+| `/`             | редирект → `/qa-analytics`        |
+| `/qa-analytics` | ИИ-контроль (QA): звонки, `?tab=analysis` — BANT/MEDDIC |
+| `/ai-trainer`   | ИИ-тренер: симуляция, `?tab=scenarios` — сценарии |
+| `/leadgen`      | ИИ-лидогенератор + телефония      |
 | `/tester`       | Тестирование голоса               |
-| `/scenarios`    | Сценарии                          |
-| `/telephony`    | Телефония                         |
+| `/scenarios`    | редирект → `/ai-trainer?tab=scenarios` |
+| `/telephony`    | редирект → `/leadgen`             |
+| `/integrations` | Интеграции (внешние системы)       |
 | `/settings`     | Настройки                         |
 | `/logs`         | Логи Docker (отладка VPS)         |
 | `/knowledge`    | База знаний                       |

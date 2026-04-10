@@ -6,6 +6,7 @@ Long polling GET ``/updates`` на ``platform-api.max.ru`` — транспор�
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -115,6 +116,13 @@ def _max_token_suffix(token: str) -> str:
     if len(t) <= 4:
         return "****"
     return f"...{t[-4:]}"
+
+
+def _max_poll_marker_storage_key(token: str) -> str:
+    """Ключ Redis для cursor long poll (один токен — одна очередь updates на стороне MAX)."""
+    t = (token or "").strip().encode("utf-8")
+    digest = hashlib.sha256(t).hexdigest()[:24]
+    return f"max:long_poll:marker:{digest}"
 
 
 def _max_updates_type_counts(updates: list[Any]) -> str:
@@ -426,6 +434,7 @@ class MaxMessengerClient:
         """
         # TODO (рус.): Если пользователь захочет использовать официальную JS-библиотеку MAX, потребуется вынести этот поллинг в отдельный Node.js микросервис, который будет проксировать запросы на локальный FastAPI вебхук.
         marker: int | None = None
+        marker_context_token: str | None = None
         http_timeout = httpx.Timeout(
             connect=15.0,
             read=float(_POLL_LONG_TIMEOUT_SEC) + 20.0,
@@ -457,6 +466,47 @@ class MaxMessengerClient:
                     await asyncio.sleep(10)
                     continue
                 no_token_rounds = 0
+
+                if token != marker_context_token:
+                    marker = None
+                    rkey = _max_poll_marker_storage_key(token)
+                    try:
+                        raw_marker = await redis.get(rkey)
+                        if raw_marker is not None and str(raw_marker).strip():
+                            marker = int(str(raw_marker).strip())
+                            logger.info(
+                                "MAX long poll: marker восстановлен из Redis (смещение очереди updates), "
+                                "instance=%s …%s value=%s",
+                                instance_tag,
+                                rkey[-14:],
+                                marker,
+                            )
+                    except (TypeError, ValueError) as exc:
+                        logger.warning(
+                            "MAX long poll: некорректный marker в Redis key=…%s: %s",
+                            rkey[-14:],
+                            exc,
+                        )
+                        marker = None
+                    except Exception as exc:
+                        logger.warning("MAX long poll: чтение marker из Redis: %s", exc)
+                        marker = None
+                    if marker is None:
+                        boot = (os.environ.get("MAX_POLL_MARKER_BOOTSTRAP") or "").strip()
+                        if boot:
+                            try:
+                                marker = int(boot)
+                                logger.info(
+                                    "MAX long poll: стартовый marker из MAX_POLL_MARKER_BOOTSTRAP=%s "
+                                    "(уберите из .env после первого успешного опроса)",
+                                    marker,
+                                )
+                            except (TypeError, ValueError):
+                                logger.warning(
+                                    "MAX long poll: MAX_POLL_MARKER_BOOTSTRAP не число: %r",
+                                    boot[:32],
+                                )
+                    marker_context_token = token
 
                 if not poll_start_logged:
                     logger.info(
@@ -524,6 +574,14 @@ class MaxMessengerClient:
             if m_raw is not None:
                 try:
                     marker = int(m_raw)
+                    if token:
+                        try:
+                            await redis.set(
+                                _max_poll_marker_storage_key(token),
+                                str(marker),
+                            )
+                        except Exception as exc:
+                            logger.warning("MAX long poll: запись marker в Redis: %s", exc)
                 except (TypeError, ValueError):
                     pass
 
