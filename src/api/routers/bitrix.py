@@ -7,7 +7,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from starlette.datastructures import UploadFile
 
 from src.api.dependencies import AsyncSessionDep, BitrixPortalRepoDep, SettingsDep
+from src.core.config import Settings
 from src.api.schemas.bitrix import (
     BitrixInstallPayload,
     BitrixWebhookPayload,
@@ -27,13 +28,48 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/bitrix", tags=["bitrix24"])
 
 
-def _bitrix_spa_entry_url(request: Request, query_string: str) -> str:
-    """Публичный URL /bitrix с параметрами iframe (DOMAIN, APP_SID, AUTH_ID, …)."""
-    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "https").split(",")[0].strip()
+def _host_allows_insecure_http(hostname: str | None) -> bool:
+    """Только для dev: localhost / *.local — иначе в iframe Битрикс24 нужен https (Mixed Content)."""
+    if not hostname:
+        return False
+    h = hostname.lower().strip()
+    return h in ("localhost", "127.0.0.1", "::1") or h.endswith(".local")
+
+
+def _normalize_explicit_public_origin(raw: str) -> str:
+    s = raw.strip().rstrip("/")
+    if not s:
+        return ""
+    if "://" not in s:
+        s = f"https://{s}"
+    p = urlparse(s)
+    if not p.netloc:
+        return ""
+    scheme = (p.scheme or "https").lower()
+    if scheme == "http" and not _host_allows_insecure_http(p.hostname):
+        scheme = "https"
+    return f"{scheme}://{p.netloc}"
+
+
+def _public_origin_for_bitrix_iframe(request: Request, settings: Settings) -> str:
+    explicit = (settings.bitrix24_public_app_origin or "").strip()
+    if explicit:
+        origin = _normalize_explicit_public_origin(explicit)
+        if origin:
+            return origin
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "https").split(",")[0].strip().lower()
     host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc).split(",")[
         0
     ].strip()
-    base = f"{proto}://{host}"
+    host_only = urlparse(f"http://{host}").hostname or host.split(":")[0]
+    if proto == "http" and not _host_allows_insecure_http(host_only):
+        proto = "https"
+    return f"{proto}://{host}"
+
+
+def _bitrix_spa_entry_url(request: Request, query_string: str, settings: Settings) -> str:
+    """Публичный URL /bitrix с параметрами iframe (DOMAIN, APP_SID, AUTH_ID, …)."""
+    base = _public_origin_for_bitrix_iframe(request, settings).rstrip("/")
     return f"{base}/bitrix?{query_string}" if query_string else f"{base}/bitrix"
 
 
@@ -187,7 +223,7 @@ async def bitrix_install(
     if not (settings.bitrix24_oauth_client_id and settings.bitrix24_oauth_client_secret):
         hint = "<p><strong>Внимание:</strong> задайте BITRIX24_OAUTH_CLIENT_ID и BITRIX24_OAUTH_CLIENT_SECRET для refresh токенов.</p>"
     spa_q = _spa_query_after_install(request, payload, raw_merged)
-    spa_url = _bitrix_spa_entry_url(request, spa_q)
+    spa_url = _bitrix_spa_entry_url(request, spa_q, settings)
     spa_url_js = json.dumps(spa_url)
     spa_url_attr = html.escape(spa_url, quote=True)
     portal_safe = html.escape(portal_url, quote=False)

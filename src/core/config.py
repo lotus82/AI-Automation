@@ -206,6 +206,12 @@ class Settings(BaseSettings):
         validation_alias="BITRIX24_APPLICATION_TOKEN",
         description="Секрет приложения для валидации auth[application_token] во входящих событиях.",
     )
+    # Публичный origin SPA (схема+хост[:порт]) для ссылок в iframe после install; иначе берётся из Host и часто получается http за прокси → Mixed Content в Битрикс24
+    bitrix24_public_app_origin: str | None = Field(
+        default=None,
+        validation_alias="BITRIX24_PUBLIC_APP_ORIGIN",
+        description="Например https://lotus-it.ru — редирект после POST /api/bitrix/install.",
+    )
 
     # SIP (транк MCN.ru / Asterisk / FreeSWITCH) — без локальных кодеков в приложении
     sip_server_ip: str | None = Field(
@@ -346,6 +352,7 @@ class Settings(BaseSettings):
         "bitrix24_oauth_client_id",
         "bitrix24_oauth_client_secret",
         "bitrix24_application_token",
+        "bitrix24_public_app_origin",
         "sip_server_ip",
         "sip_user",
         "sip_password",
