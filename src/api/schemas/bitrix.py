@@ -82,9 +82,9 @@ def parse_bitrix_form_auth(flat: dict[str, str]) -> dict[str, str]:
             auth[inner] = val
             continue
         uk = key.upper()
-        if uk == "AUTH_ID":
+        if uk in ("AUTH_ID", "ACCESS_TOKEN"):
             auth["access_token"] = val
-        elif uk == "REFRESH_ID":
+        elif uk in ("REFRESH_ID", "REFRESH_TOKEN"):
             auth["refresh_token"] = val
         elif uk == "DOMAIN":
             auth["domain"] = val

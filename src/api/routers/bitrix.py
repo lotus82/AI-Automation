@@ -24,6 +24,31 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/bitrix", tags=["bitrix24"])
 
 
+def _merge_bitrix_install_query_into_raw(request: Request, raw: dict[str, Any]) -> dict[str, Any]:
+    """Битрикс24 POST на /install часто с query (?DOMAIN=…&APP_SID=…), OAuth — в теле; без merge нет auth.domain."""
+    qflat = {
+        str(k): str(v).strip()
+        for k, v in request.query_params.multi_items()
+        if v is not None and str(v).strip() != ""
+    }
+    if not qflat:
+        return raw
+    auth = raw.get("auth")
+    if isinstance(auth, dict):
+        for qkey, field in (
+            ("DOMAIN", "domain"),
+            ("domain", "domain"),
+            ("MEMBER_ID", "member_id"),
+            ("member_id", "member_id"),
+        ):
+            val = qflat.get(qkey)
+            if val and not (auth.get(field) and str(auth.get(field)).strip()):
+                auth[field] = val
+        return raw
+    # Тело плоское: query не перетирает ключи из тела
+    return {**qflat, **raw}
+
+
 async def _read_install_payload(request: Request) -> BitrixInstallPayload:
     """Читает JSON или ``application/x-www-form-urlencoded`` (типичный POST установки из Битрикс24)."""
     ct = (request.headers.get("content-type") or "").lower()
@@ -52,6 +77,7 @@ async def _read_install_payload(request: Request) -> BitrixInstallPayload:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Не удалось прочитать тело запроса установки",
         ) from exc
+    raw = _merge_bitrix_install_query_into_raw(request, raw)
     try:
         return bitrix_install_from_flat_mapping(raw)
     except (ValidationError, ValueError) as exc:

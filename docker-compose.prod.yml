@@ -10,7 +10,9 @@
 #   2) Соберите и запустите:
 #        docker compose -f docker-compose.prod.yml up -d --build
 #
-# Панель: http://<ваш-ip>:80  (TLS — на хосте через Caddy/Certbot + прокси на :80 или на публикуйте 443).
+# Панель (контейнер frontend): по умолчанию 127.0.0.1:8080 — снаружи слушает Nginx на хосте (Ubuntu)
+# с TLS (Certbot) и proxy_pass на http://127.0.0.1:8080. Прямой доступ без хостового Nginx:
+#   FRONTEND_BIND=0.0.0.0 FRONTEND_HTTP_PORT=80 docker compose -f docker-compose.prod.yml up -d
 # Postgres/Redis не проброшены наружу — только внутренняя сеть Compose.
 #
 # Телефония: поднимайте отдельно docker-compose.yml с asterisk или свой SIP; при необходимости
@@ -137,7 +139,8 @@ services:
     image: ${FRONTEND_IMAGE:-sales-ai-frontend:latest}
     restart: unless-stopped
     ports:
-      - "${FRONTEND_HTTP_PORT:-80}:80"
+      # FRONTEND_BIND: 127.0.0.1 — только локальный Nginx+Certbot; 0.0.0.0 — публикация порта на все интерфейсы
+      - "${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_HTTP_PORT:-8080}:80"
     depends_on:
       - web
 
