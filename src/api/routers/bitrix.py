@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import html
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
@@ -22,6 +25,41 @@ from src.api.schemas.bitrix import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/bitrix", tags=["bitrix24"])
+
+
+def _bitrix_spa_entry_url(request: Request, query_string: str) -> str:
+    """Публичный URL /bitrix с параметрами iframe (DOMAIN, APP_SID, AUTH_ID, …)."""
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "https").split(",")[0].strip()
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc).split(",")[
+        0
+    ].strip()
+    base = f"{proto}://{host}"
+    return f"{base}/bitrix?{query_string}" if query_string else f"{base}/bitrix"
+
+
+def _spa_query_after_install(request: Request, payload: BitrixInstallPayload, raw_merged: dict[str, Any]) -> str:
+    """Собирает query как у открытия приложения из Битрикс: URL + поля формы + обязательные OAuth-поля из auth."""
+    out: dict[str, str] = {}
+    for k, v in request.query_params.multi_items():
+        if v is None or str(v).strip() == "":
+            continue
+        out[str(k)] = str(v).strip()
+    for k, v in raw_merged.items():
+        if k == "auth" or v is None:
+            continue
+        ks = str(k)
+        if ks.lower().startswith("auth["):
+            continue
+        val = str(v).strip()
+        if not val:
+            continue
+        out.setdefault(ks, val)
+    auth = payload.auth
+    out.setdefault("DOMAIN", auth.domain.strip())
+    out.setdefault("AUTH_ID", auth.access_token.strip())
+    out.setdefault("REFRESH_ID", auth.refresh_token.strip())
+    out.setdefault("MEMBER_ID", auth.member_id.strip())
+    return urlencode(out)
 
 
 def _merge_bitrix_install_query_into_raw(request: Request, raw: dict[str, Any]) -> dict[str, Any]:
@@ -49,7 +87,7 @@ def _merge_bitrix_install_query_into_raw(request: Request, raw: dict[str, Any]) 
     return {**qflat, **raw}
 
 
-async def _read_install_payload(request: Request) -> BitrixInstallPayload:
+async def _read_install_payload(request: Request) -> tuple[BitrixInstallPayload, dict[str, Any]]:
     """Читает JSON или ``application/x-www-form-urlencoded`` (типичный POST установки из Битрикс24)."""
     ct = (request.headers.get("content-type") or "").lower()
     raw: dict[str, Any]
@@ -79,12 +117,13 @@ async def _read_install_payload(request: Request) -> BitrixInstallPayload:
         ) from exc
     raw = _merge_bitrix_install_query_into_raw(request, raw)
     try:
-        return bitrix_install_from_flat_mapping(raw)
+        payload = bitrix_install_from_flat_mapping(raw)
     except (ValidationError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Невалидные данные установки: {exc}",
         ) from exc
+    return payload, raw
 
 
 async def _read_webhook_payload(request: Request) -> BitrixWebhookPayload:
@@ -117,7 +156,7 @@ async def bitrix_install(
     settings: SettingsDep,
 ) -> HTMLResponse:
     """Сохраняет токены портала; ответ — HTML для отображения внутри iframe установки Битрикс24."""
-    payload = await _read_install_payload(request)
+    payload, raw_merged = await _read_install_payload(request)
     auth = payload.auth
     portal_url = auth.portal_url
     if not portal_url:
@@ -147,15 +186,23 @@ async def bitrix_install(
     hint = ""
     if not (settings.bitrix24_oauth_client_id and settings.bitrix24_oauth_client_secret):
         hint = "<p><strong>Внимание:</strong> задайте BITRIX24_OAUTH_CLIENT_ID и BITRIX24_OAUTH_CLIENT_SECRET для refresh токенов.</p>"
-    html = f"""<!DOCTYPE html>
+    spa_q = _spa_query_after_install(request, payload, raw_merged)
+    spa_url = _bitrix_spa_entry_url(request, spa_q)
+    spa_url_js = json.dumps(spa_url)
+    spa_url_attr = html.escape(spa_url, quote=True)
+    portal_safe = html.escape(portal_url, quote=False)
+    # Битрикс24 часто оставляет iframe на ответе установки — сразу уводим на SPA (/bitrix + query).
+    body = f"""<!DOCTYPE html>
 <html lang="ru">
 <head><meta charset="utf-8"><title>Установка</title></head>
 <body>
-  <p>Приложение успешно установлено на портал <code>{portal_url}</code>.</p>
+  <p>Приложение успешно установлено на портал <code>{portal_safe}</code>. Открываем интерфейс…</p>
   {hint}
+  <p><noscript><a href="{spa_url_attr}">Открыть приложение</a></noscript></p>
+  <script>location.replace({spa_url_js});</script>
 </body>
 </html>"""
-    return HTMLResponse(content=html, status_code=status.HTTP_200_OK)
+    return HTMLResponse(content=body, status_code=status.HTTP_200_OK)
 
 
 @router.post(
