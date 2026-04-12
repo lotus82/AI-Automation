@@ -138,7 +138,7 @@ export function KnowledgePage() {
     ".txt,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain";
 
   return (
-    <div className="max-w-5xl text-slate-100">
+    <div className="w-full min-w-0 text-slate-100">
       <h1 className="mb-2 flex items-center gap-2 text-2xl font-bold text-white">
         <span aria-hidden>📚</span>
         База знаний

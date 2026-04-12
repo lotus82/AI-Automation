@@ -1,59 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "../api/client.js";
-
-const KEYS = {
-  LLM_PROVIDER: "LLM_PROVIDER",
-  LLM_TEMPERATURE: "LLM_TEMPERATURE",
-  DEEPSEEK_API_KEY: "DEEPSEEK_API_KEY",
-  OPENAI_API_KEY: "OPENAI_API_KEY",
-  TELEGRAM_BOT_TOKEN: "TELEGRAM_BOT_TOKEN",
-  MAX_BOT_TOKEN: "MAX_BOT_TOKEN",
-  MAX_USE_POLLING: "MAX_USE_POLLING",
-  MAX_CONTEXT_LIMIT: "MAX_CONTEXT_LIMIT",
-  MAX_BOT_USERNAME: "MAX_BOT_USERNAME",
-  MAX_GROUP_CHAT_ID: "MAX_GROUP_CHAT_ID",
-  MAX_GROUP_ADDITIONAL_PROMPT: "MAX_GROUP_ADDITIONAL_PROMPT",
-  ENABLE_WEB_SEARCH: "ENABLE_WEB_SEARCH",
-  MAX_VOICE_REPLY_ENABLED: "MAX_VOICE_REPLY_ENABLED",
-  MAX_CALL_ANSWER_DELAY: "MAX_CALL_ANSWER_DELAY",
-  MAX_CALL_GREETING_PHRASE: "MAX_CALL_GREETING_PHRASE",
-  SALUTESPEECH_AUTH_KEY: "SALUTESPEECH_AUTH_KEY",
-  SALUTESPEECH_SCOPE: "SALUTESPEECH_SCOPE",
-  SALUTESPEECH_VOICE: "SALUTESPEECH_VOICE",
-  DEFAULT_CONSULTANT_PROMPT: "DEFAULT_CONSULTANT_PROMPT",
-  TEXT_BOT_SYSTEM_SUPPLEMENT: "TEXT_BOT_SYSTEM_SUPPLEMENT",
-  ANALYST_QA_PROMPT: "ANALYST_QA_PROMPT",
-};
-
-const DEFAULT_GREETING =
-  "Здравствуйте! Это ИИ-помощник компании. Слушаю вас.";
-
-function mapFromList(rows) {
-  const m = {};
-  (rows || []).forEach((r) => {
-    m[r.key] = r;
-  });
-  return m;
-}
-
-function hintForSecretRow(row) {
-  if (!row) return "Ключ не задан.";
-  const v = row.value;
-  if (v == null || String(v).trim() === "") return "Ключ не задан.";
-  if (String(v).includes("…")) return `Текущее значение (маска): ${row.value}`;
-  return "Ключ задан.";
-}
-
-function parseTruthy(value, defaultOnEmpty) {
-  if (value == null || String(value).trim() === "") return defaultOnEmpty;
-  const s = String(value).trim().toLowerCase();
-  return s === "1" || s === "true" || s === "yes" || s === "on";
-}
-
-function clampLlmTemp(n) {
-  if (Number.isNaN(n)) return 0.2;
-  return Math.max(0, Math.min(1, Math.round(n * 10) / 10));
-}
+import { SK } from "../constants/systemSettingsKeys.js";
+import {
+  clampLlmTemp,
+  hintForSecretRow,
+  mapFromList,
+  parseTruthy,
+} from "../utils/systemSettingsForm.js";
 
 function DeepSeekGlyph() {
   return (
@@ -73,40 +26,34 @@ function DeepSeekGlyph() {
   );
 }
 
+const tabBtn = (active) =>
+  `rounded-t-lg border px-4 py-2 text-sm font-medium transition-colors ${
+    active
+      ? "border-slate-600 border-b-transparent bg-slate-800/90 text-white"
+      : "border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
+  }`;
+
 function initialFormState() {
   return {
     llmProvider: "deepseek",
     llmTemp: 0.2,
     deepseekKey: "",
     openaiKey: "",
-    telegramToken: "",
-    maxBotToken: "",
     salutespeechKey: "",
     hints: {
       deepseek: "",
       openai: "",
-      telegram: "",
-      maxBot: "",
       salutespeech: "",
     },
     salutespeechScope: "",
     salutespeechVoice: "",
-    consultantPrompt: "",
-    textBotSupplement: "",
-    analystPrompt: "",
     maxContextLimit: "10",
-    maxUsePolling: true,
     enableWebSearch: true,
-    maxVoiceReply: false,
-    maxCallAnswerDelay: "6",
-    maxCallGreeting: DEFAULT_GREETING,
-    maxBotUsername: "",
-    maxGroupChatId: "",
-    maxGroupPrompt: "",
   };
 }
 
 export function SettingsPage() {
+  const [settingsTab, setSettingsTab] = useState("llm");
   const [form, setForm] = useState(initialFormState);
   const [statusMsg, setStatusMsg] = useState("");
   const [statusError, setStatusError] = useState(false);
@@ -115,67 +62,32 @@ export function SettingsPage() {
 
   const applyMap = useCallback((map) => {
     let tv = 0.2;
-    const lt = map[KEYS.LLM_TEMPERATURE];
+    const lt = map[SK.LLM_TEMPERATURE];
     if (lt && lt.value != null && String(lt.value).trim() !== "") {
       const parsedT = parseFloat(String(lt.value).replace(",", "."));
       if (!Number.isNaN(parsedT)) tv = parsedT;
     }
     tv = clampLlmTemp(tv);
 
-    let delay = 6;
-    const mcad = map[KEYS.MAX_CALL_ANSWER_DELAY];
-    if (mcad && mcad.value != null && String(mcad.value).trim() !== "") {
-      const parsedD = parseInt(String(mcad.value).trim(), 10);
-      if (!Number.isNaN(parsedD)) delay = parsedD;
-    }
-    delay = Math.max(0, Math.min(120, delay));
-
-    const mxc = map[KEYS.MAX_CONTEXT_LIMIT];
+    const mxc = map[SK.MAX_CONTEXT_LIMIT];
     const ctx =
       mxc && mxc.value && String(mxc.value).trim() !== ""
         ? String(mxc.value).trim()
         : "10";
 
-    const mcg = map[KEYS.MAX_CALL_GREETING_PHRASE];
-
     setForm({
       ...initialFormState(),
-      llmProvider: (map[KEYS.LLM_PROVIDER]?.value || "deepseek").toLowerCase(),
+      llmProvider: (map[SK.LLM_PROVIDER]?.value || "deepseek").toLowerCase(),
       llmTemp: tv,
       hints: {
-        deepseek: hintForSecretRow(map[KEYS.DEEPSEEK_API_KEY]),
-        openai: hintForSecretRow(map[KEYS.OPENAI_API_KEY]),
-        telegram: hintForSecretRow(map[KEYS.TELEGRAM_BOT_TOKEN]),
-        maxBot: hintForSecretRow(map[KEYS.MAX_BOT_TOKEN]),
-        salutespeech: hintForSecretRow(map[KEYS.SALUTESPEECH_AUTH_KEY]),
+        deepseek: hintForSecretRow(map[SK.DEEPSEEK_API_KEY]),
+        openai: hintForSecretRow(map[SK.OPENAI_API_KEY]),
+        salutespeech: hintForSecretRow(map[SK.SALUTESPEECH_AUTH_KEY]),
       },
-      salutespeechScope: map[KEYS.SALUTESPEECH_SCOPE]?.value || "",
-      salutespeechVoice: map[KEYS.SALUTESPEECH_VOICE]?.value || "",
-      consultantPrompt: map[KEYS.DEFAULT_CONSULTANT_PROMPT]?.value || "",
-      textBotSupplement:
-        map[KEYS.TEXT_BOT_SYSTEM_SUPPLEMENT]?.value != null
-          ? String(map[KEYS.TEXT_BOT_SYSTEM_SUPPLEMENT].value)
-          : "",
-      analystPrompt: map[KEYS.ANALYST_QA_PROMPT]?.value || "",
+      salutespeechScope: map[SK.SALUTESPEECH_SCOPE]?.value || "",
+      salutespeechVoice: map[SK.SALUTESPEECH_VOICE]?.value || "",
       maxContextLimit: ctx,
-      maxUsePolling: parseTruthy(map[KEYS.MAX_USE_POLLING]?.value, true),
-      enableWebSearch: parseTruthy(map[KEYS.ENABLE_WEB_SEARCH]?.value, true),
-      maxVoiceReply: parseTruthy(map[KEYS.MAX_VOICE_REPLY_ENABLED]?.value, false),
-      maxCallAnswerDelay: String(delay),
-      maxCallGreeting:
-        mcg && mcg.value != null ? String(mcg.value) : DEFAULT_GREETING,
-      maxBotUsername:
-        map[KEYS.MAX_BOT_USERNAME]?.value != null
-          ? String(map[KEYS.MAX_BOT_USERNAME].value)
-          : "",
-      maxGroupChatId:
-        map[KEYS.MAX_GROUP_CHAT_ID]?.value != null
-          ? String(map[KEYS.MAX_GROUP_CHAT_ID].value)
-          : "",
-      maxGroupPrompt:
-        map[KEYS.MAX_GROUP_ADDITIONAL_PROMPT]?.value != null
-          ? String(map[KEYS.MAX_GROUP_ADDITIONAL_PROMPT].value)
-          : "",
+      enableWebSearch: parseTruthy(map[SK.ENABLE_WEB_SEARCH]?.value, true),
     });
   }, []);
 
@@ -189,10 +101,7 @@ export function SettingsPage() {
       setStatusError(false);
     } catch (e) {
       console.error(e);
-      const msg =
-        e?.response?.data?.detail ??
-        e?.message ??
-        String(e);
+      const msg = e?.response?.data?.detail ?? e?.message ?? String(e);
       setStatusMsg(`Не удалось загрузить настройки: ${msg}`);
       setStatusError(true);
     } finally {
@@ -221,41 +130,24 @@ export function SettingsPage() {
 
   const collectPayload = () => {
     const values = {};
-    values[KEYS.LLM_PROVIDER] = form.llmProvider.trim();
-    values[KEYS.LLM_TEMPERATURE] = String(form.llmTemp);
-    values[KEYS.DEFAULT_CONSULTANT_PROMPT] = form.consultantPrompt;
-    values[KEYS.TEXT_BOT_SYSTEM_SUPPLEMENT] = form.textBotSupplement;
-    values[KEYS.ANALYST_QA_PROMPT] = form.analystPrompt;
-    values[KEYS.SALUTESPEECH_SCOPE] =
+    values[SK.LLM_PROVIDER] = form.llmProvider.trim();
+    values[SK.LLM_TEMPERATURE] = String(form.llmTemp);
+    values[SK.SALUTESPEECH_SCOPE] =
       form.salutespeechScope.trim() || "SALUTE_SPEECH_PERS";
-    values[KEYS.SALUTESPEECH_VOICE] =
+    values[SK.SALUTESPEECH_VOICE] =
       form.salutespeechVoice.trim() || "Ost_24000";
 
     let lim = parseInt(form.maxContextLimit, 10);
     if (Number.isNaN(lim)) lim = 10;
     lim = Math.max(1, Math.min(200, lim));
-    values[KEYS.MAX_CONTEXT_LIMIT] = String(lim);
+    values[SK.MAX_CONTEXT_LIMIT] = String(lim);
 
-    values[KEYS.MAX_USE_POLLING] = form.maxUsePolling ? "1" : "0";
-    values[KEYS.ENABLE_WEB_SEARCH] = form.enableWebSearch ? "1" : "0";
-    values[KEYS.MAX_VOICE_REPLY_ENABLED] = form.maxVoiceReply ? "1" : "0";
-
-    let dlim = parseInt(form.maxCallAnswerDelay, 10);
-    if (Number.isNaN(dlim)) dlim = 6;
-    dlim = Math.max(0, Math.min(120, dlim));
-    values[KEYS.MAX_CALL_ANSWER_DELAY] = String(dlim);
-
-    values[KEYS.MAX_CALL_GREETING_PHRASE] = form.maxCallGreeting;
-    values[KEYS.MAX_BOT_USERNAME] = form.maxBotUsername.trim();
-    values[KEYS.MAX_GROUP_CHAT_ID] = form.maxGroupChatId.trim();
-    values[KEYS.MAX_GROUP_ADDITIONAL_PROMPT] = form.maxGroupPrompt;
+    values[SK.ENABLE_WEB_SEARCH] = form.enableWebSearch ? "1" : "0";
 
     const secretPairs = [
-      [KEYS.DEEPSEEK_API_KEY, form.deepseekKey],
-      [KEYS.OPENAI_API_KEY, form.openaiKey],
-      [KEYS.TELEGRAM_BOT_TOKEN, form.telegramToken],
-      [KEYS.MAX_BOT_TOKEN, form.maxBotToken],
-      [KEYS.SALUTESPEECH_AUTH_KEY, form.salutespeechKey],
+      [SK.DEEPSEEK_API_KEY, form.deepseekKey],
+      [SK.OPENAI_API_KEY, form.openaiKey],
+      [SK.SALUTESPEECH_AUTH_KEY, form.salutespeechKey],
     ];
     secretPairs.forEach(([k, v]) => {
       if (v.trim()) values[k] = v.trim();
@@ -300,7 +192,7 @@ export function SettingsPage() {
     "mb-4 flex items-center gap-2 text-lg font-semibold text-slate-100";
 
   return (
-    <div className="max-w-3xl text-slate-100">
+    <div className="w-full min-w-0 text-slate-100">
       <h1 className="mb-2 flex items-center gap-2 text-2xl font-bold text-white">
         <span className="text-slate-300" aria-hidden>
           ⚙
@@ -308,20 +200,13 @@ export function SettingsPage() {
         Настройки системы
       </h1>
       <p className="mb-3 text-sm leading-relaxed text-slate-300">
-        Параметры LLM, API-ключи и системные промпты хранятся в базе данных и
-        кэшируются в Redis. По умолчанию используется{" "}
-        <strong>DeepSeek</strong> (совместимый с OpenAI SDK,{" "}
-        <code className="rounded bg-slate-800 px-1 text-xs">
-          base_url=https://api.deepseek.com
-        </code>
-        ).
+        Параметры LLM и голоса (SaluteSpeech) хранятся в базе данных. Токен Telegram-бота — в{" "}
+        <strong>«Интеграции» → Telegram</strong>; промпты ролей и настройки MAX — в <strong>«Роли»</strong> и{" "}
+        <strong>«Интеграции» → MAX</strong>.
       </p>
       <p className="mb-4 rounded-lg border border-amber-900/50 bg-amber-950/30 px-3 py-2 text-sm text-amber-100/90">
         В продакшене ключи в БД следует шифровать at rest (например,{" "}
-        <code className="rounded bg-slate-900 px-1 text-xs">
-          cryptography.fernet
-        </code>
-        ).
+        <code className="rounded bg-slate-900 px-1 text-xs">cryptography.fernet</code>).
       </p>
 
       <p
@@ -335,449 +220,217 @@ export function SettingsPage() {
         <p className="text-slate-400">Загрузка формы…</p>
       ) : (
         <form className="space-y-2" onSubmit={onSubmit}>
-          <section className={sectionClass} aria-labelledby="settings-keys-title">
-            <h2 id="settings-keys-title" className={sectionTitleClass}>
-              <span aria-hidden>🔑</span> Ключи API
-            </h2>
+          <div className="flex flex-wrap gap-1 border-b border-slate-700/80">
+            <button type="button" className={tabBtn(settingsTab === "llm")} onClick={() => setSettingsTab("llm")}>
+              LLM
+            </button>
+            <button type="button" className={tabBtn(settingsTab === "stt")} onClick={() => setSettingsTab("stt")}>
+              STT
+            </button>
+            <button type="button" className={tabBtn(settingsTab === "tts")} onClick={() => setSettingsTab("tts")}>
+              TTS
+            </button>
+          </div>
 
-            <div className="mb-4">
-              <label className={labelClass} htmlFor="llm-provider">
-                Провайдер LLM
-              </label>
-              <select
-                id="llm-provider"
-                name="LLM_PROVIDER"
-                className={inputClass}
-                value={form.llmProvider}
-                onChange={(e) => setField("llmProvider", e.target.value)}
-              >
-                <option value="deepseek">DeepSeek (по умолчанию)</option>
-                <option value="openai">OpenAI</option>
-              </select>
-            </div>
+          {settingsTab === "llm" ? (
+            <section className={sectionClass} aria-labelledby="settings-llm-title">
+              <h2 id="settings-llm-title" className={sectionTitleClass}>
+                <span aria-hidden>🧠</span> LLM
+              </h2>
 
-            <div className="mb-4">
-              <label className={labelClass} htmlFor="llm-temperature">
-                Температура LLM (LLM_TEMPERATURE)
-              </label>
-              <p className={`${helpClass} mb-2`}>
-                Низкая температура (0.1–0.3) — для точных продаж, высокая
-                (0.7–1.0) — для креатива.
-              </p>
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="mb-4">
+                <label className={labelClass} htmlFor="llm-provider">
+                  Провайдер LLM
+                </label>
+                <select
+                  id="llm-provider"
+                  name="LLM_PROVIDER"
+                  className={inputClass}
+                  value={form.llmProvider}
+                  onChange={(e) => setField("llmProvider", e.target.value)}
+                >
+                  <option value="deepseek">DeepSeek (по умолчанию)</option>
+                  <option value="openai">OpenAI</option>
+                </select>
+              </div>
+
+              <div className="mb-4">
+                <label className={labelClass} htmlFor="llm-temperature">
+                  Температура LLM (LLM_TEMPERATURE)
+                </label>
+                <p className={`${helpClass} mb-2`}>
+                  Низкая температура (0.1–0.3) — для точных продаж, высокая (0.7–1.0) — для креатива.
+                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <input
+                    type="range"
+                    id="llm-temperature-range"
+                    min={0}
+                    max={10}
+                    step={1}
+                    value={llmRangeValue}
+                    onChange={onLlmRangeInput}
+                    aria-label="Температура LLM ползунок"
+                    className="min-w-[10rem] flex-1 accent-sky-500"
+                  />
+                  <input
+                    className={`${inputClass} w-20 shrink-0`}
+                    type="number"
+                    id="llm-temperature"
+                    name="LLM_TEMPERATURE"
+                    min={0}
+                    max={1}
+                    step={0.1}
+                    value={form.llmTemp}
+                    onInput={onLlmNumberInput}
+                    onChange={onLlmNumberInput}
+                  />
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className={`${labelClass} inline-flex items-center`} htmlFor="deepseek-key">
+                  <DeepSeekGlyph />
+                  Ключ DeepSeek API
+                </label>
+                <p className={helpClass}>{form.hints.deepseek}</p>
                 <input
-                  type="range"
-                  id="llm-temperature-range"
-                  min={0}
-                  max={10}
-                  step={1}
-                  value={llmRangeValue}
-                  onChange={onLlmRangeInput}
-                  aria-label="Температура LLM ползунок"
-                  className="min-w-[10rem] flex-1 accent-sky-500"
-                />
-                <input
-                  className={`${inputClass} w-20 shrink-0`}
-                  type="number"
-                  id="llm-temperature"
-                  name="LLM_TEMPERATURE"
-                  min={0}
-                  max={1}
-                  step={0.1}
-                  value={form.llmTemp}
-                  onInput={onLlmNumberInput}
-                  onChange={onLlmNumberInput}
+                  className={inputClass}
+                  type="password"
+                  id="deepseek-key"
+                  autoComplete="off"
+                  placeholder="Оставьте пустым, чтобы не менять сохранённый ключ"
+                  value={form.deepseekKey}
+                  onChange={(e) => setField("deepseekKey", e.target.value)}
                 />
               </div>
-            </div>
 
-            <div className="mb-4">
-              <label
-                className={`${labelClass} inline-flex items-center`}
-                htmlFor="deepseek-key"
-              >
-                <DeepSeekGlyph />
-                Ключ DeepSeek API
-              </label>
-              <p className={helpClass}>{form.hints.deepseek}</p>
-              <input
-                className={inputClass}
-                type="password"
-                id="deepseek-key"
-                autoComplete="off"
-                placeholder="Оставьте пустым, чтобы не менять сохранённый ключ"
-                value={form.deepseekKey}
-                onChange={(e) => setField("deepseekKey", e.target.value)}
-              />
-            </div>
-
-            <div className="mb-4">
-              <label className={labelClass} htmlFor="openai-key">
-                Ключ OpenAI API
-              </label>
-              <p className={helpClass}>{form.hints.openai}</p>
-              <input
-                className={inputClass}
-                type="password"
-                id="openai-key"
-                autoComplete="off"
-                placeholder="Оставьте пустым, чтобы не менять сохранённый ключ"
-                value={form.openaiKey}
-                onChange={(e) => setField("openaiKey", e.target.value)}
-              />
-            </div>
-
-            <div className="mb-4">
-              <label
-                className={`${labelClass} inline-flex items-center gap-1`}
-                htmlFor="telegram-token"
-              >
-                <span className="text-sky-400" aria-hidden>
-                  ✈
-                </span>
-                Токен Telegram-бота
-              </label>
-              <p className={helpClass}>{form.hints.telegram}</p>
-              <input
-                className={inputClass}
-                type="password"
-                id="telegram-token"
-                autoComplete="off"
-                placeholder="Оставьте пустым, чтобы не менять"
-                value={form.telegramToken}
-                onChange={(e) => setField("telegramToken", e.target.value)}
-              />
-            </div>
-
-            <div className="mb-4">
-              <label
-                className={`${labelClass} inline-flex items-center gap-1.5`}
-                htmlFor="max-bot-token"
-              >
-                <img
-                  src="/static/img/Max_logo.svg"
-                  alt=""
-                  className="inline h-4 w-4"
-                />
-                Токен бота MAX
-              </label>
-              <p className={helpClass}>{form.hints.maxBot}</p>
-              <input
-                className={inputClass}
-                type="password"
-                id="max-bot-token"
-                name="MAX_BOT_TOKEN"
-                autoComplete="off"
-                placeholder="Оставьте пустым, чтобы не менять сохранённый токен"
-                value={form.maxBotToken}
-                onChange={(e) => setField("maxBotToken", e.target.value)}
-              />
-            </div>
-
-            <div className="mb-4">
-              <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-200">
+              <div className="mb-4">
+                <label className={labelClass} htmlFor="openai-key">
+                  Ключ OpenAI API
+                </label>
+                <p className={helpClass}>{form.hints.openai}</p>
                 <input
-                  type="checkbox"
-                  id="max-use-polling"
-                  className="h-4 w-4 rounded border-slate-500 bg-slate-900 accent-sky-500"
-                  checked={form.maxUsePolling}
-                  onChange={(e) => setField("maxUsePolling", e.target.checked)}
+                  className={inputClass}
+                  type="password"
+                  id="openai-key"
+                  autoComplete="off"
+                  placeholder="Оставьте пустым, чтобы не менять сохранённый ключ"
+                  value={form.openaiKey}
+                  onChange={(e) => setField("openaiKey", e.target.value)}
                 />
-                Использовать Long Polling (для локальной отладки)
-              </label>
-              <p className={`${helpClass} mt-1.5`}>
-                Опрос <code className="text-xs">GET /updates</code> у MAX без
-                публичного HTTPS. В продакшене выключайте и используйте Webhook;
-                по правилам MAX одновременно не использовать оба способа.
-              </p>
-            </div>
+              </div>
 
-            <div className="mb-4">
-              <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-200">
+              <div className="mb-4">
+                <label className={labelClass} htmlFor="max-context-limit">
+                  Лимит сообщений в контексте LLM (MAX_CONTEXT_LIMIT)
+                </label>
+                <p className={helpClass}>
+                  Сколько последних реплик (user/assistant) подмешивать в запрос к модели; действует для MAX, веб-чата и
+                  голоса.
+                </p>
                 <input
-                  type="checkbox"
-                  id="max-voice-reply"
-                  className="h-4 w-4 rounded border-slate-500 bg-slate-900 accent-sky-500"
-                  checked={form.maxVoiceReply}
-                  onChange={(e) => setField("maxVoiceReply", e.target.checked)}
+                  className={inputClass}
+                  type="number"
+                  id="max-context-limit"
+                  min={1}
+                  max={200}
+                  step={1}
+                  value={form.maxContextLimit}
+                  onChange={(e) => setField("maxContextLimit", e.target.value)}
                 />
-                Озвучивать ответы в MAX (MAX_VOICE_REPLY_ENABLED)
-              </label>
-              <p className={`${helpClass} mt-1.5`}>
-                После текстового ответа отправляется голосовое вложение
-                (SaluteSpeech, WAV). Нужен ключ SaluteSpeech в настройках;
-                увеличивает задержку и расход API. Промежуточные фразы («ищу в
-                интернете») не озвучиваются.
-              </p>
-            </div>
+              </div>
 
-            <div className="mb-4">
-              <label className={labelClass} htmlFor="max-call-answer-delay">
-                Задержка ответа на входящий звонок MAX, сек
-                (MAX_CALL_ANSWER_DELAY)
-              </label>
-              <p className={helpClass}>
-                Сколько секунд ждать перед отправкой команды «принять вызов» в
-                API MAX — имитация реального снятия трубки. Не блокирует другие
-                сообщения бота (асинхронное ожидание).
-              </p>
-              <input
-                className={inputClass}
-                type="number"
-                id="max-call-answer-delay"
-                min={0}
-                max={120}
-                step={1}
-                value={form.maxCallAnswerDelay}
-                onChange={(e) => setField("maxCallAnswerDelay", e.target.value)}
-              />
-            </div>
+              <div className="mb-0">
+                <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-200">
+                  <input
+                    type="checkbox"
+                    id="enable-web-search"
+                    className="h-4 w-4 rounded border-slate-500 bg-slate-900 accent-sky-500"
+                    checked={form.enableWebSearch}
+                    onChange={(e) => setField("enableWebSearch", e.target.checked)}
+                  />
+                  Разрешить веб-поиск для консультанта (ENABLE_WEB_SEARCH)
+                </label>
+                <p className={`${helpClass} mt-1.5`}>
+                  Модель может вызвать инструмент <strong>search_web</strong> (DuckDuckGo). Отключите, чтобы сэкономить
+                  токены и время ответа.
+                </p>
+              </div>
+            </section>
+          ) : null}
 
-            <div className="mb-4">
-              <label className={labelClass} htmlFor="max-call-greeting">
-                Приветствие при ответе на звонок MAX
-                (MAX_CALL_GREETING_PHRASE)
-              </label>
-              <p className={helpClass}>
-                Текст озвучивается сразу после установки медиасессии, до первого
-                распознавания речи и до запроса к LLM. Тот же голосовой
-                пайплайн (RAG, CRM), что у телефонии и тестера.
+          {settingsTab === "stt" ? (
+            <section className={sectionClass} aria-labelledby="settings-stt-title">
+              <h2 id="settings-stt-title" className={sectionTitleClass}>
+                <span aria-hidden>🎤</span> STT (SaluteSpeech)
+              </h2>
+              <p className="mb-4 text-sm text-slate-400">
+                При <code className="text-xs">VOICE_STT_PROVIDER=salutespeech</code> в{" "}
+                <code className="text-xs">.env</code> ключ можно задать здесь или через{" "}
+                <code className="text-xs">SALUTESPEECH_AUTH_KEY</code> в окружении контейнера.
               </p>
-              <textarea
-                id="max-call-greeting"
-                className={`${inputClass} resize-y`}
-                rows={2}
-                placeholder={DEFAULT_GREETING}
-                value={form.maxCallGreeting}
-                onChange={(e) => setField("maxCallGreeting", e.target.value)}
-              />
-            </div>
 
-            <div className="mb-4">
-              <label className={labelClass} htmlFor="max-context-limit">
-                Лимит сообщений в контексте LLM (MAX_CONTEXT_LIMIT)
-              </label>
-              <p className={helpClass}>
-                Сколько последних реплик (user/assistant) подмешивать в запрос
-                к модели; действует для MAX, веб-чата и голоса.
-              </p>
-              <input
-                className={inputClass}
-                type="number"
-                id="max-context-limit"
-                min={1}
-                max={200}
-                step={1}
-                value={form.maxContextLimit}
-                onChange={(e) => setField("maxContextLimit", e.target.value)}
-              />
-            </div>
-
-            <div className="mb-4">
-              <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-200">
+              <div className="mb-4">
+                <label className={labelClass} htmlFor="salutespeech-key">
+                  Ключ SaluteSpeech (Authorization Key из Studio)
+                </label>
+                <p className={helpClass}>{form.hints.salutespeech}</p>
                 <input
-                  type="checkbox"
-                  id="enable-web-search"
-                  className="h-4 w-4 rounded border-slate-500 bg-slate-900 accent-sky-500"
-                  checked={form.enableWebSearch}
-                  onChange={(e) =>
-                    setField("enableWebSearch", e.target.checked)
-                  }
+                  className={inputClass}
+                  type="password"
+                  id="salutespeech-key"
+                  name="SALUTESPEECH_AUTH_KEY"
+                  autoComplete="off"
+                  placeholder="Оставьте пустым, чтобы не менять сохранённый ключ"
+                  value={form.salutespeechKey}
+                  onChange={(e) => setField("salutespeechKey", e.target.value)}
                 />
-                Разрешить веб-поиск для консультанта (ENABLE_WEB_SEARCH)
-              </label>
-              <p className={`${helpClass} mt-1.5`}>
-                Модель может вызвать инструмент{" "}
-                <strong>search_web</strong> (DuckDuckGo): публичные сниппеты,
-                если мало данных в базе знаний. Отключите, чтобы сэкономить
-                токены и время ответа. Не подходит для цен на маркетплейсах —
-                см. README.
+              </div>
+
+              <div className="mb-0">
+                <label className={labelClass} htmlFor="salutespeech-scope">
+                  OAuth scope (SALUTESPEECH_SCOPE)
+                </label>
+                <input
+                  className={inputClass}
+                  type="text"
+                  id="salutespeech-scope"
+                  autoComplete="off"
+                  placeholder="SALUTE_SPEECH_PERS"
+                  value={form.salutespeechScope}
+                  onChange={(e) => setField("salutespeechScope", e.target.value)}
+                />
+              </div>
+            </section>
+          ) : null}
+
+          {settingsTab === "tts" ? (
+            <section className={sectionClass} aria-labelledby="settings-tts-title">
+              <h2 id="settings-tts-title" className={sectionTitleClass}>
+                <span aria-hidden>🔊</span> TTS (SaluteSpeech)
+              </h2>
+              <p className="mb-4 text-sm text-slate-400">
+                При <code className="text-xs">VOICE_TTS_PROVIDER=salutespeech</code> в <code className="text-xs">.env</code>{" "}
+                используется голос ниже.
               </p>
-            </div>
 
-            <div className="mb-4">
-              <label className={labelClass} htmlFor="max-bot-username">
-                Упоминание бота в группе MAX (MAX_BOT_USERNAME)
-              </label>
-              <p className={helpClass}>
-                Подстрока в тексте (например{" "}
-                <code className="text-xs">@id…_bot</code>). В{" "}
-                <strong>групповых</strong> чатах бот обрабатывает сообщение
-                только при наличии этого упоминания; в личных диалогах правило
-                не применяется.
-              </p>
-              <input
-                className={inputClass}
-                type="text"
-                id="max-bot-username"
-                autoComplete="off"
-                placeholder="@id6451417302_bot"
-                value={form.maxBotUsername}
-                onChange={(e) => setField("maxBotUsername", e.target.value)}
-              />
-            </div>
-
-            <div className="mb-4">
-              <label className={labelClass} htmlFor="max-group-chat-id">
-                ID группы для доп. промпта (MAX_GROUP_CHAT_ID)
-              </label>
-              <p className={helpClass}>
-                Числовой <code className="text-xs">chat_id</code> группы MAX
-                (как в панели «Боты»). Если{" "}
-                <code className="text-xs">session_id</code> совпадает с этим
-                значением, к базовому промпту консультанта добавляется текст
-                ниже. Оставьте пустым, если не нужно.
-              </p>
-              <input
-                className={inputClass}
-                type="text"
-                id="max-group-chat-id"
-                autoComplete="off"
-                placeholder="Например -1001234567890"
-                value={form.maxGroupChatId}
-                onChange={(e) => setField("maxGroupChatId", e.target.value)}
-              />
-            </div>
-
-            <div className="mb-4">
-              <label className={labelClass} htmlFor="max-group-prompt">
-                Дополнительный промпт для группы
-                (MAX_GROUP_ADDITIONAL_PROMPT)
-              </label>
-              <p className={helpClass}>
-                Вставляется в системное сообщение после основного промпта
-                консультанта и инструкций по CRM, до дополнения для текстовых
-                ботов.
-              </p>
-              <textarea
-                id="max-group-prompt"
-                className={`${inputClass} resize-y`}
-                rows={3}
-                value={form.maxGroupPrompt}
-                onChange={(e) => setField("maxGroupPrompt", e.target.value)}
-              />
-            </div>
-
-            <h2 className="mb-2 mt-6 text-base font-semibold text-slate-100">
-              Голос: SaluteSpeech (Сбер)
-            </h2>
-            <p className="mb-4 text-sm text-slate-400">
-              При <code className="text-xs">VOICE_STT_PROVIDER=salutespeech</code>{" "}
-              и/или{" "}
-              <code className="text-xs">VOICE_TTS_PROVIDER=salutespeech</code> в{" "}
-              <code className="text-xs">.env</code> ключ можно задать здесь (или
-              переменная{" "}
-              <code className="text-xs">SALUTESPEECH_AUTH_KEY</code> в окружении
-              контейнера).
-            </p>
-
-            <div className="mb-4">
-              <label className={labelClass} htmlFor="salutespeech-key">
-                Ключ SaluteSpeech (Authorization Key из Studio)
-              </label>
-              <p className={helpClass}>{form.hints.salutespeech}</p>
-              <input
-                className={inputClass}
-                type="password"
-                id="salutespeech-key"
-                name="SALUTESPEECH_AUTH_KEY"
-                autoComplete="off"
-                placeholder="Оставьте пустым, чтобы не менять сохранённый ключ"
-                value={form.salutespeechKey}
-                onChange={(e) => setField("salutespeechKey", e.target.value)}
-              />
-            </div>
-
-            <div className="mb-4">
-              <label className={labelClass} htmlFor="salutespeech-scope">
-                OAuth scope (SALUTESPEECH_SCOPE)
-              </label>
-              <input
-                className={inputClass}
-                type="text"
-                id="salutespeech-scope"
-                autoComplete="off"
-                placeholder="SALUTE_SPEECH_PERS"
-                value={form.salutespeechScope}
-                onChange={(e) => setField("salutespeechScope", e.target.value)}
-              />
-            </div>
-
-            <div className="mb-0">
-              <label className={labelClass} htmlFor="salutespeech-voice">
-                Голос TTS (SALUTESPEECH_VOICE)
-              </label>
-              <input
-                className={inputClass}
-                type="text"
-                id="salutespeech-voice"
-                autoComplete="off"
-                placeholder="Ost_24000"
-                value={form.salutespeechVoice}
-                onChange={(e) => setField("salutespeechVoice", e.target.value)}
-              />
-            </div>
-          </section>
-
-          <section
-            className={sectionClass}
-            aria-labelledby="settings-prompts-title"
-          >
-            <h2 id="settings-prompts-title" className={sectionTitleClass}>
-              <span aria-hidden>✏</span> Промпты
-            </h2>
-
-            <div className="mb-4">
-              <label className={labelClass} htmlFor="consultant-prompt">
-                Промпт консультанта (DEFAULT_CONSULTANT_PROMPT)
-              </label>
-              <textarea
-                id="consultant-prompt"
-                className={`${inputClass} resize-y`}
-                rows={6}
-                value={form.consultantPrompt}
-                onChange={(e) => setField("consultantPrompt", e.target.value)}
-              />
-            </div>
-
-            <div className="mb-4">
-              <label className={labelClass} htmlFor="text-bot-supplement">
-                Дополнение для текстовых ботов MAX и Telegram
-                (TEXT_BOT_SYSTEM_SUPPLEMENT)
-              </label>
-              <p className={helpClass}>
-                Добавляется к системному промпту <strong>после</strong> основного
-                промпта консультанта и инструкций по CRM. Используйте для правил
-                формата ответа в мессенджере (длина, эмодзи, обращение на «вы»,
-                без Markdown и т.д.). Не применяется к голосовому каналу и к
-                полю выше по отдельности — только там, где сценарий вызывается
-                как бот MAX/Telegram.
-              </p>
-              <textarea
-                id="text-bot-supplement"
-                className={`${inputClass} resize-y`}
-                rows={5}
-                placeholder='Например: Отвечай кратко, до 800 символов. Обращайся на «вы». Не используй Markdown.'
-                value={form.textBotSupplement}
-                onChange={(e) =>
-                  setField("textBotSupplement", e.target.value)
-                }
-              />
-            </div>
-
-            <div className="mb-0">
-              <label className={labelClass} htmlFor="analyst-prompt">
-                Промпт ОКК (ANALYST_QA_PROMPT)
-              </label>
-              <textarea
-                id="analyst-prompt"
-                className={`${inputClass} resize-y`}
-                rows={8}
-                value={form.analystPrompt}
-                onChange={(e) => setField("analystPrompt", e.target.value)}
-              />
-            </div>
-          </section>
+              <div className="mb-0">
+                <label className={labelClass} htmlFor="salutespeech-voice">
+                  Голос TTS (SALUTESPEECH_VOICE)
+                </label>
+                <input
+                  className={inputClass}
+                  type="text"
+                  id="salutespeech-voice"
+                  autoComplete="off"
+                  placeholder="Ost_24000"
+                  value={form.salutespeechVoice}
+                  onChange={(e) => setField("salutespeechVoice", e.target.value)}
+                />
+              </div>
+            </section>
+          ) : null}
 
           <div className="mt-6">
             <button

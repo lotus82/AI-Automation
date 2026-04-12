@@ -1,5 +1,7 @@
 import { useCallback, useId, useRef, useState } from "react";
+import { TrendingUp } from "lucide-react";
 import api from "../api/client.js";
+import { PAGE_INNER, PAGE_TEXT } from "../styles/pageLayout.js";
 
 /**
  * ИИ-лидогенератор: кампании и очередь обзвона (контент бывшей страницы «Телефония»).
@@ -81,9 +83,12 @@ export function LeadgenPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
+    <div className={`${PAGE_INNER} space-y-8 ${PAGE_TEXT}`}>
       <div>
-        <h1 className="text-2xl font-semibold text-white">ИИ-лидогенератор</h1>
+        <h1 className="flex items-center gap-2 text-2xl font-semibold text-white">
+          <TrendingUp className="h-8 w-8 shrink-0 text-emerald-400/90" strokeWidth={1.75} aria-hidden />
+          ИИ-лидогенератор
+        </h1>
         <p className="mt-2 text-sm text-slate-400">
           Управление кампаниями обзвона, очередью номеров и перехватом лидов. Интеграция с dialer и CRM —
           через существующие API проекта.
@@ -111,7 +116,7 @@ export function LeadgenPage() {
         </p>
 
         <form
-          className="max-w-lg space-y-4 rounded-2xl border border-slate-700/80 bg-slate-900/50 p-5 shadow-lg backdrop-blur-sm"
+          className="w-full space-y-4 rounded-2xl border border-slate-700/80 bg-slate-900/50 p-5 shadow-lg backdrop-blur-sm"
           onSubmit={(e) => void handleUploadSubmit(e)}
         >
           <div>

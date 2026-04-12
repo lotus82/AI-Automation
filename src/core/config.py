@@ -261,6 +261,19 @@ class Settings(BaseSettings):
         validation_alias="CALL_RECORDINGS_DIR",
     )
 
+    # Портал: JWT для панели (обязательно задать в production)
+    portal_jwt_secret: str = Field(
+        default="dev-portal-jwt-secret-change-me",
+        validation_alias="PORTAL_JWT_SECRET",
+    )
+    portal_jwt_expire_minutes: int = Field(
+        default=1440,
+        ge=15,
+        le=10080,
+        validation_alias="PORTAL_JWT_EXPIRE_MINUTES",
+        description="Срок жизни access-токена портала (минуты), по умолчанию 24 ч.",
+    )
+
     # Панель «Логи»: Docker Engine API по Unix-сокету (монтирование в compose, токен в заголовке)
     admin_logs_token: str | None = Field(
         default=None,
@@ -279,6 +292,16 @@ class Settings(BaseSettings):
     def _asterisk_rtp_port_order(self):
         if self.asterisk_rtp_port_max < self.asterisk_rtp_port_min:
             raise ValueError("ASTERISK_RTP_PORT_MAX должен быть >= ASTERISK_RTP_PORT_MIN")
+        return self
+
+    @model_validator(mode="after")
+    def _portal_jwt_secret_in_production(self):
+        if (self.app_env or "").lower() in ("production", "prod") and (
+            not self.portal_jwt_secret
+            or self.portal_jwt_secret.strip() == ""
+            or self.portal_jwt_secret == "dev-portal-jwt-secret-change-me"
+        ):
+            raise ValueError("В production задайте безопасный PORTAL_JWT_SECRET в окружении")
         return self
 
     @field_validator("app_timezone", mode="before")

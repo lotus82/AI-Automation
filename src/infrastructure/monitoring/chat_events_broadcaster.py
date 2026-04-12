@@ -31,10 +31,14 @@ class ChatEventsBroadcaster(IChatMonitoringPublisher):
         self._connections: set[WebSocket] = set()
         self._lock = asyncio.Lock()
 
-    async def register(self, websocket: WebSocket) -> None:
-        await websocket.accept()
+    async def adopt(self, websocket: WebSocket) -> None:
+        """Добавить уже принятый (``accept``) сокет в пул рассылки."""
         async with self._lock:
             self._connections.add(websocket)
+
+    async def register(self, websocket: WebSocket) -> None:
+        await websocket.accept()
+        await self.adopt(websocket)
 
     async def unregister(self, websocket: WebSocket) -> None:
         async with self._lock:

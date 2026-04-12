@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "../api/client.js";
+import { ChatBotsMonitoring } from "../components/bots/ChatBotsMonitoring.jsx";
 import { CallAnalysisTab } from "../components/trainer/CallAnalysisTab.jsx";
+import { PAGE_INNER, PAGE_TEXT, TAB_ROW, tabBtn } from "../styles/pageLayout.js";
 
 function formatDate(iso) {
   if (!iso) return "—";
@@ -21,13 +23,6 @@ function recordingUrl(callId) {
   return `/api/calls/${encodeURIComponent(callId)}/recording`;
 }
 
-const tabBtn = (active) =>
-  `rounded-t-lg border px-4 py-2 text-sm font-medium transition-colors ${
-    active
-      ? "border-slate-600 border-b-transparent bg-slate-800/90 text-white"
-      : "border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
-  }`;
-
 /**
  * ИИ-контроль (QA): реестр звонков / ОКК, аналитика по методикам (BANT/MEDDIC), проверка API.
  */
@@ -35,12 +30,17 @@ export function QAPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const mainTab = useMemo(() => {
-    return searchParams.get("tab") === "analysis" ? "analysis" : "calls";
+    const t = searchParams.get("tab");
+    if (t === "analysis") return "analysis";
+    if (t === "bots") return "bots";
+    return "calls";
   }, [searchParams]);
 
   const setMainTab = (next) => {
     if (next === "analysis") {
       setSearchParams({ tab: "analysis" }, { replace: true });
+    } else if (next === "bots") {
+      setSearchParams({ tab: "bots" }, { replace: true });
     } else {
       setSearchParams({}, { replace: true });
     }
@@ -159,21 +159,17 @@ export function QAPage() {
     "mb-6 rounded-xl border border-slate-700/80 bg-slate-800/40 p-4 text-slate-300";
 
   return (
-    <div className="max-w-[100rem] text-slate-100">
+    <div className={`${PAGE_INNER} ${PAGE_TEXT}`}>
       <h1 className="mb-2 flex items-center gap-2 text-2xl font-bold text-white">
         <span aria-hidden>📊</span>
         ИИ-контроль (QA)
       </h1>
       <p className="mb-4 text-sm leading-relaxed text-slate-300">
-        QA-аналитика транскрипций и рекомендации ОКК: реестр звонков, оценка после Celery и разбор диалога по
-        методикам BANT/MEDDIC.
+        QA-аналитика транскрипций и рекомендации ОКК: реестр звонков, мониторинг чат-ботов, оценка после Celery и разбор
+        диалога по методикам BANT/MEDDIC.
       </p>
 
-      <div
-        className="mb-0 flex flex-wrap gap-1 border-b border-slate-600"
-        role="tablist"
-        aria-label="Раздел ИИ-контроль"
-      >
+      <div className={TAB_ROW} role="tablist" aria-label="Раздел ИИ-контроль">
         <button
           type="button"
           role="tab"
@@ -182,6 +178,15 @@ export function QAPage() {
           onClick={() => setMainTab("calls")}
         >
           Звонки
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mainTab === "bots"}
+          className={tabBtn(mainTab === "bots")}
+          onClick={() => setMainTab("bots")}
+        >
+          Боты
         </button>
         <button
           type="button"
@@ -195,8 +200,14 @@ export function QAPage() {
       </div>
 
       {mainTab === "analysis" && (
-        <div className="mb-10 max-w-4xl">
+        <div className="mb-10 w-full min-w-0">
           <CallAnalysisTab />
+        </div>
+      )}
+
+      {mainTab === "bots" && (
+        <div className="mb-10">
+          <ChatBotsMonitoring />
         </div>
       )}
 

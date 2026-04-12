@@ -1,5 +1,5 @@
 import axios from 'axios';
-// Импортируем ваш стор Zustand (проверьте, чтобы путь ../store/bitrixAuthStore был правильным)
+import { useAuthStore } from '../store/authStore.js';
 import { useBitrixAuthStore } from '../store/bitrixAuthStore';
 
 const apiClient = axios.create({
@@ -8,16 +8,16 @@ const apiClient = axios.create({
     baseURL: '/api',
 });
 
-// Добавляем интерцептор для автоматической подстановки заголовков Битрикс24
 apiClient.interceptors.request.use(
     (config) => {
-        // Достаем актуальные данные авторизации прямо из глобального стейта Zustand
+        const token = useAuthStore.getState().token;
+        if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+        }
+
         const { domain, appSid, extra } = useBitrixAuthStore.getState();
-        
-        // Вытаскиваем AUTH_ID из объекта extra (как это реализовал Cursor)
         const authId = extra?.AUTH_ID || '';
 
-        // Если данные есть, прикрепляем их к заголовкам каждого запроса к FastAPI
         if (domain) {
             config.headers['X-Bitrix-Domain'] = domain;
         }
@@ -30,7 +30,23 @@ apiClient.interceptors.request.use(
 
         return config;
     },
+    (error) => Promise.reject(error)
+);
+
+apiClient.interceptors.response.use(
+    (r) => r,
     (error) => {
+        if (error?.response?.status === 401) {
+            const reqUrl = String(error?.config?.url || '');
+            if (reqUrl.includes('auth/login')) {
+                return Promise.reject(error);
+            }
+            const path = window.location?.pathname || '';
+            useAuthStore.getState().clearAuth();
+            if (!path.startsWith('/login') && path !== '/') {
+                window.location.assign('/login');
+            }
+        }
         return Promise.reject(error);
     }
 );

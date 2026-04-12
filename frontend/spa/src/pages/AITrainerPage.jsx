@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { GraduationCap } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import api from "../api/client.js";
 import { TrainerScenariosPanel } from "../components/trainer/TrainerScenariosPanel.jsx";
+import { PAGE_INNER, PAGE_TEXT, TAB_ROW, tabBtn } from "../styles/pageLayout.js";
 
 function formatErr(err) {
   const d = err?.response?.data?.detail;
@@ -9,13 +11,6 @@ function formatErr(err) {
   if (d != null) return JSON.stringify(d);
   return err?.message ?? String(err);
 }
-
-const tabBtn = (active) =>
-  `rounded-t-lg border px-4 py-2 text-sm font-medium transition-colors ${
-    active
-      ? "border-slate-600 border-b-transparent bg-slate-800/90 text-white"
-      : "border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
-  }`;
 
 const inputClass =
   "w-full rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500";
@@ -88,8 +83,11 @@ export function AITrainerPage() {
   };
 
   return (
-    <div className="max-w-4xl text-slate-100">
-      <h1 className="mb-2 text-2xl font-bold text-white">ИИ-тренер отдела продаж</h1>
+    <div className={`${PAGE_INNER} ${PAGE_TEXT}`}>
+      <h1 className="mb-2 flex items-center gap-2 text-2xl font-bold text-white">
+        <GraduationCap className="h-8 w-8 shrink-0 text-violet-400/90" strokeWidth={1.75} aria-hidden />
+        ИИ-тренер отдела продаж
+      </h1>
       <p className="mb-6 text-sm text-slate-400">
         Голосовая симуляция: Asterisk звонит менеджеру, ИИ отыгрывает роль клиента. Персоны и возражения создаются на
         вкладке «Сценарии». Аналитика по методикам (BANT/MEDDIC) — в разделе «ИИ-контроль (QA)», вкладка «Аналитика
@@ -102,11 +100,7 @@ export function AITrainerPage() {
         </p>
       )}
 
-      <div
-        className="mb-0 flex flex-wrap gap-1 border-b border-slate-600"
-        role="tablist"
-        aria-label="Режим тренера"
-      >
+      <div className={TAB_ROW} role="tablist" aria-label="Режим тренера">
         <button
           type="button"
           role="tab"

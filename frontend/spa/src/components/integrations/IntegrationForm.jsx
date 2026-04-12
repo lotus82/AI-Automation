@@ -36,7 +36,7 @@ export function IntegrationForm({ onSubmit, initialData }) {
 
   return (
     <form
-      className="flex max-w-3xl flex-col gap-6 rounded-2xl border border-slate-700/80 bg-slate-900/50 p-6 shadow-lg backdrop-blur-sm"
+      className="flex w-full min-w-0 flex-col gap-6 rounded-2xl border border-slate-700/80 bg-slate-900/50 p-6 shadow-lg backdrop-blur-sm"
       onSubmit={handleSubmit}
     >
       <h2 className="text-lg font-semibold text-white">Конфигурация интеграции</h2>

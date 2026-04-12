@@ -9,7 +9,28 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
-from src.api.routers import admin_logs, bitrix, calls, chat, chats, dialer, health, knowledge, leads, max_bot, notifications, questionnaires, schedules, telephony, trainer, training, voice
+from src.api.middleware.portal_auth_middleware import PortalAuthMiddleware
+from src.api.routers import (
+    admin_logs,
+    auth_portal,
+    bitrix,
+    calls,
+    chat,
+    chats,
+    dialer,
+    health,
+    knowledge,
+    leads,
+    max_bot,
+    notifications,
+    portal_management,
+    questionnaires,
+    schedules,
+    telephony,
+    trainer,
+    training,
+    voice,
+)
 from src.presentation.api.routers import chat as agent_chat_router
 from src.presentation.api.routers import integrations as integrations_router
 from src.api.routers import settings as settings_router
@@ -17,6 +38,7 @@ from src.api.dependencies import build_max_long_poll_stack
 from src.core.config import get_settings
 from src.core.logging import setup_logging
 from src.infrastructure.database import AsyncSessionLocal
+from src.infrastructure.portal_bootstrap import ensure_portal_bootstrap
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +95,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         "Задача MAX long polling запущена; опрос platform-api при MAX_USE_POLLING в БД; "
         "переменная окружения MAX_USE_POLLING больше не отключает создание воркера (см. README)."
     )
+    async with AsyncSessionLocal() as bootstrap_session:
+        await ensure_portal_bootstrap(bootstrap_session)
     try:
         yield
     finally:
@@ -106,6 +130,7 @@ def create_app() -> FastAPI:
         debug=settings.debug,
     )
     # В т.ч. симулятор вебхука MAX с панели bots.html: POST /api/max/webhook с того же origin или другого порта.
+    application.add_middleware(PortalAuthMiddleware)
     application.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -114,6 +139,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    application.include_router(auth_portal.router, prefix="/api")
+    application.include_router(portal_management.router, prefix="/api")
     application.include_router(integrations_router.router, prefix="/api")
     application.include_router(agent_chat_router.router, prefix="/api")
     application.include_router(health.router, prefix="/api")

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { ScrollText } from "lucide-react";
 import api from "../api/client.js";
 
 const TOKEN_STORAGE = "sales_ai_admin_logs_token";
@@ -103,9 +104,12 @@ export function LogsPage() {
   }, [autoRefresh, token, selectedId, loadLogs]);
 
   return (
-    <div className="space-y-6">
+    <div className="w-full min-w-0 space-y-6 text-slate-100">
       <div>
-        <h1 className="text-xl font-semibold text-white">Логи контейнеров</h1>
+        <h1 className="flex items-center gap-2 text-xl font-semibold text-white">
+          <ScrollText className="h-7 w-7 shrink-0 text-slate-400/90" strokeWidth={1.75} aria-hidden />
+          Логи контейнеров
+        </h1>
         <p className="mt-1 text-sm text-slate-400">
           Для VPS: в <code className="rounded bg-slate-800 px-1 text-xs">.env</code> задайте{" "}
           <code className="rounded bg-slate-800 px-1 text-xs">ADMIN_LOGS_TOKEN</code>, перезапустите{" "}

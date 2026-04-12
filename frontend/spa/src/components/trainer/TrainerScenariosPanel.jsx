@@ -80,7 +80,7 @@ export function TrainerScenariosPanel({ onScenariosChanged }) {
 
   return (
     <div
-      className="mx-auto max-w-4xl space-y-8 rounded-b-xl rounded-tr-xl border border-t-0 border-slate-600 bg-slate-800/30 p-5"
+      className="w-full min-w-0 space-y-8 rounded-b-xl rounded-tr-xl border border-t-0 border-slate-600 bg-slate-800/30 p-5"
       role="tabpanel"
     >
       <div>
@@ -100,7 +100,7 @@ export function TrainerScenariosPanel({ onScenariosChanged }) {
         <h3 className="mb-3 text-lg font-semibold text-slate-200">Новый сценарий</h3>
         <form
           id={`${formId}-scenario-form`}
-          className="max-w-xl space-y-4 rounded-2xl border border-slate-700/80 bg-slate-900/50 p-5 shadow-lg backdrop-blur-sm"
+          className="w-full max-w-none space-y-4 rounded-2xl border border-slate-700/80 bg-slate-900/50 p-5 shadow-lg backdrop-blur-sm"
           onSubmit={(e) => void handleSubmit(e)}
         >
           <div>

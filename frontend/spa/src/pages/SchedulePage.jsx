@@ -302,7 +302,7 @@ export function SchedulePage() {
         : "text-slate-400";
 
   return (
-    <div className="max-w-5xl text-slate-100">
+    <div className="w-full min-w-0 text-slate-100">
       <h1 className="mb-2 flex items-center gap-2 text-2xl font-bold text-white">
         <span aria-hidden>📅</span>
         Расписание

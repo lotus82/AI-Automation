@@ -1,6 +1,12 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Plug } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import api from "../api/client.js";
 import { AgentChat } from "../components/Chat/AgentChat.jsx";
 import { IntegrationForm } from "../components/integrations/IntegrationForm.jsx";
+import { VoiceTelephonyTestPanel } from "../components/telephony/VoiceTelephonyTestPanel.jsx";
+import { SK } from "../constants/systemSettingsKeys.js";
+import { hintForSecretRow, mapFromList, parseTruthy } from "../utils/systemSettingsForm.js";
 
 const SYSTEM_OPTIONS = [{ value: "bitrix24", label: "Битрикс24" }];
 
@@ -45,6 +51,109 @@ const tabBtn = (active) =>
       : "border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
   }`;
 
+const VALID_INTEGRATION_SECTIONS = new Set([
+  "registry",
+  "chats",
+  "max",
+  "telegram",
+  "telephony",
+  "builder",
+]);
+
+function readIntegrationSectionFromUrl() {
+  try {
+    const s = new URLSearchParams(window.location.search).get("section");
+    return VALID_INTEGRATION_SECTIONS.has(s) ? s : "registry";
+  } catch {
+    return "registry";
+  }
+}
+
+const DEFAULT_MAX_GREETING =
+  "Здравствуйте! Это ИИ-помощник компании. Слушаю вас.";
+
+function initialMaxForm() {
+  return {
+    maxBotToken: "",
+    maxBotHint: "",
+    maxUsePolling: true,
+    maxVoiceReply: false,
+    maxCallAnswerDelay: "6",
+    maxCallGreeting: DEFAULT_MAX_GREETING,
+    maxBotUsername: "",
+    maxGroupChatId: "",
+  };
+}
+
+function buildMaxFormFromMap(map) {
+  let delay = 6;
+  const mcad = map[SK.MAX_CALL_ANSWER_DELAY];
+  if (mcad && mcad.value != null && String(mcad.value).trim() !== "") {
+    const parsedD = parseInt(String(mcad.value).trim(), 10);
+    if (!Number.isNaN(parsedD)) delay = parsedD;
+  }
+  delay = Math.max(0, Math.min(120, delay));
+
+  const mcg = map[SK.MAX_CALL_GREETING_PHRASE];
+
+  return {
+    maxBotToken: "",
+    maxBotHint: hintForSecretRow(map[SK.MAX_BOT_TOKEN]),
+    maxUsePolling: parseTruthy(map[SK.MAX_USE_POLLING]?.value, true),
+    maxVoiceReply: parseTruthy(map[SK.MAX_VOICE_REPLY_ENABLED]?.value, false),
+    maxCallAnswerDelay: String(delay),
+    maxCallGreeting:
+      mcg && mcg.value != null ? String(mcg.value) : DEFAULT_MAX_GREETING,
+    maxBotUsername:
+      map[SK.MAX_BOT_USERNAME]?.value != null
+        ? String(map[SK.MAX_BOT_USERNAME].value)
+        : "",
+    maxGroupChatId:
+      map[SK.MAX_GROUP_CHAT_ID]?.value != null
+        ? String(map[SK.MAX_GROUP_CHAT_ID].value)
+        : "",
+  };
+}
+
+function collectMaxPayload(maxForm) {
+  const values = {};
+  values[SK.MAX_USE_POLLING] = maxForm.maxUsePolling ? "1" : "0";
+  values[SK.MAX_VOICE_REPLY_ENABLED] = maxForm.maxVoiceReply ? "1" : "0";
+
+  let dlim = parseInt(maxForm.maxCallAnswerDelay, 10);
+  if (Number.isNaN(dlim)) dlim = 6;
+  dlim = Math.max(0, Math.min(120, dlim));
+  values[SK.MAX_CALL_ANSWER_DELAY] = String(dlim);
+
+  values[SK.MAX_CALL_GREETING_PHRASE] = maxForm.maxCallGreeting;
+  values[SK.MAX_BOT_USERNAME] = maxForm.maxBotUsername.trim();
+  values[SK.MAX_GROUP_CHAT_ID] = maxForm.maxGroupChatId.trim();
+
+  if (maxForm.maxBotToken.trim()) {
+    values[SK.MAX_BOT_TOKEN] = maxForm.maxBotToken.trim();
+  }
+  return values;
+}
+
+function initialTelegramForm() {
+  return { telegramToken: "", telegramHint: "" };
+}
+
+function buildTelegramFormFromMap(map) {
+  return {
+    telegramToken: "",
+    telegramHint: hintForSecretRow(map[SK.TELEGRAM_BOT_TOKEN]),
+  };
+}
+
+function collectTelegramPayload(tgForm) {
+  const values = {};
+  if (tgForm.telegramToken.trim()) {
+    values[SK.TELEGRAM_BOT_TOKEN] = tgForm.telegramToken.trim();
+  }
+  return values;
+}
+
 function mapParamTypeForApi(t) {
   if (t === "integer" || t === "number") return "number";
   if (t === "boolean") return "boolean";
@@ -68,7 +177,13 @@ function buildIntegrationCreatePayload(data) {
 }
 
 export function IntegrationsPage() {
-  const [section, setSection] = useState("registry");
+  const [searchParams] = useSearchParams();
+  const [section, setSection] = useState(readIntegrationSectionFromUrl);
+
+  useEffect(() => {
+    const s = searchParams.get("section");
+    if (VALID_INTEGRATION_SECTIONS.has(s)) setSection(s);
+  }, [searchParams]);
   const [rows, setRows] = useState(initialRows);
   const [builderStatus, setBuilderStatus] = useState(null);
   const [builderError, setBuilderError] = useState(null);
@@ -77,6 +192,103 @@ export function IntegrationsPage() {
   const [formMsg, setFormMsg] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
+
+  const [maxForm, setMaxForm] = useState(initialMaxForm);
+  const [telegramForm, setTelegramForm] = useState(initialTelegramForm);
+  const [messengerLoading, setMessengerLoading] = useState(true);
+  const [messengerLoadError, setMessengerLoadError] = useState("");
+
+  const [maxSaving, setMaxSaving] = useState(false);
+  const [maxStatusMsg, setMaxStatusMsg] = useState("");
+  const [maxStatusError, setMaxStatusError] = useState(false);
+
+  const [telegramSaving, setTelegramSaving] = useState(false);
+  const [telegramStatusMsg, setTelegramStatusMsg] = useState("");
+  const [telegramStatusError, setTelegramStatusError] = useState(false);
+
+  const loadMessengerSettings = useCallback(async () => {
+    setMessengerLoadError("");
+    try {
+      const { data: rows } = await api.get("/settings");
+      const map = mapFromList(rows);
+      setMaxForm(buildMaxFormFromMap(map));
+      setTelegramForm(buildTelegramFormFromMap(map));
+    } catch (e) {
+      console.error(e);
+      const msg = e?.response?.data?.detail ?? e?.message ?? String(e);
+      setMessengerLoadError(`Не удалось загрузить настройки: ${msg}`);
+    } finally {
+      setMessengerLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMessengerSettings();
+  }, [loadMessengerSettings]);
+
+  const setMaxField = (key, value) => {
+    setMaxForm((f) => ({ ...f, [key]: value }));
+  };
+
+  const onMaxSubmit = async (e) => {
+    e.preventDefault();
+    setMaxSaving(true);
+    setMaxStatusMsg("Сохранение…");
+    setMaxStatusError(false);
+    try {
+      await api.put("/settings", { values: collectMaxPayload(maxForm) });
+      setMaxStatusMsg("Сохранено.");
+      setMaxStatusError(false);
+      await loadMessengerSettings();
+    } catch (err) {
+      console.error(err);
+      const body =
+        typeof err?.response?.data === "string"
+          ? err.response.data
+          : err?.response?.data != null
+            ? JSON.stringify(err.response.data)
+            : err?.message ?? String(err);
+      setMaxStatusMsg(`Ошибка: ${body}`);
+      setMaxStatusError(true);
+    } finally {
+      setMaxSaving(false);
+    }
+  };
+
+  const setTelegramField = (key, value) => {
+    setTelegramForm((f) => ({ ...f, [key]: value }));
+  };
+
+  const onTelegramSubmit = async (e) => {
+    e.preventDefault();
+    const payload = collectTelegramPayload(telegramForm);
+    if (Object.keys(payload).length === 0) {
+      setTelegramStatusMsg("Введите новый токен или оставьте поле пустым (без изменений).");
+      setTelegramStatusError(true);
+      return;
+    }
+    setTelegramSaving(true);
+    setTelegramStatusMsg("Сохранение…");
+    setTelegramStatusError(false);
+    try {
+      await api.put("/settings", { values: payload });
+      setTelegramStatusMsg("Сохранено.");
+      setTelegramStatusError(false);
+      await loadMessengerSettings();
+    } catch (err) {
+      console.error(err);
+      const body =
+        typeof err?.response?.data === "string"
+          ? err.response.data
+          : err?.response?.data != null
+            ? JSON.stringify(err.response.data)
+            : err?.message ?? String(err);
+      setTelegramStatusMsg(`Ошибка: ${body}`);
+      setTelegramStatusError(true);
+    } finally {
+      setTelegramSaving(false);
+    }
+  };
 
   const chatIntegrationIds = useMemo(
     () => rows.map((r) => String(r.id)).filter((id) => UUID_RE.test(id)),
@@ -162,9 +374,12 @@ export function IntegrationsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 text-slate-100">
+    <div className="w-full min-w-0 space-y-8 text-slate-100">
       <div>
-        <h1 className="text-2xl font-bold text-white">Интеграции</h1>
+        <h1 className="flex items-center gap-2 text-2xl font-bold text-white">
+          <Plug className="h-8 w-8 shrink-0 text-amber-400/90" strokeWidth={1.75} aria-hidden />
+          Интеграции
+        </h1>
         <p className="mt-2 text-sm text-slate-400">
           Подключения к внешним системам (REST, вебхуки). Список ниже можно позже связать с бэкендом модуля
           Universal API Integration.
@@ -178,6 +393,15 @@ export function IntegrationsPage() {
         <button type="button" className={tabBtn(section === "chats")} onClick={() => setSection("chats")}>
           Чаты
         </button>
+        <button type="button" className={tabBtn(section === "max")} onClick={() => setSection("max")}>
+          MAX
+        </button>
+        <button type="button" className={tabBtn(section === "telegram")} onClick={() => setSection("telegram")}>
+          Telegram
+        </button>
+        <button type="button" className={tabBtn(section === "telephony")} onClick={() => setSection("telephony")}>
+          Телефония
+        </button>
         <button type="button" className={tabBtn(section === "builder")} onClick={() => setSection("builder")}>
           Конструктор
         </button>
@@ -188,7 +412,7 @@ export function IntegrationsPage() {
           <section>
             <h2 className="mb-3 text-lg font-semibold text-slate-200">Новая интеграция</h2>
             <form
-              className="max-w-xl space-y-4 rounded-2xl border border-slate-700/80 bg-slate-900/50 p-5 shadow-lg backdrop-blur-sm"
+              className="w-full space-y-4 rounded-2xl border border-slate-700/80 bg-slate-900/50 p-5 shadow-lg backdrop-blur-sm"
               onSubmit={onCreate}
             >
               <div>
@@ -332,7 +556,225 @@ export function IntegrationsPage() {
           </div>
           <AgentChat integrationIds={chatIntegrationIds} />
         </section>
-      ) : (
+      ) : section === "max" ? (
+        <section className="w-full min-w-0 space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-200">Мессенджер MAX</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Токен бота, long polling, голосовые ответы и звонки — значения в{" "}
+              <code className="text-slate-300">system_settings</code> (как и раньше в общих настройках).
+            </p>
+          </div>
+          {messengerLoadError ? (
+            <p className="rounded-lg border border-red-900/40 bg-red-950/20 px-3 py-2 text-sm text-red-200/95">{messengerLoadError}</p>
+          ) : null}
+          <p
+            className={`min-h-[1.25rem] text-sm ${maxStatusError ? "text-red-400" : "text-emerald-400"}`}
+            aria-live="polite"
+          >
+            {maxStatusMsg}
+          </p>
+          {messengerLoading ? (
+            <p className="text-slate-400">Загрузка…</p>
+          ) : (
+            <form
+              className="space-y-4 rounded-xl border border-slate-700/80 bg-slate-800/40 p-5 shadow-sm"
+              onSubmit={onMaxSubmit}
+            >
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-200" htmlFor="int-max-bot-token">
+                  Токен бота MAX
+                </label>
+                <p className="text-sm text-slate-400">{maxForm.maxBotHint}</p>
+                <input
+                  id="int-max-bot-token"
+                  className="w-full rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  type="password"
+                  autoComplete="off"
+                  placeholder="Оставьте пустым, чтобы не менять сохранённый токен"
+                  value={maxForm.maxBotToken}
+                  onChange={(e) => setMaxField("maxBotToken", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-200">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-500 bg-slate-900 accent-emerald-500"
+                    checked={maxForm.maxUsePolling}
+                    onChange={(e) => setMaxField("maxUsePolling", e.target.checked)}
+                  />
+                  Использовать Long Polling (для локальной отладки)
+                </label>
+                <p className="mt-1.5 text-sm text-slate-400">
+                  Опрос <code className="text-xs">GET /updates</code> у MAX без публичного HTTPS. В продакшене выключайте и
+                  используйте Webhook.
+                </p>
+              </div>
+
+              <div>
+                <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-200">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-500 bg-slate-900 accent-emerald-500"
+                    checked={maxForm.maxVoiceReply}
+                    onChange={(e) => setMaxField("maxVoiceReply", e.target.checked)}
+                  />
+                  Озвучивать ответы в MAX (MAX_VOICE_REPLY_ENABLED)
+                </label>
+                <p className="mt-1.5 text-sm text-slate-400">
+                  После текстового ответа отправляется голосовое вложение (SaluteSpeech). Нужен ключ SaluteSpeech в разделе
+                  «Настройки» → STT/TTS.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-200" htmlFor="int-max-call-delay">
+                  Задержка ответа на входящий звонок MAX, сек (MAX_CALL_ANSWER_DELAY)
+                </label>
+                <p className="text-sm text-slate-400">
+                  Сколько секунд ждать перед отправкой команды «принять вызов» в API MAX.
+                </p>
+                <input
+                  id="int-max-call-delay"
+                  className="w-full max-w-xs rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  type="number"
+                  min={0}
+                  max={120}
+                  step={1}
+                  value={maxForm.maxCallAnswerDelay}
+                  onChange={(e) => setMaxField("maxCallAnswerDelay", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-200" htmlFor="int-max-greeting">
+                  Приветствие при ответе на звонок MAX (MAX_CALL_GREETING_PHRASE)
+                </label>
+                <textarea
+                  id="int-max-greeting"
+                  className="w-full resize-y rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  rows={2}
+                  placeholder={DEFAULT_MAX_GREETING}
+                  value={maxForm.maxCallGreeting}
+                  onChange={(e) => setMaxField("maxCallGreeting", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-200" htmlFor="int-max-bot-username">
+                  Упоминание бота в группе MAX (MAX_BOT_USERNAME)
+                </label>
+                <p className="text-sm text-slate-400">
+                  Подстрока в тексте (например <code className="text-xs">@id…_bot</code>). В групповых чатах бот
+                  обрабатывает сообщение только при наличии этого упоминания.
+                </p>
+                <input
+                  id="int-max-bot-username"
+                  className="w-full rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  type="text"
+                  autoComplete="off"
+                  placeholder="@id6451417302_bot"
+                  value={maxForm.maxBotUsername}
+                  onChange={(e) => setMaxField("maxBotUsername", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-200" htmlFor="int-max-group-chat-id">
+                  ID группы для доп. промпта (MAX_GROUP_CHAT_ID)
+                </label>
+                <p className="text-sm text-slate-400">
+                  Числовой <code className="text-xs">chat_id</code> группы MAX. Текст доп. промпта задаётся в разделе{" "}
+                  <strong>«Роли»</strong>.
+                </p>
+                <input
+                  id="int-max-group-chat-id"
+                  className="w-full rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  type="text"
+                  autoComplete="off"
+                  placeholder="Например -1001234567890"
+                  value={maxForm.maxGroupChatId}
+                  onChange={(e) => setMaxField("maxGroupChatId", e.target.value)}
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-500 disabled:opacity-50"
+                disabled={maxSaving}
+              >
+                Сохранить настройки MAX
+              </button>
+            </form>
+          )}
+        </section>
+      ) : section === "telegram" ? (
+        <section className="w-full min-w-0 space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-200">Telegram</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Токен бота из <span className="text-sky-400">@BotFather</span> сохраняется в{" "}
+              <code className="text-slate-300">system_settings</code> (ключ <code className="text-slate-300">TELEGRAM_BOT_TOKEN</code>
+              ).
+            </p>
+          </div>
+          {messengerLoadError ? (
+            <p className="rounded-lg border border-red-900/40 bg-red-950/20 px-3 py-2 text-sm text-red-200/95">{messengerLoadError}</p>
+          ) : null}
+          <p
+            className={`min-h-[1.25rem] text-sm ${telegramStatusError ? "text-red-400" : "text-emerald-400"}`}
+            aria-live="polite"
+          >
+            {telegramStatusMsg}
+          </p>
+          {messengerLoading ? (
+            <p className="text-slate-400">Загрузка…</p>
+          ) : (
+            <form
+              className="space-y-4 rounded-xl border border-slate-700/80 bg-slate-800/40 p-5 shadow-sm"
+              onSubmit={onTelegramSubmit}
+            >
+              <div>
+                <label className="mb-1 flex items-center gap-1 text-sm font-medium text-slate-200" htmlFor="int-telegram-token">
+                  <span className="text-sky-400" aria-hidden>
+                    ✈
+                  </span>
+                  Токен Telegram-бота
+                </label>
+                <p className="text-sm text-slate-400">{telegramForm.telegramHint}</p>
+                <input
+                  id="int-telegram-token"
+                  className="w-full rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  type="password"
+                  autoComplete="off"
+                  placeholder="Оставьте пустым, чтобы не менять сохранённый токен"
+                  value={telegramForm.telegramToken}
+                  onChange={(e) => setTelegramField("telegramToken", e.target.value)}
+                />
+              </div>
+              <button
+                type="submit"
+                className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-500 disabled:opacity-50"
+                disabled={telegramSaving}
+              >
+                Сохранить токен
+              </button>
+            </form>
+          )}
+        </section>
+      ) : section === "telephony" ? (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-200">Телефония</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Проверка голосового потока через WebSocket — ранее раздел «Тестирование».
+            </p>
+          </div>
+          <VoiceTelephonyTestPanel />
+        </section>
+      ) : section === "builder" ? (
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-200">Конструктор интеграции</h2>
@@ -354,7 +796,7 @@ export function IntegrationsPage() {
           ) : null}
           <IntegrationForm onSubmit={handleIntegrationFormSubmit} />
         </section>
-      )}
+      ) : null}
     </div>
   );
 }

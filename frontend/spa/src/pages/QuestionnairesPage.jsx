@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { ClipboardList } from "lucide-react";
 import { createPortal } from "react-dom";
 import api from "../api/client.js";
 import { SurveyTakeExperience } from "../components/questionnaires/SurveyTakeExperience.jsx";
@@ -309,10 +310,13 @@ export function QuestionnairesPage() {
 
   return (
     <>
-    <div className="space-y-6">
+    <div className="w-full min-w-0 space-y-6 text-slate-100">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-white">Опросники</h1>
+          <h1 className="flex items-center gap-2 text-xl font-semibold text-white">
+            <ClipboardList className="h-7 w-7 shrink-0 text-sky-400/90" strokeWidth={1.75} aria-hidden />
+            Опросники
+          </h1>
           <p className="mt-1 text-sm text-slate-400">
             Конструктор, прохождение и ИИ-оценка по вашим критериям. Публичную ссылку можно вставить в MAX,
             Битрикс24 и другие системы.
@@ -427,7 +431,7 @@ export function QuestionnairesPage() {
       {builderOpen && modalRoot
         ? createPortal(
         <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/60 p-4">
-          <div className="my-8 w-full max-w-3xl rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
+          <div className="my-8 w-full max-w-[100rem] rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-white">
                 {editingId ? "Редактирование опросника" : "Новый опросник"}
@@ -595,7 +599,7 @@ export function QuestionnairesPage() {
       {takeId && modalRoot
         ? createPortal(
         <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/60 p-4">
-          <div className="my-8 w-full max-w-2xl">
+          <div className="my-8 w-full max-w-[100rem]">
             <SurveyTakeExperience questionnaireId={takeId} onClose={() => setTakeId(null)} />
           </div>
         </div>,

@@ -488,3 +488,61 @@ class IntegrationModel(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class OrganizationModel(Base):
+    """Организация (тенант портала): изолированные учётные записи и политики."""
+
+    __tablename__ = "organizations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=sql_text("true"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+
+
+class PortalUserModel(Base):
+    """Пользователь панели: супер-админ (organization_id NULL) или пользователь организации."""
+
+    __tablename__ = "portal_users"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    username: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    permissions: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sql_text("'{}'::jsonb"),
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=sql_text("true"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+
+    organization: Mapped["OrganizationModel | None"] = relationship(
+        "OrganizationModel",
+        lazy="joined",
+    )
