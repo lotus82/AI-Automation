@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileText, GripVertical } from "lucide-react";
+import { FileText, GripVertical, Trash2 } from "lucide-react";
 import api from "../api/client.js";
 
 /** Визуальный отклик: нажатие, фокус, плавные переходы */
@@ -100,6 +100,7 @@ export function FormsPage() {
   const [dragOverFieldIdx, setDragOverFieldIdx] = useState(null);
   const [eventBusy, setEventBusy] = useState(null);
   const [copyUrlFlash, setCopyUrlFlash] = useState(false);
+  const [deletingSubmissionId, setDeletingSubmissionId] = useState(null);
   const [editEvNotifyMessenger, setEditEvNotifyMessenger] = useState("");
   const [editEvNotifyChat, setEditEvNotifyChat] = useState("");
   const [editEvTitle, setEditEvTitle] = useState("");
@@ -391,6 +392,23 @@ export function FormsPage() {
       alert(formatApiDetail(err));
     } finally {
       setEventBusy(null);
+    }
+  };
+
+  const deleteSubmission = async (submissionId) => {
+    if (!selectedEvent?.id) return;
+    if (!window.confirm("Удалить эту заявку из списка? Действие необратимо.")) return;
+    setDeletingSubmissionId(submissionId);
+    try {
+      await api.delete(`/forms/events/${selectedEvent.id}/submissions/${submissionId}`);
+      setSubmissions((prev) => prev.filter((s) => s.id !== submissionId));
+      await loadAll();
+      const { data } = await api.get(`/forms/events/${selectedEvent.id}`);
+      setSelectedEvent(data);
+    } catch (err) {
+      alert(formatApiDetail(err));
+    } finally {
+      setDeletingSubmissionId(null);
     }
   };
 
@@ -1070,6 +1088,9 @@ export function FormsPage() {
                               <span className="block max-w-[7rem] truncate">{c.label}</span>
                             </th>
                           ))}
+                          <th className="w-10 shrink-0 px-2 py-1 align-top text-right text-slate-500 font-normal">
+                            <span className="sr-only">Удалить</span>
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1100,6 +1121,18 @@ export function FormsPage() {
                                 </td>
                               );
                             })}
+                            <td className="px-1 py-1 align-top text-right">
+                              <button
+                                type="button"
+                                title="Удалить заявку"
+                                aria-label="Удалить заявку"
+                                disabled={!!eventBusy || deletingSubmissionId !== null}
+                                className={`inline-flex rounded border border-red-900/50 p-1 text-red-400 ${pressableDanger} disabled:opacity-40 disabled:pointer-events-none`}
+                                onClick={() => deleteSubmission(s.id)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>

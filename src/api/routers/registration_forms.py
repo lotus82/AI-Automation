@@ -544,6 +544,23 @@ async def list_submissions(event_id: UUID, session: AsyncSessionDep) -> list[Reg
     ]
 
 
+@router.delete(
+    "/events/{event_id}/submissions/{submission_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_submission(
+    event_id: UUID,
+    submission_id: UUID,
+    session: AsyncSessionDep,
+) -> Response:
+    sub = await session.get(RegistrationSubmissionModel, submission_id)
+    if sub is None or sub.event_id != event_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    await session.delete(sub)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/events/{event_id}/export.xlsx")
 async def export_submissions_xlsx(event_id: UUID, session: AsyncSessionDep) -> Response:
     ev = await _get_event_loaded(session, event_id)
