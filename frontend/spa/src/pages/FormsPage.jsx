@@ -129,6 +129,29 @@ export function FormsPage() {
     loadAll();
   }, [loadAll]);
 
+  /** Догружаем шаблон по id, если его нет в списке (иначе колонки ответов не строятся). */
+  useEffect(() => {
+    if (!selectedEvent?.form_template_id) return;
+    const tid = String(selectedEvent.form_template_id);
+    if (templates.some((t) => String(t.id) === tid)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get(`/forms/templates/${tid}`);
+        if (cancelled || !data?.id) return;
+        setTemplates((prev) => {
+          if (prev.some((p) => String(p.id) === String(data.id))) return prev;
+          return [...prev, data];
+        });
+      } catch {
+        /* 401/404 и т.д. — колонки строятся из ключей answers (fallback в useMemo) */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEvent?.form_template_id, selectedEvent?.id, templates]);
+
   const loadSubmissions = async (eventId) => {
     setSubLoading(true);
     try {
@@ -404,10 +427,30 @@ export function FormsPage() {
 
   const submissionColumns = useMemo(() => {
     if (!selectedEvent) return [];
-    const t = templates.find((x) => x.id === selectedEvent.form_template_id);
-    const fields = t?.fields ?? [];
-    return [...fields].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  }, [selectedEvent, templates]);
+    const tid = String(selectedEvent.form_template_id);
+    const t = templates.find((x) => String(x.id) === tid);
+    let fields = [...(t?.fields ?? [])].sort(
+      (a, b) => (a.order ?? 0) - (b.order ?? 0) || String(a.id).localeCompare(String(b.id)),
+    );
+    if (fields.length === 0 && submissions.length > 0) {
+      const ids = new Set();
+      for (const s of submissions) {
+        let a = s.answers;
+        if (typeof a === "string") {
+          try {
+            a = JSON.parse(a);
+          } catch {
+            a = {};
+          }
+        }
+        Object.keys(a || {}).forEach((k) => ids.add(k));
+      }
+      fields = [...ids]
+        .sort()
+        .map((id) => ({ id, label: id, order: 0, type: "short_text", required: false, options: [] }));
+    }
+    return fields;
+  }, [selectedEvent, templates, submissions]);
 
   return (
     <div className="w-full min-w-0 space-y-6 text-slate-100">
@@ -1015,12 +1058,16 @@ export function FormsPage() {
                 ) : (
                   <div className="overflow-x-auto max-h-80 overflow-y-auto rounded border border-slate-700">
                     <table className="w-full min-w-[480px] text-xs">
-                      <thead className="sticky top-0 bg-slate-900">
+                      <thead className="sticky top-0 z-[1] bg-slate-900 shadow-[0_1px_0_0_rgb(51_65_85)]">
                         <tr className="text-left text-slate-400">
-                          <th className="px-2 py-1">Время</th>
+                          <th className="w-36 shrink-0 px-2 py-1 align-top whitespace-nowrap">Время</th>
                           {submissionColumns.map((c) => (
-                            <th key={c.id} className="px-2 py-1">
-                              {c.label}
+                            <th
+                              key={c.id}
+                              className="max-w-[7rem] px-2 py-1 align-top font-medium"
+                              title={c.label}
+                            >
+                              <span className="block max-w-[7rem] truncate">{c.label}</span>
                             </th>
                           ))}
                         </tr>
@@ -1028,15 +1075,28 @@ export function FormsPage() {
                       <tbody>
                         {submissions.map((s) => (
                           <tr key={s.id} className="border-t border-slate-800">
-                            <td className="px-2 py-1 whitespace-nowrap text-slate-500">
+                            <td className="px-2 py-1 align-top whitespace-nowrap text-slate-500">
                               {new Date(s.submitted_at).toLocaleString("ru-RU")}
                             </td>
                             {submissionColumns.map((c) => {
-                              const v = s.answers?.[c.id];
-                              const cell = Array.isArray(v) ? v.join("; ") : v ?? "";
+                              let ans = s.answers;
+                              if (typeof ans === "string") {
+                                try {
+                                  ans = JSON.parse(ans);
+                                } catch {
+                                  ans = {};
+                                }
+                              }
+                              const raw = ans?.[c.id];
+                              const cell = Array.isArray(raw) ? raw.join("; ") : raw ?? "";
+                              const str = cell === null || cell === undefined ? "" : String(cell);
                               return (
-                                <td key={c.id} className="px-2 py-1 text-slate-300">
-                                  {String(cell)}
+                                <td
+                                  key={c.id}
+                                  className="max-w-[14rem] break-words px-2 py-1 align-top text-slate-300"
+                                  title={str || undefined}
+                                >
+                                  {str.trim() === "" ? "—" : str}
                                 </td>
                               );
                             })}
