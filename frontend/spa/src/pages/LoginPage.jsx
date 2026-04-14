@@ -53,7 +53,7 @@ export function LoginPage() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 px-4 py-12">
       <div className="w-full max-w-md rounded-2xl border border-slate-700/80 bg-slate-900/60 p-8 shadow-xl backdrop-blur-sm">
         <h1 className="text-center text-2xl font-bold text-white">Вход в панель</h1>
-        <p className="mt-2 text-center text-sm text-slate-400">Sales AI — корпоративный доступ</p>
+        <p className="mt-2 text-center text-sm text-slate-400">Lotus AI — корпоративный доступ</p>
 
         <form className="mt-8 space-y-4" onSubmit={onSubmit}>
           {error ? (

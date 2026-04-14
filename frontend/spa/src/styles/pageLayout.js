@@ -12,10 +12,11 @@ export const PAGE_INNER = "w-full min-w-0";
 export const PAGE_TEXT = "text-slate-100";
 
 /** Строка табов (нижняя граница как у QA-аналитики). */
-export const TAB_ROW = "mb-0 flex flex-wrap gap-1 border-b border-slate-600";
+export const TAB_ROW =
+  "mb-0 flex flex-nowrap gap-1 overflow-x-auto overscroll-x-contain border-b border-slate-600 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
 
 export function tabBtn(active) {
-  return `rounded-t-lg border px-4 py-2 text-sm font-medium transition-colors ${
+  return `shrink-0 whitespace-nowrap rounded-t-lg border px-3 py-2 text-sm font-medium transition-colors sm:px-4 ${
     active
       ? "border-slate-600 border-b-transparent bg-slate-800/90 text-white"
       : "border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"

@@ -1,7 +1,9 @@
-import { useState } from "react";
-import { Link, Outlet, useNavigate } from "react-router-dom";
+import { Menu } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import api from "../api/client.js";
 import { Sidebar } from "../components/Sidebar.jsx";
+import { SidebarMobileDrawer } from "../components/layout/Sidebar.jsx";
 import { PAGE_SHELL, PAGE_TEXT } from "../styles/pageLayout.js";
 import { useAuthStore } from "../store/authStore.js";
 
@@ -10,9 +12,11 @@ import { useAuthStore } from "../store/authStore.js";
  */
 export function Layout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const user = useAuthStore((s) => s.user);
   const clearAuth = useAuthStore((s) => s.clearAuth);
 
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
   const [curPw, setCurPw] = useState("");
   const [newPw, setNewPw] = useState("");
@@ -22,6 +26,19 @@ export function Layout() {
     clearAuth();
     navigate("/login", { replace: true });
   };
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setMobileNavOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mobileNavOpen]);
 
   const changePassword = async (e) => {
     e.preventDefault();
@@ -43,39 +60,58 @@ export function Layout() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
+      <SidebarMobileDrawer open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-900/40 px-6 py-3">
-          <h1 className="text-sm font-medium text-slate-400">Корпоративная панель</h1>
-          <div className="flex flex-wrap items-center gap-3 text-sm">
-            <span className="text-slate-500">
-              {user?.display_name || user?.username}
-              {user?.organization_name ? (
-                <span className="text-slate-600"> · {user.organization_name}</span>
-              ) : null}
-            </span>
-            <button
-              type="button"
-              className="text-sky-400 hover:text-sky-300"
-              onClick={() => {
-                setPwOpen(true);
-                setPwMsg("");
-              }}
-            >
-              Сменить пароль
-            </button>
-            <Link to="/" className="text-slate-500 hover:text-slate-300">
-              О платформе
-            </Link>
-            <button
-              type="button"
-              className="rounded-lg border border-slate-600 px-3 py-1 text-slate-300 hover:bg-slate-800"
-              onClick={logout}
-            >
-              Выйти
-            </button>
+        <header className="border-b border-slate-800 bg-slate-900/40 px-3 py-3 sm:px-4 md:px-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+              <button
+                type="button"
+                className="inline-flex shrink-0 rounded-lg border border-slate-600 p-2 text-slate-200 hover:bg-slate-800 md:hidden"
+                aria-expanded={mobileNavOpen}
+                aria-controls="mobile-nav-drawer"
+                aria-label="Открыть меню"
+                onClick={() => setMobileNavOpen(true)}
+              >
+                <Menu className="h-5 w-5" strokeWidth={2} aria-hidden />
+              </button>
+              <div className="min-w-0 md:hidden">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Lotus AI</div>
+                <h1 className="truncate text-sm font-medium text-slate-300">Корпоративная панель</h1>
+              </div>
+              <h1 className="hidden text-sm font-medium text-slate-400 md:block">Корпоративная панель</h1>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm sm:justify-end">
+              <span className="max-w-full truncate text-slate-500">
+                {user?.display_name || user?.username}
+                {user?.organization_name ? (
+                  <span className="text-slate-600"> · {user.organization_name}</span>
+                ) : null}
+              </span>
+              <button
+                type="button"
+                className="shrink-0 text-sky-400 hover:text-sky-300"
+                onClick={() => {
+                  setPwOpen(true);
+                  setPwMsg("");
+                }}
+              >
+                Сменить пароль
+              </button>
+              <Link to="/" className="shrink-0 text-slate-500 hover:text-slate-300">
+                О платформе
+              </Link>
+              <button
+                type="button"
+                className="shrink-0 rounded-lg border border-slate-600 px-3 py-1 text-slate-300 hover:bg-slate-800"
+                onClick={logout}
+              >
+                Выйти
+              </button>
+            </div>
           </div>
         </header>
-        <main className="flex-1 overflow-auto p-6">
+        <main className="flex-1 overflow-auto p-3 sm:p-4 md:p-6">
           <div className={`${PAGE_SHELL} ${PAGE_TEXT}`}>
             <Outlet />
           </div>

@@ -51,7 +51,7 @@ export function LandingPage() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
           <div className="flex items-center gap-2">
             <Sparkles className="h-8 w-8 text-emerald-400" strokeWidth={1.75} aria-hidden />
-            <span className="text-lg font-semibold tracking-tight text-white">Sales AI</span>
+            <span className="text-lg font-semibold tracking-tight text-white">Lotus AI</span>
           </div>
           <Link
             to="/login"
@@ -111,7 +111,7 @@ export function LandingPage() {
         <div className="mx-auto max-w-6xl px-4 text-center sm:px-6">
           <Bot className="mx-auto mb-4 h-12 w-12 text-slate-500" strokeWidth={1.25} aria-hidden />
           <p className="text-sm text-slate-500">
-            © {new Date().getFullYear()} Sales AI · Внутренняя корпоративная система
+            © {new Date().getFullYear()} Lotus AI · Внутренняя корпоративная система
           </p>
         </div>
       </section>

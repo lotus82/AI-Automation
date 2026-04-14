@@ -59,7 +59,7 @@ function eventNotifyToApi(messengerUi, chatId) {
 }
 
 const tabBtn = (active) =>
-  `cursor-pointer rounded-t-lg border px-4 py-2.5 text-sm font-medium transition duration-150 ease-out select-none ${
+  `shrink-0 cursor-pointer whitespace-nowrap rounded-t-lg border px-3 py-2.5 text-sm font-medium transition duration-150 ease-out select-none sm:px-4 ${
     active
       ? "border-slate-600 border-b-transparent bg-slate-800/95 text-white shadow-[inset_0_2px_0_0_rgba(16,185,129,0.55)] ring-2 ring-emerald-500/35"
       : "border-transparent text-slate-400 hover:border-slate-700/80 hover:bg-slate-800/60 hover:text-slate-100 active:scale-[0.97] active:bg-slate-800/90 active:brightness-110"
@@ -486,7 +486,7 @@ export function FormsPage() {
         <p className="rounded-lg border border-red-900/40 bg-red-950/20 px-3 py-2 text-sm text-red-200">{err}</p>
       ) : null}
 
-      <div className="flex flex-wrap gap-1 border-b border-slate-700/80">
+      <div className="mb-0 flex flex-nowrap gap-1 overflow-x-auto overscroll-x-contain border-b border-slate-700/80 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button type="button" className={tabBtn(tab === "templates")} onClick={() => setTab("templates")}>
           Шаблоны форм
         </button>
