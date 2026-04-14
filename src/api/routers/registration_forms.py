@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, time
 from io import BytesIO
 from typing import Any
@@ -13,7 +14,18 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import selectinload
 from starlette.responses import Response
 
-from src.api.dependencies import AsyncSessionDep, SettingsDep
+from src.api.dependencies import (
+    AsyncSessionDep,
+    MaxMessengerClientDep,
+    SettingsDep,
+    SettingsRepositoryDep,
+)
+from src.infrastructure.services.shop_order_notify import (
+    resolve_telegram_bot_token,
+    send_max_order_message,
+    send_telegram_order_message,
+    send_vk_order_message,
+)
 from src.api.schemas.registration_forms import (
     FormFieldSchema,
     FormTemplateCreate,
@@ -37,6 +49,8 @@ from src.infrastructure.models import (
 )
 
 router = APIRouter(prefix="/forms", tags=["registration-forms"])
+
+logger = logging.getLogger(__name__)
 
 CLOSED_MSG = "Регистрация завершена."
 
@@ -185,6 +199,99 @@ def _validate_and_normalize_answers(fields: list[FormFieldSchema], answers: dict
     return out
 
 
+def _answers_human_lines(fields: list[FormFieldSchema], answers: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    for f in sorted(fields, key=lambda x: (x.order, x.id)):
+        v = answers.get(f.id)
+        if v is None:
+            continue
+        if isinstance(v, list):
+            lines.append(f"{f.label}: {', '.join(str(x) for x in v)}")
+        else:
+            lines.append(f"{f.label}: {v}")
+    return lines
+
+
+def _format_registration_notify_text(
+    event_title: str,
+    event_subtitle: str,
+    fields: list[FormFieldSchema],
+    answers: dict[str, Any],
+    total_registered: int,
+) -> str:
+    detail_lines = _answers_human_lines(fields, answers)
+    body = "\n".join(detail_lines) if detail_lines else "(поля не заполнены)"
+    sub = (event_subtitle or "").strip()
+    head = f"Новая регистрация: {event_title}"
+    if sub:
+        head = f"{head}\n{sub}"
+    return (
+        f"{head}\n"
+        f"---\n"
+        f"{body}\n"
+        f"---\n"
+        f"Всего зарегистрировано: {total_registered}"
+    )
+
+
+async def _notify_registration_optional(
+    ev: RegistrationEventModel,
+    fields: list[FormFieldSchema],
+    answers: dict[str, Any],
+    total_registered: int,
+    *,
+    settings: Settings,
+    settings_repo: Any,
+    max_client: Any,
+) -> None:
+    m = (ev.notify_messenger or "").strip().lower()
+    chat = (ev.notify_chat_id or "").strip()
+    if not m or not chat:
+        return
+    text = _format_registration_notify_text(ev.title, ev.title_subtitle or "", fields, answers, total_registered)
+    try:
+        if m == "max":
+            cid = int(chat, 10)
+            if not (await max_client.resolve_bot_token()).strip():
+                logger.warning("registration notify: нет MAX_BOT_TOKEN, event_id=%s", ev.id)
+                return
+            await send_max_order_message(max_client, cid, text)
+        elif m == "telegram":
+            tok = (await resolve_telegram_bot_token(settings_repo, settings)).strip()
+            if not tok:
+                logger.warning("registration notify: нет TELEGRAM_BOT_TOKEN, event_id=%s", ev.id)
+                return
+            await send_telegram_order_message(tok, chat, text)
+        elif m == "vk":
+            peer = int(chat, 10)
+            tok = (settings.vk_api_access_token or "").strip()
+            if not tok:
+                logger.warning("registration notify: нет VK_API_ACCESS_TOKEN, event_id=%s", ev.id)
+                return
+            await send_vk_order_message(tok, peer, text)
+    except Exception:
+        logger.exception(
+            "registration notify: сбой отправки (messenger=%s), event_id=%s",
+            m,
+            ev.id,
+        )
+
+
+def _normalize_event_notify_pair(ev: RegistrationEventModel) -> None:
+    """Убрать неполную пару мессенджер / чат."""
+    m = (ev.notify_messenger or "").strip().lower() or None
+    c = (ev.notify_chat_id or "").strip() or None
+    if m and not c:
+        ev.notify_messenger = None
+        ev.notify_chat_id = None
+    elif c and not m:
+        ev.notify_messenger = None
+        ev.notify_chat_id = None
+    else:
+        ev.notify_messenger = m
+        ev.notify_chat_id = c
+
+
 def _event_to_list_item(
     ev: RegistrationEventModel,
     template_name: str,
@@ -196,6 +303,7 @@ def _event_to_list_item(
     return RegistrationEventListItem(
         id=ev.id,
         title=ev.title,
+        title_subtitle=ev.title_subtitle or "",
         form_template_id=ev.form_template_id,
         form_template_name=template_name,
         event_start_date=ev.event_start_date,
@@ -205,6 +313,8 @@ def _event_to_list_item(
         registration_open=open_,
         submissions_count=counts.get(ev.id, 0),
         schedule_ids=schedule_ids,
+        notify_messenger=ev.notify_messenger,
+        notify_chat_id=ev.notify_chat_id,
         created_at=ev.created_at,
         updated_at=ev.updated_at,
     )
@@ -319,12 +429,16 @@ async def create_registration_event(
     deadline = body.registration_deadline_at or _deadline_end_of_day(body.event_end_date, settings)
     ev = RegistrationEventModel(
         title=body.title.strip(),
+        title_subtitle=(body.title_subtitle or "").strip(),
         form_template_id=body.form_template_id,
         event_start_date=body.event_start_date,
         event_end_date=body.event_end_date,
         registration_deadline_at=deadline,
         registration_closed_early=False,
+        notify_messenger=body.notify_messenger,
+        notify_chat_id=(body.notify_chat_id or "").strip() or None,
     )
+    _normalize_event_notify_pair(ev)
     session.add(ev)
     await session.flush()
     await _set_event_schedules(session, ev.id, body.schedule_ids)
@@ -366,6 +480,8 @@ async def patch_registration_event(
         ev.form_template_id = body.form_template_id
     if body.title is not None:
         ev.title = body.title.strip()
+    if "title_subtitle" in body.model_fields_set:
+        ev.title_subtitle = (body.title_subtitle or "").strip()
     if body.event_start_date is not None:
         ev.event_start_date = body.event_start_date
     if body.event_end_date is not None:
@@ -380,6 +496,11 @@ async def patch_registration_event(
     if body.schedule_ids is not None:
         await _verify_schedule_ids(session, body.schedule_ids)
         await _set_event_schedules(session, ev.id, body.schedule_ids)
+    if "notify_messenger" in body.model_fields_set:
+        ev.notify_messenger = body.notify_messenger
+    if "notify_chat_id" in body.model_fields_set:
+        ev.notify_chat_id = (body.notify_chat_id or "").strip() or None
+    _normalize_event_notify_pair(ev)
     await session.commit()
     await session.refresh(ev)
     ev2 = await _get_event_loaded(session, event_id)
@@ -481,6 +602,7 @@ async def public_event_form(event_id: UUID, session: AsyncSessionDep, settings: 
     return PublicRegistrationPayload(
         event_id=ev.id,
         event_title=ev.title,
+        event_subtitle=ev.title_subtitle or "",
         event_start_date=ev.event_start_date,
         event_end_date=ev.event_end_date,
         registration_open=open_,
@@ -495,6 +617,8 @@ async def public_submit_form(
     body: PublicRegistrationSubmitBody,
     session: AsyncSessionDep,
     settings: SettingsDep,
+    settings_repo: SettingsRepositoryDep,
+    max_client: MaxMessengerClientDep,
 ) -> dict[str, str]:
     ev = await _get_event_loaded(session, event_id)
     if ev is None or ev.form_template is None:
@@ -509,4 +633,19 @@ async def public_submit_form(
     sub = RegistrationSubmissionModel(event_id=ev.id, answers=normalized)
     session.add(sub)
     await session.commit()
+    total_q = await session.scalar(
+        select(func.count())
+        .select_from(RegistrationSubmissionModel)
+        .where(RegistrationSubmissionModel.event_id == ev.id),
+    )
+    total_registered = int(total_q or 0)
+    await _notify_registration_optional(
+        ev,
+        fields,
+        normalized,
+        total_registered,
+        settings=settings,
+        settings_repo=settings_repo,
+        max_client=max_client,
+    )
     return {"status": "ok"}

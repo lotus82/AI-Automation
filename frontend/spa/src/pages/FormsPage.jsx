@@ -47,6 +47,17 @@ function newFieldId() {
   return `f-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+/** UI: max | tg | vk → API max | telegram | vk; пусто — отключить уведомления */
+function eventNotifyToApi(messengerUi, chatId) {
+  const c = (chatId || "").trim();
+  const m = (messengerUi || "").trim();
+  if (!m || !c) return { notify_messenger: null, notify_chat_id: null };
+  return {
+    notify_messenger: m === "tg" ? "telegram" : m,
+    notify_chat_id: c,
+  };
+}
+
 const tabBtn = (active) =>
   `cursor-pointer rounded-t-lg border px-4 py-2.5 text-sm font-medium transition duration-150 ease-out select-none ${
     active
@@ -70,11 +81,14 @@ export function FormsPage() {
   const [editingTplId, setEditingTplId] = useState(null);
 
   const [evTitle, setEvTitle] = useState("");
+  const [evSubtitle, setEvSubtitle] = useState("");
   const [evTemplateId, setEvTemplateId] = useState("");
   const [evStart, setEvStart] = useState("");
   const [evEnd, setEvEnd] = useState("");
   const [evDeadline, setEvDeadline] = useState("");
   const [evScheduleIds, setEvScheduleIds] = useState([]);
+  const [evNotifyMessenger, setEvNotifyMessenger] = useState("");
+  const [evNotifyChatId, setEvNotifyChatId] = useState("");
   const [evSaving, setEvSaving] = useState(false);
   const [evMsg, setEvMsg] = useState("");
 
@@ -86,6 +100,12 @@ export function FormsPage() {
   const [dragOverFieldIdx, setDragOverFieldIdx] = useState(null);
   const [eventBusy, setEventBusy] = useState(null);
   const [copyUrlFlash, setCopyUrlFlash] = useState(false);
+  const [editEvNotifyMessenger, setEditEvNotifyMessenger] = useState("");
+  const [editEvNotifyChat, setEditEvNotifyChat] = useState("");
+  const [editEvTitle, setEditEvTitle] = useState("");
+  const [editEvSubtitle, setEditEvSubtitle] = useState("");
+  const [editEvStart, setEditEvStart] = useState("");
+  const [editEvEnd, setEditEvEnd] = useState("");
 
   const loadAll = useCallback(async () => {
     setErr("");
@@ -137,6 +157,37 @@ export function FormsPage() {
       setSubmissions([]);
     }
   }, [selectedEvent?.id, selectedEvent?.registration_deadline_at]);
+
+  useEffect(() => {
+    if (!selectedEvent) {
+      setEditEvNotifyMessenger("");
+      setEditEvNotifyChat("");
+      return;
+    }
+    const m = selectedEvent.notify_messenger;
+    setEditEvNotifyMessenger(m === "telegram" ? "tg" : m || "");
+    setEditEvNotifyChat(selectedEvent.notify_chat_id ?? "");
+  }, [selectedEvent?.id, selectedEvent?.notify_messenger, selectedEvent?.notify_chat_id]);
+
+  useEffect(() => {
+    if (!selectedEvent) {
+      setEditEvTitle("");
+      setEditEvSubtitle("");
+      setEditEvStart("");
+      setEditEvEnd("");
+      return;
+    }
+    setEditEvTitle(selectedEvent.title ?? "");
+    setEditEvSubtitle(selectedEvent.title_subtitle ?? "");
+    setEditEvStart(selectedEvent.event_start_date ?? "");
+    setEditEvEnd(selectedEvent.event_end_date ?? "");
+  }, [
+    selectedEvent?.id,
+    selectedEvent?.title,
+    selectedEvent?.title_subtitle,
+    selectedEvent?.event_start_date,
+    selectedEvent?.event_end_date,
+  ]);
 
   const addField = () => {
     setTplFields((prev) => [
@@ -265,6 +316,7 @@ export function FormsPage() {
     try {
       const body = {
         title: evTitle.trim(),
+        title_subtitle: evSubtitle.trim(),
         form_template_id: evTemplateId,
         event_start_date: evStart,
         event_end_date: evEnd,
@@ -274,10 +326,14 @@ export function FormsPage() {
         const d = new Date(evDeadline);
         if (!Number.isNaN(d.getTime())) body.registration_deadline_at = d.toISOString();
       }
+      Object.assign(body, eventNotifyToApi(evNotifyMessenger, evNotifyChatId));
       await api.post("/forms/events", body);
       setEvTitle("");
+      setEvSubtitle("");
       setEvDeadline("");
       setEvScheduleIds([]);
+      setEvNotifyMessenger("");
+      setEvNotifyChatId("");
       setEvMsg("Мероприятие создано.");
       await loadAll();
     } catch (err) {
@@ -581,13 +637,25 @@ export function FormsPage() {
             <h2 className="mb-3 text-lg font-semibold text-slate-200">Новое мероприятие</h2>
             <form className="space-y-4 rounded-xl border border-slate-700/80 bg-slate-900/50 p-5" onSubmit={createEvent}>
               <div>
-                <label className="mb-1 block text-xs text-slate-400">Название (видят пользователи на публичной странице)</label>
+                <label className="mb-1 block text-xs text-slate-400">Заголовок (крупно на странице регистрации)</label>
                 <input
                   className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
                   value={evTitle}
                   onChange={(e) => setEvTitle(e.target.value)}
                   required
                   placeholder="Например: Пенуэл Пробуждения — Саратов"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-slate-400">
+                  Дополнительный текст (обычный шрифт: ссылки на чаты, примечания)
+                </label>
+                <textarea
+                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                  rows={4}
+                  value={evSubtitle}
+                  onChange={(e) => setEvSubtitle(e.target.value)}
+                  placeholder="Обязательный вопрос, группа: https://t.me/…"
                 />
               </div>
               <div>
@@ -639,6 +707,35 @@ export function FormsPage() {
                   onChange={(e) => setEvDeadline(e.target.value)}
                 />
               </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs text-slate-400">Уведомления о регистрациях — мессенджер</label>
+                  <select
+                    className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                    value={evNotifyMessenger}
+                    onChange={(e) => setEvNotifyMessenger(e.target.value)}
+                  >
+                    <option value="">— не отправлять —</option>
+                    <option value="max">MAX</option>
+                    <option value="tg">Telegram</option>
+                    <option value="vk">VK</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-400">ID чата</label>
+                  <input
+                    className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white disabled:opacity-50"
+                    value={evNotifyChatId}
+                    onChange={(e) => setEvNotifyChatId(e.target.value)}
+                    placeholder="chat id / peer id"
+                    disabled={!evNotifyMessenger}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-slate-500">
+                При новой заявке бот отправит в этот чат данные участника и общее число зарегистрированных. Нужны токены на
+                сервере: MAX_BOT_TOKEN, TELEGRAM_BOT_TOKEN или VK_API_ACCESS_TOKEN.
+              </p>
               <div>
                 <label className="mb-1 block text-xs text-slate-400">Расписания (напоминания), привязка к мероприятию</label>
                 <select
@@ -710,10 +807,9 @@ export function FormsPage() {
             {selectedEvent ? (
               <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4 space-y-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <h3 className="text-base font-semibold text-white">{selectedEvent.title}</h3>
+                  <div className="min-w-0 flex-1 space-y-2">
                     <p className="text-xs text-slate-500">Шаблон: {selectedEvent.form_template_name}</p>
-                    <p className="text-xs text-slate-500 mt-1">
+                    <p className="text-xs text-slate-500">
                       Регистрация: {selectedEvent.registration_open ? "открыта" : "закрыта"} · Заявок:{" "}
                       {selectedEvent.submissions_count}
                     </p>
@@ -724,6 +820,67 @@ export function FormsPage() {
                     onClick={() => setSelectedEvent(null)}
                   >
                     Закрыть
+                  </button>
+                </div>
+                <div className="rounded-lg border border-slate-700/80 bg-slate-950/40 p-3 space-y-2">
+                  <p className="text-xs font-medium text-slate-300">Название и даты мероприятия</p>
+                  <label className="block text-xs text-slate-400">Заголовок (крупно)</label>
+                  <input
+                    className="w-full rounded border border-slate-600 bg-slate-950 px-2 py-1.5 text-sm text-white"
+                    value={editEvTitle}
+                    onChange={(e) => setEditEvTitle(e.target.value)}
+                  />
+                  <label className="block text-xs text-slate-400">Дополнительный текст</label>
+                  <textarea
+                    className="w-full rounded border border-slate-600 bg-slate-950 px-2 py-1.5 text-sm text-white"
+                    rows={4}
+                    value={editEvSubtitle}
+                    onChange={(e) => setEditEvSubtitle(e.target.value)}
+                    placeholder="Ссылки, примечания…"
+                  />
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div>
+                      <label className="block text-xs text-slate-400">Дата начала</label>
+                      <input
+                        type="date"
+                        className="w-full rounded border border-slate-600 bg-slate-950 px-2 py-1.5 text-sm text-white"
+                        value={editEvStart}
+                        onChange={(e) => setEditEvStart(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-400">Дата окончания</label>
+                      <input
+                        type="date"
+                        className="w-full rounded border border-slate-600 bg-slate-950 px-2 py-1.5 text-sm text-white"
+                        value={editEvEnd}
+                        onChange={(e) => setEditEvEnd(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={eventBusy === "meta" || !editEvTitle.trim()}
+                    className={`rounded bg-emerald-800 px-3 py-1.5 text-xs text-white border border-emerald-700 ${pressablePrimary} disabled:opacity-50`}
+                    onClick={() => {
+                      if (!editEvTitle.trim()) return;
+                      if (editEvEnd < editEvStart) {
+                        alert("Дата окончания не может быть раньше даты начала.");
+                        return;
+                      }
+                      patchEvent(
+                        selectedEvent.id,
+                        {
+                          title: editEvTitle.trim(),
+                          title_subtitle: editEvSubtitle.trim(),
+                          event_start_date: editEvStart,
+                          event_end_date: editEvEnd,
+                        },
+                        "meta",
+                      );
+                    }}
+                  >
+                    {eventBusy === "meta" ? "Сохранение…" : "Сохранить название и даты"}
                   </button>
                 </div>
                 <div>
@@ -750,6 +907,38 @@ export function FormsPage() {
                       {copyUrlFlash ? "Скопировано!" : eventBusy === "copy" ? "…" : "Копировать"}
                     </button>
                   </div>
+                </div>
+                <div className="rounded-lg border border-slate-700/80 bg-slate-950/40 p-3 space-y-2">
+                  <p className="text-xs font-medium text-slate-300">Уведомления в чат о новых регистрациях</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <select
+                      className="rounded border border-slate-600 bg-slate-950 px-2 py-1.5 text-xs text-white"
+                      value={editEvNotifyMessenger}
+                      onChange={(e) => setEditEvNotifyMessenger(e.target.value)}
+                    >
+                      <option value="">— не отправлять —</option>
+                      <option value="max">MAX</option>
+                      <option value="tg">Telegram</option>
+                      <option value="vk">VK</option>
+                    </select>
+                    <input
+                      className="rounded border border-slate-600 bg-slate-950 px-2 py-1.5 text-xs text-white disabled:opacity-50"
+                      value={editEvNotifyChat}
+                      onChange={(e) => setEditEvNotifyChat(e.target.value)}
+                      placeholder="ID чата"
+                      disabled={!editEvNotifyMessenger}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={eventBusy === "notify"}
+                    className={`rounded bg-slate-700 px-3 py-1.5 text-xs text-white border border-slate-600 ${pressablePrimary} disabled:opacity-50`}
+                    onClick={() =>
+                      patchEvent(selectedEvent.id, eventNotifyToApi(editEvNotifyMessenger, editEvNotifyChat), "notify")
+                    }
+                  >
+                    {eventBusy === "notify" ? "Сохранение…" : "Сохранить уведомления"}
+                  </button>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button

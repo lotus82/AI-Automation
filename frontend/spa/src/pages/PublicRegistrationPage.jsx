@@ -1,6 +1,32 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
+/** Разбивает текст и делает ссылки http(s) кликабельными */
+function LinkifiedText({ text }) {
+  const s = text == null ? "" : String(text);
+  if (!s.trim()) return null;
+  const parts = s.split(/(https?:\/\/\S+)/g);
+  return (
+    <span>
+      {parts.map((part, i) =>
+        /^https?:\/\//.test(part) ? (
+          <a
+            key={i}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-emerald-400 underline decoration-emerald-500/50 underline-offset-2 break-all"
+          >
+            {part}
+          </a>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </span>
+  );
+}
+
 function formatApiDetail(data) {
   if (typeof data?.detail === "string") return data.detail;
   if (Array.isArray(data?.detail)) return data.detail.map((x) => x?.msg ?? x).join("; ");
@@ -126,8 +152,15 @@ export function PublicRegistrationPage() {
     <div className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100">
       <div className="mx-auto max-w-lg">
         <header className="rounded-2xl border border-slate-600/70 border-t-4 border-t-emerald-500/90 bg-gradient-to-b from-emerald-950/40 to-slate-900/80 px-5 py-5 shadow-lg shadow-black/20">
-          <h1 className="text-2xl font-bold text-white">{payload.event_title}</h1>
-          <p className="mt-2 text-sm font-medium text-emerald-200/90">
+          <h1 className="text-2xl font-bold leading-tight tracking-tight text-white whitespace-pre-wrap">
+            {payload.event_title}
+          </h1>
+          {payload.event_subtitle?.trim() ? (
+            <div className="mt-3 text-sm font-normal leading-relaxed text-slate-300 whitespace-pre-wrap">
+              <LinkifiedText text={payload.event_subtitle} />
+            </div>
+          ) : null}
+          <p className="mt-3 text-sm font-medium text-emerald-200/90">
             {payload.event_start_date} — {payload.event_end_date}
           </p>
         </header>

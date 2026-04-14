@@ -590,6 +590,7 @@ class RegistrationEventModel(Base):
         server_default=sql_text("gen_random_uuid()"),
     )
     title: Mapped[str] = mapped_column(String(512), nullable=False)
+    title_subtitle: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
     form_template_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("form_templates.id", ondelete="RESTRICT"),
@@ -604,6 +605,8 @@ class RegistrationEventModel(Base):
         nullable=False,
         server_default=sql_text("false"),
     )
+    notify_messenger: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    notify_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=sql_text("now()"),

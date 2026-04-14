@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any, Literal
+
+NotifyMessenger = Literal["max", "telegram", "vk"]
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -91,11 +93,26 @@ class FormTemplateResponse(BaseModel):
 
 class RegistrationEventCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=512)
+    title_subtitle: str = ""
     form_template_id: UUID
     event_start_date: date
     event_end_date: date
     registration_deadline_at: datetime | None = None
     schedule_ids: list[UUID] = Field(default_factory=list)
+    notify_messenger: NotifyMessenger | None = None
+    notify_chat_id: str | None = Field(default=None, max_length=64)
+
+    @field_validator("notify_messenger", mode="before")
+    @classmethod
+    def _notify_messenger_norm(cls, v: Any) -> str | None:
+        if v is None or v == "":
+            return None
+        s = str(v).strip().lower()
+        if s == "tg":
+            return "telegram"
+        if s in ("max", "telegram", "vk"):
+            return s
+        raise ValueError("Мессенджер уведомлений: max, telegram (tg), vk")
 
     @model_validator(mode="after")
     def _dates(self) -> RegistrationEventCreate:
@@ -103,15 +120,39 @@ class RegistrationEventCreate(BaseModel):
             raise ValueError("Дата окончания мероприятия не может быть раньше даты начала")
         return self
 
+    @model_validator(mode="after")
+    def _notify_pair(self) -> RegistrationEventCreate:
+        c = (self.notify_chat_id or "").strip()
+        if self.notify_messenger and not c:
+            raise ValueError("Укажите id чата для уведомлений или отключите мессенджер")
+        if c and not self.notify_messenger:
+            raise ValueError("Выберите мессенджер для id чата")
+        return self
+
 
 class RegistrationEventUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=512)
+    title_subtitle: str | None = None
     form_template_id: UUID | None = None
     event_start_date: date | None = None
     event_end_date: date | None = None
     registration_deadline_at: datetime | None = None
     registration_closed_early: bool | None = None
     schedule_ids: list[UUID] | None = None
+    notify_messenger: NotifyMessenger | None = None
+    notify_chat_id: str | None = Field(default=None, max_length=64)
+
+    @field_validator("notify_messenger", mode="before")
+    @classmethod
+    def _notify_messenger_norm_u(cls, v: Any) -> str | None:
+        if v is None or v == "":
+            return None
+        s = str(v).strip().lower()
+        if s == "tg":
+            return "telegram"
+        if s in ("max", "telegram", "vk"):
+            return s
+        raise ValueError("Мессенджер уведомлений: max, telegram (tg), vk")
 
     @model_validator(mode="after")
     def _dates(self) -> RegistrationEventUpdate:
@@ -124,6 +165,7 @@ class RegistrationEventUpdate(BaseModel):
 class RegistrationEventListItem(BaseModel):
     id: UUID
     title: str
+    title_subtitle: str = ""
     form_template_id: UUID
     form_template_name: str
     event_start_date: date
@@ -133,6 +175,8 @@ class RegistrationEventListItem(BaseModel):
     registration_open: bool
     submissions_count: int
     schedule_ids: list[UUID]
+    notify_messenger: str | None = None
+    notify_chat_id: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -153,6 +197,7 @@ class PublicRegistrationPayload(BaseModel):
 
     event_id: UUID
     event_title: str
+    event_subtitle: str = ""
     event_start_date: date
     event_end_date: date
     registration_open: bool
