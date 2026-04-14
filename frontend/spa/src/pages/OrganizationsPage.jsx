@@ -71,12 +71,9 @@ export function OrganizationsPage() {
   return (
     <div className="w-full min-w-0 space-y-8 text-slate-100">
       <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-white">
-          <Building2 className="h-8 w-8 shrink-0 text-emerald-400/90" strokeWidth={1.75} aria-hidden />
-          Организации
-        </h1>
+        <h1 className="text-2xl font-bold text-white">Организации</h1>
         <p className="mt-2 text-sm text-slate-400">
-          Создайте организацию и учётную запись <strong className="text-slate-300">администратора организации</strong>
+          Создайте организацию и учётную запись <strong className="text-slate-300">администратора организации </strong>
           (логин и пароль для входа). Свободной регистрации нет.
         </p>
       </div>

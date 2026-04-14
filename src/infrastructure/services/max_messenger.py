@@ -377,6 +377,10 @@ class MaxMessengerClient:
             return db
         return (self._env_fallback_token or "").strip()
 
+    async def resolve_bot_token(self) -> str:
+        """Публичный доступ к токену (уведомления заказа витрины и т.п.)."""
+        return await self._resolve_bot_token()
+
     async def _db_allows_long_polling(self) -> bool:
         """Читает **MAX_USE_POLLING** из БД (и Redis-кэш репозитория)."""
         raw = await self._settings_repo.get_value(sk.MAX_USE_POLLING)

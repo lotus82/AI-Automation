@@ -78,6 +78,11 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="TELEGRAM_BOT_TOKEN",
     )
+    # Токен сообщества VK API (messages) для уведомлений продавца из витрины магазина
+    vk_api_access_token: str | None = Field(
+        default=None,
+        validation_alias="VK_API_ACCESS_TOKEN",
+    )
 
     # Устарело для запуска воркера: задача long poll всегда создаётся в lifespan; вкл/выкл — MAX_USE_POLLING в БД.
     max_use_polling: bool = Field(default=True, validation_alias="MAX_USE_POLLING")
@@ -266,6 +271,11 @@ class Settings(BaseSettings):
         default="data/recordings",
         validation_alias="CALL_RECORDINGS_DIR",
     )
+    # Витрины магазинов: логотипы и фото товаров на диске
+    shop_upload_dir: str = Field(
+        default="data/shop_uploads",
+        validation_alias="SHOP_UPLOAD_DIR",
+    )
 
     # Портал: JWT для панели (обязательно задать в production)
     portal_jwt_secret: str = Field(
@@ -362,6 +372,7 @@ class Settings(BaseSettings):
         "salutespeech_auth_key",
         "deepseek_api_key",
         "telegram_bot_token",
+        "vk_api_access_token",
         "max_bot_token",
         "admin_logs_token",
         mode="before",

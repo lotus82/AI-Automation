@@ -25,7 +25,9 @@ from src.api.routers import (
     notifications,
     portal_management,
     questionnaires,
+    registration_forms,
     schedules,
+    shops,
     telephony,
     trainer,
     training,
@@ -152,6 +154,8 @@ def create_app() -> FastAPI:
     application.include_router(training.router, prefix="/api", tags=["training"])
     application.include_router(trainer.router, prefix="/api")
     application.include_router(questionnaires.router, prefix="/api")
+    application.include_router(registration_forms.router, prefix="/api")
+    application.include_router(shops.router, prefix="/api")
     application.include_router(knowledge.router, prefix="/api", tags=["knowledge"])
     application.include_router(telephony.router, prefix="/api", tags=["telephony"])
     application.include_router(dialer.router, prefix="/api", tags=["dialer"])

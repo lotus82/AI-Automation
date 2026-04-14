@@ -8,6 +8,8 @@ const SECTION_OPTIONS = [
   { id: "ai-trainer", label: "ИИ-тренер" },
   { id: "leadgen", label: "ИИ-лидогенератор" },
   { id: "questionnaires", label: "Опросники" },
+  { id: "forms", label: "Формы" },
+  { id: "shops", label: "Магазины" },
   { id: "integrations", label: "Интеграции" },
   { id: "roles", label: "Роли" },
   { id: "settings", label: "Настройки" },

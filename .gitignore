@@ -126,6 +126,9 @@ celerybeat.pid
 # Локальные WAV записи голосовых сессий (каталог data/recordings/ в репозитории)
 data/recordings/*.wav
 
+# Загрузки витрин магазинов (логотипы / фото товаров)
+data/shop_uploads/
+
 # Environments
 .env
 .venv

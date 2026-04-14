@@ -56,6 +56,7 @@ const VALID_INTEGRATION_SECTIONS = new Set([
   "chats",
   "max",
   "telegram",
+  "vk",
   "telephony",
   "builder",
 ]);
@@ -398,6 +399,9 @@ export function IntegrationsPage() {
         </button>
         <button type="button" className={tabBtn(section === "telegram")} onClick={() => setSection("telegram")}>
           Telegram
+        </button>
+        <button type="button" className={tabBtn(section === "vk")} onClick={() => setSection("vk")}>
+          VK
         </button>
         <button type="button" className={tabBtn(section === "telephony")} onClick={() => setSection("telephony")}>
           Телефония
@@ -763,6 +767,25 @@ export function IntegrationsPage() {
               </button>
             </form>
           )}
+        </section>
+      ) : section === "vk" ? (
+        <section className="w-full min-w-0 space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-200">VK</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Настройки сообщества и Callback API для ВКонтакте — позже появятся здесь (аналогично вкладкам MAX и
+              Telegram).
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-700/80 bg-slate-800/40 p-5 shadow-sm">
+            <p className="m-0 text-sm text-slate-300">
+              <span className="text-blue-400" aria-hidden>
+                VK{" "}
+              </span>
+              Интеграция VK — <strong>в разработке</strong>. Вкладка зарезервирована под токены, подтверждение сервера и
+              сценарии диалогов.
+            </p>
+          </div>
         </section>
       ) : section === "telephony" ? (
         <section className="space-y-4">

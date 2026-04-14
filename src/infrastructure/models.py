@@ -8,12 +8,12 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func, text as sql_text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, func, text as sql_text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -546,3 +546,211 @@ class PortalUserModel(Base):
         "OrganizationModel",
         lazy="joined",
     )
+
+
+class FormTemplateModel(Base):
+    """Шаблон полей формы (регистрация, обратная связь) — JSON-конструктор."""
+
+    __tablename__ = "form_templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    name: Mapped[str] = mapped_column(String(512), nullable=False)
+    description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    fields: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, server_default=sql_text("'[]'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    registration_events: Mapped[list["RegistrationEventModel"]] = relationship(
+        "RegistrationEventModel",
+        back_populates="form_template",
+    )
+
+
+class RegistrationEventModel(Base):
+    """Мероприятие: своя форма (шаблон) и свои ответы; заголовок для публичной страницы."""
+
+    __tablename__ = "registration_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    form_template_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("form_templates.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    event_start_date: Mapped[date] = mapped_column(Date(), nullable=False)
+    event_end_date: Mapped[date] = mapped_column(Date(), nullable=False)
+    registration_deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    registration_closed_early: Mapped[bool] = mapped_column(
+        Boolean(),
+        nullable=False,
+        server_default=sql_text("false"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    form_template: Mapped["FormTemplateModel"] = relationship(
+        "FormTemplateModel",
+        back_populates="registration_events",
+    )
+    submissions: Mapped[list["RegistrationSubmissionModel"]] = relationship(
+        "RegistrationSubmissionModel",
+        back_populates="event",
+        cascade="all, delete-orphan",
+    )
+    schedule_links: Mapped[list["RegistrationEventScheduleModel"]] = relationship(
+        "RegistrationEventScheduleModel",
+        back_populates="event",
+        cascade="all, delete-orphan",
+    )
+
+
+class RegistrationEventScheduleModel(Base):
+    """Привязка мероприятия к расписанию (напоминания и т.п.)."""
+
+    __tablename__ = "registration_event_schedules"
+
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("registration_events.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    schedule_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schedules.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    )
+
+    event: Mapped["RegistrationEventModel"] = relationship(
+        "RegistrationEventModel",
+        back_populates="schedule_links",
+    )
+
+
+class RegistrationSubmissionModel(Base):
+    """Заполненная форма по конкретному мероприятию."""
+
+    __tablename__ = "registration_submissions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("registration_events.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    answers: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default=sql_text("'{}'::jsonb"))
+    submitted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+
+    event: Mapped["RegistrationEventModel"] = relationship(
+        "RegistrationEventModel",
+        back_populates="submissions",
+    )
+
+
+class ShopModel(Base):
+    """Витрина магазина (публичная ссылка для MAX / Telegram / VK)."""
+
+    __tablename__ = "shops"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    slug: Mapped[str] = mapped_column(String(80), nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(512), nullable=False)
+    description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    logo_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    messenger_themes: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sql_text("'{}'::jsonb"),
+    )
+    seller_max_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    seller_telegram_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    seller_vk_peer_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    products: Mapped[list["ShopProductModel"]] = relationship(
+        "ShopProductModel",
+        back_populates="shop",
+        cascade="all, delete-orphan",
+    )
+
+
+class ShopProductModel(Base):
+    """Товар в витрине."""
+
+    __tablename__ = "shop_products"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    shop_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("shops.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(512), nullable=False)
+    description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    price: Mapped[Any] = mapped_column(Numeric(12, 2), nullable=False)
+    stock_quantity: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=sql_text("0"))
+    photo_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=sql_text("0"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+
+    shop: Mapped["ShopModel"] = relationship("ShopModel", back_populates="products")
