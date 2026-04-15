@@ -10,6 +10,7 @@ import {
   Stethoscope,
 } from "lucide-react";
 import api from "../api/client.js";
+import { useAuthStore } from "../store/authStore.js";
 
 function formatApiDetail(err) {
   const det = err?.response?.data?.detail;
@@ -50,6 +51,9 @@ const AI_ANALYSIS_QUESTION =
 export function DoctorMISPage() {
   const { patientId } = useParams();
   const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
+  /** Админ организации / супер-админ: МИС без личного профиля врача (отдельные API /mis/admin/...). */
+  const isMisAdmin = user?.role === "org_admin" || user?.role === "super_admin";
 
   const [list, setList] = useState([]);
   const [listLoading, setListLoading] = useState(true);
@@ -74,29 +78,65 @@ export function DoctorMISPage() {
   const [maxBusy, setMaxBusy] = useState(false);
   const [maxMsg, setMaxMsg] = useState("");
 
+  const [npName, setNpName] = useState("");
+  const [npPhone, setNpPhone] = useState("");
+  const [npBirth, setNpBirth] = useState("");
+  const [npBusy, setNpBusy] = useState(false);
+  const [npMsg, setNpMsg] = useState("");
+  /** Записи medical_doctors (поле id — для doctor_id при создании пациента админом). */
+  const [misDoctors, setMisDoctors] = useState([]);
+  const [npDoctorId, setNpDoctorId] = useState("");
+
   const loadList = useCallback(async () => {
     setListErr("");
     setListLoading(true);
     try {
-      const { data } = await api.get("/mis/doctor/patients");
+      const path = isMisAdmin ? "/mis/admin/patients" : "/mis/doctor/patients";
+      const { data } = await api.get(path);
       setList(data ?? []);
     } catch (e) {
       setListErr(formatApiDetail(e));
     } finally {
       setListLoading(false);
     }
-  }, []);
+  }, [isMisAdmin]);
+
+  const loadMisDoctors = useCallback(async () => {
+    if (!isMisAdmin) {
+      setMisDoctors([]);
+      setNpDoctorId("");
+      return;
+    }
+    try {
+      const { data } = await api.get("/mis/admin/doctors");
+      const arr = Array.isArray(data) ? data : [];
+      setMisDoctors(arr);
+      setNpDoctorId((prev) => {
+        if (prev && arr.some((d) => String(d.id) === prev)) return prev;
+        if (arr.length === 1) return String(arr[0].id);
+        return "";
+      });
+    } catch {
+      setMisDoctors([]);
+    }
+  }, [isMisAdmin]);
 
   useEffect(() => {
-    if (!patientId) loadList();
-  }, [patientId, loadList]);
+    if (!patientId) {
+      loadList();
+      loadMisDoctors();
+    }
+  }, [patientId, loadList, loadMisDoctors]);
 
   const loadDetail = useCallback(async () => {
     if (!patientId) return;
     setDetailErr("");
     setDetailLoading(true);
     try {
-      const { data } = await api.get(`/mis/doctor/patients/${patientId}`);
+      const path = isMisAdmin
+        ? `/mis/admin/patients/${patientId}`
+        : `/mis/doctor/patients/${patientId}`;
+      const { data } = await api.get(path);
       setDetail(data);
       const p = data?.patient;
       if (p) {
@@ -111,7 +151,7 @@ export function DoctorMISPage() {
     } finally {
       setDetailLoading(false);
     }
-  }, [patientId]);
+  }, [patientId, isMisAdmin]);
 
   useEffect(() => {
     if (patientId) {
@@ -134,7 +174,10 @@ export function DoctorMISPage() {
     setSaveBusy(true);
     setSaveMsg("");
     try {
-      await api.patch(`/mis/doctor/patients/${patientId}`, {
+      const patchUrl = isMisAdmin
+        ? `/mis/admin/patients/${patientId}`
+        : `/mis/doctor/patients/${patientId}`;
+      await api.patch(patchUrl, {
         current_diagnosis: diag.trim(),
         treatment_plan: plan.trim(),
         height: height.trim() === "" ? null : parseFloat(height.replace(",", ".")),
@@ -154,7 +197,8 @@ export function DoctorMISPage() {
     setAiBusy(true);
     setAiText("");
     try {
-      const { data } = await api.post("/mis/doctor/ai-consult", {
+      const aiUrl = isMisAdmin ? "/mis/admin/ai-consult" : "/mis/doctor/ai-consult";
+      const { data } = await api.post(aiUrl, {
         patient_id: patientId,
         question: AI_ANALYSIS_QUESTION,
       });
@@ -176,7 +220,10 @@ export function DoctorMISPage() {
     setMaxBusy(true);
     setMaxMsg("");
     try {
-      await api.post(`/mis/doctor/patients/${patientId}/send-max`, { max_chat_id: id });
+      const sendUrl = isMisAdmin
+        ? `/mis/admin/patients/${patientId}/send-max`
+        : `/mis/doctor/patients/${patientId}/send-max`;
+      await api.post(sendUrl, { max_chat_id: id });
       setMaxMsg("Сводка отправлена в MAX.");
     } catch (e) {
       setMaxMsg(formatApiDetail(e));
@@ -191,6 +238,44 @@ export function DoctorMISPage() {
     navigator.clipboard?.writeText(phone).catch(() => {});
   };
 
+  const createPatient = async (e) => {
+    e.preventDefault();
+    const full_name = npName.trim();
+    if (!full_name) {
+      setNpMsg("Укажите ФИО.");
+      return;
+    }
+    if (isMisAdmin && !npDoctorId) {
+      setNpMsg("Выберите врача МИС, за которым закрепляется карта.");
+      return;
+    }
+    setNpBusy(true);
+    setNpMsg("");
+    try {
+      const { data } = isMisAdmin
+        ? await api.post("/mis/admin/patients", {
+            doctor_id: npDoctorId,
+            full_name,
+            phone: npPhone.trim(),
+            birth_date: npBirth.trim() || null,
+          })
+        : await api.post("/mis/doctor/patients", {
+            full_name,
+            phone: npPhone.trim(),
+            birth_date: npBirth.trim() || null,
+          });
+      setNpName("");
+      setNpPhone("");
+      setNpBirth("");
+      if (data?.id) navigate(`/mis/patients/${data.id}`);
+      else await loadList();
+    } catch (err) {
+      setNpMsg(formatApiDetail(err));
+    } finally {
+      setNpBusy(false);
+    }
+  };
+
   if (!patientId) {
     return (
       <div className={shell}>
@@ -199,15 +284,92 @@ export function DoctorMISPage() {
             <div>
               <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
                 <Stethoscope className="h-8 w-8 text-teal-600" strokeWidth={1.5} aria-hidden />
-                МИС — мои пациенты
+                {isMisAdmin ? "МИС — пациенты организации" : "МИС — мои пациенты"}
               </h1>
-              <p className="mt-1 text-sm text-slate-600">Светлый интерфейс для работы с картами пациентов.</p>
+              <p className="mt-1 text-sm text-slate-600">
+                {isMisAdmin
+                  ? "Как администратор вы видите всех пациентов организации. Новую карту закрепите за выбранным врачом МИС."
+                  : "Светлый интерфейс для работы с картами пациентов."}
+              </p>
             </div>
           </div>
 
           {listErr ? (
             <div className={`${card} mb-4 border-amber-200 bg-amber-50 text-amber-900`}>{listErr}</div>
           ) : null}
+
+          <section className={`${card} mb-4`}>
+            <h2 className="text-base font-semibold text-slate-900">Новый пациент</h2>
+            <p className="mt-1 text-xs text-slate-600">
+              Пациент не «регистрируется» сам: карту создаёт врач или администратор. После создания откройте карту — там
+              будет ссылка для пациента без входа в панель.
+            </p>
+            {isMisAdmin ? (
+              <div className="mt-3">
+                <label className="block text-xs font-medium text-slate-600">
+                  Врач МИС (закрепление карты)
+                  <select
+                    required
+                    className="mt-1 w-full max-w-md rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                    value={npDoctorId}
+                    onChange={(e) => setNpDoctorId(e.target.value)}
+                  >
+                    <option value="">— выберите врача —</option>
+                    {misDoctors.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {(d.display_name || d.qualification || "Врач").trim() || "Врач"}{" "}
+                        {d.qualification && d.display_name ? `· ${d.qualification}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {misDoctors.length === 0 ? (
+                  <p className="mt-2 text-xs text-amber-800">
+                    В организации пока нет врачей МИС. В разделе «Пользователи» создайте пользователя и нажмите «Назначить
+                    врачом». Убедитесь, что на сервере обновлён бэкенд (нужен метод GET /api/mis/admin/doctors).
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            <form className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end" onSubmit={createPatient}>
+              <label className="block min-w-[12rem] flex-1 text-xs font-medium text-slate-600">
+                ФИО
+                <input
+                  required
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                  value={npName}
+                  onChange={(e) => setNpName(e.target.value)}
+                  placeholder="Иванов Иван Иванович"
+                />
+              </label>
+              <label className="block w-full text-xs font-medium text-slate-600 sm:w-40">
+                Телефон
+                <input
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                  value={npPhone}
+                  onChange={(e) => setNpPhone(e.target.value)}
+                  placeholder="+7…"
+                />
+              </label>
+              <label className="block w-full text-xs font-medium text-slate-600 sm:w-40">
+                Дата рождения
+                <input
+                  type="date"
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                  value={npBirth}
+                  onChange={(e) => setNpBirth(e.target.value)}
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={npBusy}
+                className="rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-50"
+              >
+                {npBusy ? "Создание…" : "Создать и открыть карту"}
+              </button>
+            </form>
+            {npMsg ? <p className="mt-2 text-sm text-red-600">{npMsg}</p> : null}
+          </section>
 
           <div className={`${card} mb-4`}>
             <label className="flex items-center gap-2 text-sm text-slate-600">
@@ -282,6 +444,30 @@ export function DoctorMISPage() {
               <p className="mt-1 text-sm text-slate-600">
                 {formatDate(p.birth_date)} · {p.gender || "пол не указан"} · тел. {p.phone || "—"}
               </p>
+              <p className="mt-2 text-xs text-slate-500">
+                <span className="font-medium text-slate-600">ID карты (для ссылки):</span>{" "}
+                <code className="rounded bg-slate-100 px-1 font-mono text-slate-800">{patientId}</code>
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-teal-100 bg-teal-50/60 px-3 py-2 text-xs text-slate-700">
+                <span className="min-w-0 flex-1 break-all font-mono text-[11px] sm:text-xs">
+                  {typeof window !== "undefined"
+                    ? `${window.location.origin}/public/mis/patient/${patientId}`
+                    : `/public/mis/patient/${patientId}`}
+                </span>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-lg bg-teal-600 px-2 py-1 text-xs font-medium text-white hover:bg-teal-500"
+                  onClick={() => {
+                    const url =
+                      typeof window !== "undefined"
+                        ? `${window.location.origin}/public/mis/patient/${patientId}`
+                        : "";
+                    if (url) navigator.clipboard?.writeText(url).catch(() => {});
+                  }}
+                >
+                  Копировать ссылку пациенту
+                </button>
+              </div>
             </header>
 
             <section className={card}>

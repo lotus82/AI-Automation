@@ -18,6 +18,7 @@ from src.api.schemas.mis import (
     MedicalDoctorOut,
     MedicalEntryCreate,
     MedicalEntryOut,
+    MedicalPatientAdminCreate,
     MedicalPatientCreate,
     MedicalPatientOut,
     MedicalPatientUpdate,
@@ -38,6 +39,14 @@ from src.infrastructure.models import (
 )
 router = APIRouter(prefix="/mis", tags=["mis"])
 public_router = APIRouter(prefix="/public/mis", tags=["mis-public"])
+
+_MIS_AI_SYSTEM = (
+    "Ты — ассистент врача в медицинской информационной системе. "
+    "Анализируй предоставленные данные карты и обследований. "
+    "Не ставь окончательный диагноз и не назначай лечение вместо лечащего врача; "
+    "давай обобщения, гипотезы для обсуждения и напоминания о необходимости очной консультации. "
+    "Отвечай на русском языке."
+)
 
 
 def _require_mis_admin(user: PortalUserDep) -> PortalUserModel:
@@ -122,6 +131,32 @@ def _entry_out(e: MedicalEntryModel) -> MedicalEntryOut:
     )
 
 
+@router.get("/admin/doctors", response_model=list[MedicalDoctorOut])
+async def mis_admin_list_doctors(
+    user: MisAdminDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None, description="Для super_admin: организация"),
+) -> list[MedicalDoctorOut]:
+    """Список врачей МИС организации (для админ-панели)."""
+    scope = resolve_organization_scope(user, organization_id)
+    if scope is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Укажите organization_id или войдите в контекст организации",
+        )
+    stmt = (
+        select(MedicalDoctorModel)
+        .where(MedicalDoctorModel.organization_id == scope)
+        .order_by(MedicalDoctorModel.created_at.desc())
+    )
+    rows = (await session.scalars(stmt)).all()
+    result: list[MedicalDoctorOut] = []
+    for row in rows:
+        pu = await session.get(PortalUserModel, row.portal_user_id)
+        result.append(_doctor_out(row, display_name=pu.display_name if pu else None))
+    return result
+
+
 @router.post("/admin/doctors", response_model=MedicalDoctorOut, status_code=status.HTTP_201_CREATED)
 async def mis_admin_create_doctor(
     body: MedicalDoctorCreate,
@@ -181,6 +216,207 @@ async def mis_admin_list_patients(
     )
     rows = (await session.scalars(stmt)).all()
     return [_patient_out(p) for p in rows]
+
+
+@router.get("/admin/patients/{patient_id}", response_model=PublicPatientCardResponse)
+async def mis_admin_get_patient(
+    patient_id: UUID,
+    user: MisAdminDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None, description="Для super_admin: организация"),
+) -> PublicPatientCardResponse:
+    """Карта пациента для администратора организации (все пациенты орг., без профиля врача)."""
+    scope = resolve_organization_scope(user, organization_id)
+    if scope is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Укажите organization_id или войдите в контекст организации",
+        )
+    stmt = (
+        select(MedicalPatientModel)
+        .where(MedicalPatientModel.id == patient_id, MedicalPatientModel.organization_id == scope)
+        .options(selectinload(MedicalPatientModel.entries))
+    )
+    p = (await session.execute(stmt)).scalar_one_or_none()
+    if p is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Пациент не найден")
+    entries = sorted(
+        p.entries or [],
+        key=lambda e: (e.entry_date, e.created_at),
+        reverse=True,
+    )
+    return PublicPatientCardResponse(patient=_patient_out(p), entries=[_entry_out(e) for e in entries])
+
+
+@router.post("/admin/patients", response_model=MedicalPatientOut, status_code=status.HTTP_201_CREATED)
+async def mis_admin_create_patient(
+    body: MedicalPatientAdminCreate,
+    user: MisAdminDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None, description="Для super_admin: организация"),
+) -> MedicalPatientOut:
+    """Создание пациента админом: карта закрепляется за выбранным врачом МИС."""
+    scope = resolve_organization_scope(user, organization_id)
+    if scope is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Укажите organization_id или войдите в контекст организации",
+        )
+    doc = await session.get(MedicalDoctorModel, body.doctor_id)
+    if doc is None or doc.organization_id != scope or not doc.is_active:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Врач МИС не найден, не в вашей организации или отключён",
+        )
+    row = MedicalPatientModel(
+        organization_id=scope,
+        doctor_id=doc.id,
+        full_name=body.full_name.strip(),
+        phone=(body.phone or "").strip(),
+        birth_date=body.birth_date,
+        gender=(body.gender or "").strip() or None,
+        height=body.height,
+        weight=body.weight,
+        current_diagnosis=(body.current_diagnosis or "").strip(),
+        treatment_plan=(body.treatment_plan or "").strip(),
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return _patient_out(row)
+
+
+@router.patch("/admin/patients/{patient_id}", response_model=MedicalPatientOut)
+async def mis_admin_patch_patient(
+    patient_id: UUID,
+    body: MedicalPatientUpdate,
+    user: MisAdminDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None, description="Для super_admin: организация"),
+) -> MedicalPatientOut:
+    scope = resolve_organization_scope(user, organization_id)
+    if scope is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Укажите organization_id или войдите в контекст организации",
+        )
+    p = await session.get(MedicalPatientModel, patient_id)
+    if p is None or p.organization_id != scope:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Пациент не найден")
+    data = body.model_dump(exclude_unset=True)
+    if "full_name" in data and data["full_name"] is not None:
+        p.full_name = data["full_name"].strip()
+    if "phone" in data and data["phone"] is not None:
+        p.phone = data["phone"].strip()
+    if "birth_date" in data:
+        p.birth_date = data["birth_date"]
+    if "gender" in data:
+        p.gender = (data["gender"] or "").strip() or None
+    if "height" in data:
+        p.height = data["height"]
+    if "weight" in data:
+        p.weight = data["weight"]
+    if "current_diagnosis" in data and data["current_diagnosis"] is not None:
+        p.current_diagnosis = data["current_diagnosis"].strip()
+    if "treatment_plan" in data and data["treatment_plan"] is not None:
+        p.treatment_plan = data["treatment_plan"].strip()
+    await session.commit()
+    await session.refresh(p)
+    return _patient_out(p)
+
+
+@router.post("/admin/ai-consult", response_model=MisAiConsultResponse)
+async def mis_admin_ai_consult(
+    body: MisAiConsultRequest,
+    user: MisAdminDep,
+    session: AsyncSessionDep,
+    llm: LLMServiceDep,
+    organization_id: UUID | None = Query(None, description="Для super_admin: организация"),
+) -> MisAiConsultResponse:
+    scope = resolve_organization_scope(user, organization_id)
+    if scope is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Укажите organization_id или войдите в контекст организации",
+        )
+    p = await session.get(MedicalPatientModel, body.patient_id)
+    if p is None or p.organization_id != scope:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Пациент не найден")
+    stmt = (
+        select(MedicalEntryModel)
+        .where(MedicalEntryModel.patient_id == p.id)
+        .order_by(MedicalEntryModel.entry_date.desc(), MedicalEntryModel.created_at.desc())
+    )
+    entries = (await session.scalars(stmt)).all()
+    patient_block = (
+        f"Пациент: {p.full_name}\n"
+        f"Телефон: {p.phone}\n"
+        f"Дата рождения: {p.birth_date}\n"
+        f"Пол: {p.gender}\n"
+        f"Рост/вес: {p.height} / {p.weight}\n"
+        f"Диагноз (текущий): {p.current_diagnosis}\n"
+        f"План лечения: {p.treatment_plan}\n"
+    )
+    entry_blocks: list[str] = []
+    for e in entries[:50]:
+        t = e.type.value if hasattr(e.type, "value") else str(e.type)
+        entry_blocks.append(
+            f"— {e.entry_date} ({t}):\n"
+            f"данные JSON: {json.dumps(e.data or {}, ensure_ascii=False)}\n"
+            f"заключение: {e.conclusion}\n"
+            f"рекомендации: {e.recommendations}\n",
+        )
+    context_parts = [patient_block, "История обследований и опросников:\n" + "\n".join(entry_blocks)]
+    answer = await llm.generate_response(
+        body.question.strip(),
+        context_parts,
+        system_prompt=_MIS_AI_SYSTEM,
+    )
+    return MisAiConsultResponse(answer=answer)
+
+
+@router.post("/admin/patients/{patient_id}/send-max")
+async def mis_admin_send_max_summary(
+    patient_id: UUID,
+    body: MisMaxSendRequest,
+    request: Request,
+    user: MisAdminDep,
+    session: AsyncSessionDep,
+    max_client: MaxMessengerClientDep,
+    organization_id: UUID | None = Query(None, description="Для super_admin: организация"),
+) -> dict[str, bool]:
+    scope = resolve_organization_scope(user, organization_id)
+    if scope is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Укажите organization_id или войдите в контекст организации",
+        )
+    if not (await max_client.resolve_bot_token()).strip():
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Бот MAX не настроен (MAX_BOT_TOKEN)",
+        )
+    p = await session.get(MedicalPatientModel, patient_id)
+    if p is None or p.organization_id != scope:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Пациент не найден")
+    base = str(request.base_url).rstrip("/")
+    public_card = f"{base}/public/mis/patient/{p.id}"
+    text = (
+        f"МИС — сводка по пациенту\n"
+        f"ФИО: {p.full_name}\n"
+        f"Телефон: {p.phone or '—'}\n"
+        f"Диагноз: {(p.current_diagnosis or '').strip() or '—'}\n"
+        f"Лечение: {(p.treatment_plan or '').strip() or '—'}\n"
+        f"Карта (ссылка для пациента): {public_card}"
+    )
+    try:
+        await send_max_order_message(max_client, body.max_chat_id, text)
+    except Exception as e:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            detail=f"Не удалось отправить сообщение в MAX: {e!s}",
+        ) from e
+    return {"ok": True}
 
 
 @router.get("/doctor/patients", response_model=list[MedicalPatientOut])
@@ -360,15 +596,6 @@ async def mis_public_health_diary(
     await session.commit()
     await session.refresh(row)
     return _entry_out(row)
-
-
-_MIS_AI_SYSTEM = (
-    "Ты — ассистент врача в медицинской информационной системе. "
-    "Анализируй предоставленные данные карты и обследований. "
-    "Не ставь окончательный диагноз и не назначай лечение вместо лечащего врача; "
-    "давай обобщения, гипотезы для обсуждения и напоминания о необходимости очной консультации. "
-    "Отвечай на русском языке."
-)
 
 
 @router.post("/doctor/ai-consult", response_model=MisAiConsultResponse)

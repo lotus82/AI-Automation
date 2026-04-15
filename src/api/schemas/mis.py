@@ -36,6 +36,12 @@ class MedicalPatientCreate(BaseModel):
     treatment_plan: str = ""
 
 
+class MedicalPatientAdminCreate(MedicalPatientCreate):
+    """Создание пациента админом организации (назначение на выбранного врача МИС)."""
+
+    doctor_id: UUID
+
+
 class MedicalPatientUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=512)
     phone: str | None = None
