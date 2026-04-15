@@ -4,7 +4,7 @@
 сборка — в ``ProcessTextMessageUseCase`` и ``memory_history_to_openai_messages`` (фаза 20).
 
 Текстовый канал MAX (группы): дополнительный системный контекст для выбранного ``chat_id``
-собирается в ``ProcessTextMessageUseCase`` (ключи **MAX_GROUP_CHAT_ID** / **MAX_GROUP_ADDITIONAL_PROMPT**)
+собирается в ``ProcessTextMessageUseCase`` (**MAX_GROUP_CHAT_PROMPTS** JSON или устаревшие **MAX_GROUP_CHAT_ID** / **MAX_GROUP_ADDITIONAL_PROMPT**)
 и передаётся в первом сообщении ``role=system`` в ``generate_sales_response_with_tools`` — см. фазу 17.
 
 Инструменты чата объявляются в ``src/use_cases/chat.py`` (``record_lead``, ``search_web`` при **ENABLE_WEB_SEARCH**) —

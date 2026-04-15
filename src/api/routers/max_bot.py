@@ -6,6 +6,9 @@
 При вызове ``search_web`` сначала отправляется промежуточное сообщение в чат, затем итоговый ответ (фаза 21).
 Групповые чаты: до сценария применяется фильтр упоминания (**``apply_max_group_mention_rules``**).
 CORS настраивается глобально в ``CORSMiddleware`` (``main.py``).
+
+Организация определяется по ``recipient.user_id`` бота (в т.ч. в событиях VoIP: корень, ``call`` / ``voice_call``),
+см. ``MAX_BOT_USER_ID`` после сохранения ``MAX_BOT_TOKEN``. Опционально: ``?organization_id=`` в URL.
 """
 
 from __future__ import annotations
@@ -13,18 +16,21 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any
+from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from src.api.dependencies import (
-    MaxMessengerClientDep,
-    ProcessTextMessageUseCaseDep,
+    AsyncSessionDep,
     RedisDep,
     SettingsDep,
-    SettingsRepositoryDep,
+    build_process_text_message_use_case,
 )
+from src.infrastructure.max_bot_identity import resolve_max_webhook_organization_id
+from src.infrastructure.repositories import PostgresSettingsRepository
 from src.infrastructure.services.max_incoming_group import apply_max_group_mention_rules
 from src.infrastructure.services.max_messenger import (
+    MaxMessengerClient,
     parse_max_voice_call_incoming,
     parse_max_webhook_incoming,
 )
@@ -36,16 +42,23 @@ logger = logging.getLogger(__name__)
 @router.post("/webhook")
 async def max_messenger_webhook(
     body: dict[str, Any],
-    use_case: ProcessTextMessageUseCaseDep,
-    max_client: MaxMessengerClientDep,
-    settings_repo: SettingsRepositoryDep,
+    session: AsyncSessionDep,
     redis: RedisDep,
     settings: SettingsDep,
+    organization_id: UUID | None = Query(
+        None,
+        description="Принудительно: id организации; иначе определяется по получателю сообщения (бот)",
+    ),
 ) -> dict[str, Any]:
     """Принимает JSON от MAX; ``chat_id`` → ``session_id`` в Redis; ответ уходит через ``MaxMessengerClient``."""
     parsed_call = parse_max_voice_call_incoming(body)
     if parsed_call is not None:
         call_id, user_label = parsed_call
+        org_scope = await resolve_max_webhook_organization_id(
+            session,
+            body,
+            query_organization_id=organization_id,
+        )
 
         async def _voip_webhook_bg() -> None:
             from src.infrastructure.voice.max_call_session import run_max_inbound_call_background
@@ -55,10 +68,15 @@ async def max_messenger_webhook(
                 user_label=user_label,
                 redis=redis,
                 settings=settings,
+                organization_id=org_scope,
             )
 
         asyncio.create_task(_voip_webhook_bg())
-        logger.info("Вебхук MAX: событие входящего VoIP, call_id=%s", call_id)
+        logger.info(
+            "Вебхук MAX: событие входящего VoIP, call_id=%s, org=%s",
+            call_id,
+            org_scope,
+        )
         return {"ok": True, "call": "accepted_pipeline_scheduled"}
 
     parsed = parse_max_webhook_incoming(body)
@@ -67,6 +85,20 @@ async def max_messenger_webhook(
         ut = (body.get("update_type") or "").strip()
         logger.debug("Вебхук MAX: пропуск после parse (update_type=%s)", ut or "?")
         return {"ok": True, "skipped": True}
+
+    org_scope = await resolve_max_webhook_organization_id(
+        session,
+        body,
+        query_organization_id=organization_id,
+    )
+    settings_repo = PostgresSettingsRepository(session, redis, organization_id=org_scope)
+    use_case = build_process_text_message_use_case(session, redis, settings, organization_id=org_scope)
+    max_client = MaxMessengerClient(
+        settings_repository=settings_repo,
+        api_base_url=settings.max_api_base,
+        platform_api_base_url=settings.max_platform_api_base,
+        env_fallback_max_bot_token=settings.max_bot_token,
+    )
 
     chat_id, user_text, user_label, is_group = parsed
     processed = await apply_max_group_mention_rules(

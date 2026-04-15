@@ -16,6 +16,7 @@
     MAX_BOT_USERNAME: "MAX_BOT_USERNAME",
     MAX_GROUP_CHAT_ID: "MAX_GROUP_CHAT_ID",
     MAX_GROUP_ADDITIONAL_PROMPT: "MAX_GROUP_ADDITIONAL_PROMPT",
+    MAX_GROUP_CHAT_PROMPTS: "MAX_GROUP_CHAT_PROMPTS",
     ENABLE_WEB_SEARCH: "ENABLE_WEB_SEARCH",
     MAX_VOICE_REPLY_ENABLED: "MAX_VOICE_REPLY_ENABLED",
     MAX_CALL_ANSWER_DELAY: "MAX_CALL_ANSWER_DELAY",
@@ -163,16 +164,32 @@
     if (mbuEl) {
       mbuEl.value = mbu && mbu.value != null ? String(mbu.value) : "";
     }
-    var mgc = map[KEYS.MAX_GROUP_CHAT_ID];
-    var mgcEl = byId("max-group-chat-id");
-    if (mgcEl) {
-      mgcEl.value = mgc && mgc.value != null ? String(mgc.value) : "";
+    var mgpJson = map[KEYS.MAX_GROUP_CHAT_PROMPTS];
+    var mgpJsonEl = byId("max-group-chat-prompts");
+    if (mgpJsonEl) {
+      var jv =
+        mgpJson && mgpJson.value != null && String(mgpJson.value).trim()
+          ? String(mgpJson.value)
+          : buildLegacyMaxGroupJson(map);
+      mgpJsonEl.value = jv;
     }
-    var mgp = map[KEYS.MAX_GROUP_ADDITIONAL_PROMPT];
-    var mgpEl = byId("max-group-prompt");
-    if (mgpEl) {
-      mgpEl.value = mgp && mgp.value != null ? String(mgp.value) : "";
+  }
+
+  function buildLegacyMaxGroupJson(map) {
+    var gid = map[KEYS.MAX_GROUP_CHAT_ID];
+    var gp = map[KEYS.MAX_GROUP_ADDITIONAL_PROMPT];
+    var id = gid && gid.value != null ? String(gid.value).trim() : "";
+    var pr = gp && gp.value != null ? String(gp.value) : "";
+    if (id) {
+      var o = {};
+      o[id] = pr;
+      try {
+        return JSON.stringify(o, null, 2);
+      } catch (e) {
+        return "{}";
+      }
     }
+    return "{}";
   }
 
   async function loadSettings() {
@@ -240,10 +257,8 @@
 
     var mbuEl2 = byId("max-bot-username");
     if (mbuEl2) values[KEYS.MAX_BOT_USERNAME] = mbuEl2.value.trim();
-    var mgcEl2 = byId("max-group-chat-id");
-    if (mgcEl2) values[KEYS.MAX_GROUP_CHAT_ID] = mgcEl2.value.trim();
-    var mgpEl2 = byId("max-group-prompt");
-    if (mgpEl2) values[KEYS.MAX_GROUP_ADDITIONAL_PROMPT] = mgpEl2.value;
+    var mgpJsonEl2 = byId("max-group-chat-prompts");
+    if (mgpJsonEl2) values[KEYS.MAX_GROUP_CHAT_PROMPTS] = mgpJsonEl2.value.trim() || "{}";
 
     [
       KEYS.DEEPSEEK_API_KEY,

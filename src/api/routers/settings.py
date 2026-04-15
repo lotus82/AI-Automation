@@ -5,12 +5,21 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+import json
+import uuid
+from uuid import UUID
 
-from src.api.dependencies import SettingsRepositoryDep
+from fastapi import APIRouter, HTTPException, Query, status
+
+from src.api.dependencies import AsyncSessionDep, RedisDep
+from src.api.dependencies_portal import PortalUserDep
 from src.api.schemas.settings import SettingsUpdateRequest, SystemSettingPublic
 from src.domain import system_setting_keys as sk
+from src.api.org_scope import resolve_organization_scope
+from src.core.config import get_settings
 from src.domain.entities import SystemSetting
+from src.infrastructure.max_bot_identity import sync_max_bot_user_id_for_token
+from src.infrastructure.repositories import PostgresSettingsRepository
 
 router = APIRouter(tags=["settings"])
 
@@ -37,8 +46,18 @@ def _to_public(row: SystemSetting, *, masked: bool) -> SystemSettingPublic:
 
 
 @router.get("/settings", response_model=list[SystemSettingPublic])
-async def list_settings(repo: SettingsRepositoryDep) -> list[SystemSettingPublic]:
+async def list_settings(
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    redis: RedisDep,
+    organization_id: UUID | None = Query(
+        None,
+        description="Супер-админ: id организации; без параметра — глобальные настройки экземпляра",
+    ),
+) -> list[SystemSettingPublic]:
     """Все настройки; API-ключи и токены отдаются в маскированном виде."""
+    scope = resolve_organization_scope(user, organization_id)
+    repo = PostgresSettingsRepository(session, redis, organization_id=scope)
     rows = await repo.list_all()
     return [_to_public(r, masked=True) for r in rows]
 
@@ -46,7 +65,13 @@ async def list_settings(repo: SettingsRepositoryDep) -> list[SystemSettingPublic
 @router.put("/settings", status_code=status.HTTP_200_OK)
 async def update_settings(
     body: SettingsUpdateRequest,
-    repo: SettingsRepositoryDep,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    redis: RedisDep,
+    organization_id: UUID | None = Query(
+        None,
+        description="Супер-админ: id организации; без параметра — глобальные настройки",
+    ),
 ) -> dict[str, bool]:
     """Пакетное обновление. Неизвестные ключи отклоняются."""
     if not body.values:
@@ -175,6 +200,192 @@ async def update_settings(
                 detail="MAX_GROUP_ADDITIONAL_PROMPT слишком длинный (максимум 32000 символов)",
             )
 
+    if sk.SYSTEM_ROLES_CONFIG in normalized:
+        raw_sr = (normalized[sk.SYSTEM_ROLES_CONFIG] or "").strip()
+        if not raw_sr:
+            normalized[sk.SYSTEM_ROLES_CONFIG] = ""
+        else:
+            if len(raw_sr) > 524288:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="SYSTEM_ROLES_CONFIG слишком большой (максимум 512 КБ)",
+                )
+            try:
+                sr = json.loads(raw_sr)
+            except json.JSONDecodeError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"SYSTEM_ROLES_CONFIG: невалидный JSON ({e})",
+                ) from e
+            if not isinstance(sr, dict):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="SYSTEM_ROLES_CONFIG должен быть JSON-объектом",
+                )
+            roles = sr.get("roles")
+            if not isinstance(roles, list) or len(roles) < 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="SYSTEM_ROLES_CONFIG: нужен непустой массив roles",
+                )
+            if len(roles) > 50:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="SYSTEM_ROLES_CONFIG: не более 50 ролей",
+                )
+            role_ids: set[str] = set()
+            norm_roles: list[dict] = []
+            for i, r in enumerate(roles):
+                if not isinstance(r, dict):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"SYSTEM_ROLES_CONFIG: roles[{i}] должен быть объектом",
+                    )
+                rid = str(r.get("id", "")).strip()
+                if not rid:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"SYSTEM_ROLES_CONFIG: у roles[{i}] нужен непустой id (UUID)",
+                    )
+                if len(rid) > 64:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"SYSTEM_ROLES_CONFIG: слишком длинный id у roles[{i}]",
+                    )
+                try:
+                    uuid.UUID(rid)
+                except ValueError as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"SYSTEM_ROLES_CONFIG: id роли должен быть UUID (roles[{i}])",
+                    ) from e
+                if rid in role_ids:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"SYSTEM_ROLES_CONFIG: дубликат id роли {rid}",
+                    )
+                role_ids.add(rid)
+                name = str(r.get("name", "")).strip()
+                if len(name) > 200:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"SYSTEM_ROLES_CONFIG: слишком длинное имя роли (roles[{i}])",
+                    )
+                pr = r.get("prompt")
+                if not isinstance(pr, str):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"SYSTEM_ROLES_CONFIG: prompt должен быть строкой (roles[{i}])",
+                    )
+                if len(pr) > 32000:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"SYSTEM_ROLES_CONFIG: prompt слишком длинный (roles[{i}])",
+                    )
+                norm_roles.append({"id": rid, "name": name, "prompt": pr})
+
+            default_rid = str(sr.get("default_role_id", "")).strip()
+            if not default_rid or default_rid not in role_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="SYSTEM_ROLES_CONFIG: default_role_id должен совпадать с id одной из ролей",
+                )
+            analyst_raw = sr.get("analyst_role_id")
+            analyst_rid = str(analyst_raw).strip() if analyst_raw is not None and str(analyst_raw).strip() else ""
+            if analyst_rid and analyst_rid not in role_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="SYSTEM_ROLES_CONFIG: analyst_role_id должен быть id одной из ролей или пустым",
+                )
+            out_sr = {
+                "default_role_id": default_rid,
+                "analyst_role_id": analyst_rid or None,
+                "roles": norm_roles,
+            }
+            normalized[sk.SYSTEM_ROLES_CONFIG] = json.dumps(out_sr, ensure_ascii=False)
+            for r in norm_roles:
+                if r["id"] == default_rid:
+                    normalized[sk.DEFAULT_CONSULTANT_PROMPT] = r["prompt"]
+                    break
+            if analyst_rid:
+                for r in norm_roles:
+                    if r["id"] == analyst_rid:
+                        normalized[sk.ANALYST_QA_PROMPT] = r["prompt"]
+                        break
+
+    if sk.MAX_GROUP_CHAT_PROMPTS in normalized:
+        raw_j = (normalized[sk.MAX_GROUP_CHAT_PROMPTS] or "").strip()
+        if not raw_j:
+            normalized[sk.MAX_GROUP_CHAT_PROMPTS] = "{}"
+        else:
+            if len(raw_j) > 524288:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="MAX_GROUP_CHAT_PROMPTS слишком большой (максимум 512 КБ)",
+                )
+            try:
+                parsed = json.loads(raw_j)
+            except json.JSONDecodeError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"MAX_GROUP_CHAT_PROMPTS: невалидный JSON ({e})",
+                ) from e
+            if not isinstance(parsed, dict):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="MAX_GROUP_CHAT_PROMPTS должен быть JSON-объектом chat_id → настройки группы",
+                )
+            if len(parsed) > 200:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="MAX_GROUP_CHAT_PROMPTS: не более 200 групповых чатов",
+                )
+            out: dict[str, dict[str, str | None]] = {}
+            for k_raw, v_raw in parsed.items():
+                ks = str(k_raw).strip() if k_raw is not None else ""
+                if not ks:
+                    continue
+                if len(ks) > 64:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"MAX_GROUP_CHAT_PROMPTS: слишком длинный chat_id (макс. 64): {ks[:20]}…",
+                    )
+                role_id: str | None = None
+                add = ""
+                if isinstance(v_raw, str):
+                    add = v_raw.strip()
+                elif isinstance(v_raw, dict):
+                    rr = v_raw.get("role_id")
+                    if rr is not None and str(rr).strip():
+                        cand = str(rr).strip()
+                        if len(cand) > 64:
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"MAX_GROUP_CHAT_PROMPTS: слишком длинный role_id для {ks[:16]}",
+                            )
+                        try:
+                            uuid.UUID(cand)
+                        except ValueError as e:
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"MAX_GROUP_CHAT_PROMPTS: role_id для {ks[:16]} должен быть UUID",
+                            ) from e
+                        role_id = cand
+                    ap = v_raw.get("additional_prompt")
+                    add = ap.strip() if isinstance(ap, str) else ""
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"MAX_GROUP_CHAT_PROMPTS: для chat_id {ks[:16]}… значение — строка или объект",
+                    )
+                if len(add) > 32000:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"MAX_GROUP_CHAT_PROMPTS: additional_prompt для {ks[:16]}… слишком длинный",
+                    )
+                out[ks] = {"role_id": role_id, "additional_prompt": add}
+            normalized[sk.MAX_GROUP_CHAT_PROMPTS] = json.dumps(out, ensure_ascii=False)
+
     if sk.MAX_CALL_ANSWER_DELAY in normalized:
         raw_d = (normalized[sk.MAX_CALL_ANSWER_DELAY] or "").strip()
         try:
@@ -199,6 +410,8 @@ async def update_settings(
                 detail="MAX_CALL_GREETING_PHRASE слишком длинный (максимум 4000 символов)",
             )
 
+    scope = resolve_organization_scope(user, organization_id)
+    repo = PostgresSettingsRepository(session, redis, organization_id=scope)
     try:
         await repo.upsert_values(normalized)
     except KeyError as e:
@@ -206,5 +419,16 @@ async def update_settings(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         ) from e
+
+    if sk.MAX_BOT_TOKEN in normalized:
+        tok = (normalized[sk.MAX_BOT_TOKEN] or "").strip()
+        if tok:
+            await sync_max_bot_user_id_for_token(
+                session,
+                redis,
+                organization_id=scope,
+                token=tok,
+                platform_api_base=get_settings().max_platform_api_base,
+            )
 
     return {"ok": True}

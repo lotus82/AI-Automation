@@ -6,7 +6,7 @@ import json
 import re
 
 from redis.asyncio import Redis
-from sqlalchemy import desc, select, text, update
+from sqlalchemy import and_, desc, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import uuid
@@ -43,6 +43,7 @@ from src.infrastructure.models import (
     DialerQueueModel,
     KnowledgeItemModel,
     LeadModel,
+    OrganizationSettingModel,
     ScheduleModel,
     ScheduledEventModel,
     SystemSettingModel,
@@ -111,6 +112,7 @@ def _knowledge_to_domain(row: KnowledgeItemModel) -> KnowledgeItem:
         embedding=_embedding_to_list(row.embedding),
         created_at=getattr(row, "created_at", None),
         description=getattr(row, "description", None),
+        organization_id=getattr(row, "organization_id", None),
     )
 
 
@@ -223,14 +225,28 @@ class SqlAlchemyCallRecordRepository(ICallRecordRepository):
 
 
 class SqlAlchemyKnowledgeRepository(IKnowledgeRepository):
-    """Репозиторий элементов знаний."""
+    """Репозиторий элементов знаний.
 
-    def __init__(self, session: AsyncSession) -> None:
+    ``organization_id`` задан — только строки этой организации; ``None`` — только глобальные (legacy, ``organization_id IS NULL``).
+    """
+
+    def __init__(self, session: AsyncSession, *, organization_id: UUID | None = None) -> None:
         self._session = session
+        self._organization_id = organization_id
+
+    def _org_filter(self):
+        if self._organization_id is None:
+            return KnowledgeItemModel.organization_id.is_(None)
+        return KnowledgeItemModel.organization_id == self._organization_id
 
     async def save(self, item: KnowledgeItem) -> KnowledgeItem:
         if item.id is not None:
             msg = "Обновление элемента знаний в этой версии не поддерживается"
+            raise ValueError(msg)
+
+        oid = item.organization_id if item.organization_id is not None else self._organization_id
+        if oid is None:
+            msg = "Укажите organization_id для элемента базы знаний или используйте репозиторий с областью организации"
             raise ValueError(msg)
 
         model = KnowledgeItemModel(
@@ -238,6 +254,7 @@ class SqlAlchemyKnowledgeRepository(IKnowledgeRepository):
             content=item.content,
             description=(item.description or "").strip() or None,
             embedding=item.embedding,
+            organization_id=oid,
         )
         self._session.add(model)
         await self._session.flush()
@@ -260,6 +277,7 @@ class SqlAlchemyKnowledgeRepository(IKnowledgeRepository):
         stmt = (
             select(KnowledgeItemModel)
             .where(KnowledgeItemModel.embedding.is_not(None))
+            .where(self._org_filter())
             .order_by(KnowledgeItemModel.embedding.cosine_distance(embedding))
             .limit(limit)
         )
@@ -269,6 +287,7 @@ class SqlAlchemyKnowledgeRepository(IKnowledgeRepository):
     async def list_recent(self, *, limit: int = 500) -> list[KnowledgeItem]:
         stmt = (
             select(KnowledgeItemModel)
+            .where(self._org_filter())
             .order_by(KnowledgeItemModel.created_at.desc())
             .limit(min(max(1, limit), 1000))
         )
@@ -278,7 +297,9 @@ class SqlAlchemyKnowledgeRepository(IKnowledgeRepository):
     async def delete_by_id(self, item_id: UUID) -> bool:
         from sqlalchemy import delete
 
-        stmt = delete(KnowledgeItemModel).where(KnowledgeItemModel.id == item_id)
+        stmt = delete(KnowledgeItemModel).where(
+            and_(KnowledgeItemModel.id == item_id, self._org_filter()),
+        )
         res = await self._session.execute(stmt)
         await self._session.flush()
         return res.rowcount > 0
@@ -767,17 +788,41 @@ def _system_setting_to_domain(row: SystemSettingModel) -> SystemSetting:
     )
 
 
+def _org_setting_to_domain(row: OrganizationSettingModel) -> SystemSetting:
+    return SystemSetting(
+        key=row.key,
+        value=row.value,
+        description=row.description,
+        updated_at=row.updated_at,
+    )
+
+
 class PostgresSettingsRepository(ISettingsRepository):
-    """Настройки в PostgreSQL; горячие чтения кэшируются в Redis, при PUT ключ инвалидируется."""
+    """Настройки в PostgreSQL; горячие чтения кэшируются в Redis, при PUT ключ инвалидируется.
 
-    CACHE_PREFIX = "sys_setting:v1:"
+    При ``organization_id`` заданном читаются/пишутся строки таблицы ``organization_settings`` (изоляция по организациям).
+    Иначе — глобальная таблица ``system_settings`` (супер-админ, воркеры без контекста организации).
+    """
 
-    def __init__(self, session: AsyncSession, redis: Redis) -> None:
+    CACHE_PREFIX_GLOBAL = "sys_setting:v1:"
+    CACHE_PREFIX_ORG = "sys_setting:v2o:"
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        redis: Redis,
+        *,
+        organization_id: UUID | None = None,
+    ) -> None:
         self._session = session
         self._redis = redis
+        self._organization_id = organization_id
 
     def _cache_key(self, key: str) -> str:
-        return f"{self.CACHE_PREFIX}{key.strip()}"
+        k = key.strip()
+        if self._organization_id is None:
+            return f"{self.CACHE_PREFIX_GLOBAL}{k}"
+        return f"{self.CACHE_PREFIX_ORG}{self._organization_id}:{k}"
 
     async def get_value(self, key: str) -> str | None:
         k = key.strip()
@@ -785,37 +830,75 @@ class PostgresSettingsRepository(ISettingsRepository):
         cached = await self._redis.get(ck)
         if cached is not None:
             return cached
-        row = await self._session.get(SystemSettingModel, k)
+        if self._organization_id is None:
+            row = await self._session.get(SystemSettingModel, k)
+        else:
+            row = await self._session.get(
+                OrganizationSettingModel,
+                {"organization_id": self._organization_id, "key": k},
+            )
         if row is None:
             return None
         await self._redis.set(ck, row.value)
         return row.value
 
     async def list_all(self) -> list[SystemSetting]:
-        stmt = select(SystemSettingModel).order_by(SystemSettingModel.key.asc())
+        if self._organization_id is None:
+            stmt = select(SystemSettingModel).order_by(SystemSettingModel.key.asc())
+            result = await self._session.scalars(stmt)
+            return [_system_setting_to_domain(r) for r in result.all()]
+        stmt = (
+            select(OrganizationSettingModel)
+            .where(OrganizationSettingModel.organization_id == self._organization_id)
+            .order_by(OrganizationSettingModel.key.asc())
+        )
         result = await self._session.scalars(stmt)
-        return [_system_setting_to_domain(r) for r in result.all()]
+        return [_org_setting_to_domain(r) for r in result.all()]
 
     async def upsert_values(self, updates: dict[str, str]) -> None:
         """Обновляет значения; для ключей из UPDATABLE_KEYS создаёт строку, если миграция-сид ещё не вставила её."""
         now = datetime.now(get_settings().app_zoneinfo)
-        for raw_key, value in updates.items():
-            k = raw_key.strip()
-            row = await self._session.get(SystemSettingModel, k)
-            if row is None:
-                if k not in sk.UPDATABLE_KEYS:
-                    msg = f"Неизвестный ключ настройки: {k}"
-                    raise KeyError(msg)
-                row = SystemSettingModel(
-                    key=k,
-                    value=value,
-                    description="",
-                    updated_at=now,
+        if self._organization_id is None:
+            for raw_key, value in updates.items():
+                k = raw_key.strip()
+                row = await self._session.get(SystemSettingModel, k)
+                if row is None:
+                    if k not in sk.UPDATABLE_KEYS and k not in sk.INTERNAL_SETTING_KEYS:
+                        msg = f"Неизвестный ключ настройки: {k}"
+                        raise KeyError(msg)
+                    row = SystemSettingModel(
+                        key=k,
+                        value=value,
+                        description="",
+                        updated_at=now,
+                    )
+                    self._session.add(row)
+                else:
+                    row.value = value
+                    row.updated_at = now
+        else:
+            oid = self._organization_id
+            for raw_key, value in updates.items():
+                k = raw_key.strip()
+                row = await self._session.get(
+                    OrganizationSettingModel,
+                    {"organization_id": oid, "key": k},
                 )
-                self._session.add(row)
-            else:
-                row.value = value
-                row.updated_at = now
+                if row is None:
+                    if k not in sk.UPDATABLE_KEYS and k not in sk.INTERNAL_SETTING_KEYS:
+                        msg = f"Неизвестный ключ настройки: {k}"
+                        raise KeyError(msg)
+                    row = OrganizationSettingModel(
+                        organization_id=oid,
+                        key=k,
+                        value=value,
+                        description="",
+                        updated_at=now,
+                    )
+                    self._session.add(row)
+                else:
+                    row.value = value
+                    row.updated_at = now
         await self._session.flush()
         for raw_key in updates:
             await self._redis.delete(self._cache_key(raw_key.strip()))

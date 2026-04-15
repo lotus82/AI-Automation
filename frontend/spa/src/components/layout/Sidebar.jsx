@@ -8,13 +8,15 @@ import {
   Plug,
   ScrollText,
   Settings,
-  ShoppingBag,
+  Stethoscope,
+  Store,
   UserCog,
   UsersRound,
   X,
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuthStore } from "../../store/authStore.js";
+import { OrganizationScopeSelect } from "./OrganizationScopeSelect.jsx";
 
 const linkClass = ({ isActive }) =>
   [
@@ -35,7 +37,8 @@ const BASE_NAV = [
   },
   { to: "/questionnaires", section: "questionnaires", label: "Опросники", icon: ClipboardList },
   { to: "/forms", section: "forms", label: "Формы", icon: FileText },
-  { to: "/shops", section: "shops", label: "Магазины", icon: ShoppingBag },
+  { to: "/shops", section: "shops", label: "Магазины", icon: Store },
+  { to: "/mis", section: "mis", label: "МИС", icon: Stethoscope },
   { to: "/integrations", section: "integrations", label: "Интеграции", icon: Plug },
   { to: "/roles", section: "roles", label: "Роли", icon: UsersRound },
   { to: "/settings", section: "settings", label: "Настройки", icon: Settings },
@@ -82,6 +85,7 @@ function SidebarContent({ onNavigate, headerAction }) {
             Организации
           </NavLink>
         ) : null}
+        <OrganizationScopeSelect />
         {(user?.role === "org_admin" || user?.role === "director") && (
           <NavLink to="/portal/users" className={linkClass} onClick={() => onNavigate?.()}>
             <UserCog className="mr-2 h-4 w-4 shrink-0 opacity-90" strokeWidth={1.75} aria-hidden />

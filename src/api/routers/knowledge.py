@@ -4,13 +4,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
 
-from src.api.dependencies import (
-    AsyncSessionDep,
-    EmbeddingServiceDep,
-    KnowledgeRepositoryDep,
-)
+from src.api.dependencies import AsyncSessionDep, RedisDep, SettingsDep
+from src.api.dependencies_portal import PortalUserDep
+from src.api.org_scope import resolve_organization_scope
 from src.api.schemas.knowledge import (
     KnowledgeItemResponse,
     KnowledgeUploadCreatedItem,
@@ -18,6 +16,8 @@ from src.api.schemas.knowledge import (
 )
 from src.domain.entities import KnowledgeItem
 from src.infrastructure.knowledge_ingest import ingest_upload
+from src.infrastructure.repositories import PostgresSettingsRepository, SqlAlchemyKnowledgeRepository
+from src.infrastructure.services.openai_embedding import OpenAIEmbeddingService
 
 router = APIRouter(tags=["knowledge"])
 
@@ -52,8 +52,15 @@ def _embedding_ok(vec: list[float] | None) -> bool:
     summary="Список элементов базы знаний",
 )
 async def list_knowledge_items(
-    repo: KnowledgeRepositoryDep,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(
+        None,
+        description="Супер-админ: id организации; без параметра — только глобальные (legacy) записи",
+    ),
 ) -> list[KnowledgeItemResponse]:
+    scope = resolve_organization_scope(user, organization_id)
+    repo = SqlAlchemyKnowledgeRepository(session, organization_id=scope)
     rows = await repo.list_recent(limit=500)
     out: list[KnowledgeItemResponse] = []
     for r in rows:
@@ -79,9 +86,10 @@ async def list_knowledge_items(
     summary="Загрузить .txt или .xlsx в базу знаний",
 )
 async def upload_knowledge(
+    user: PortalUserDep,
     session: AsyncSessionDep,
-    repo: KnowledgeRepositoryDep,
-    embedding: EmbeddingServiceDep,
+    redis: RedisDep,
+    settings: SettingsDep,
     files: list[UploadFile] = File(
         ...,
         description="Один или несколько файлов .txt / .xlsx",
@@ -90,7 +98,20 @@ async def upload_knowledge(
         default=None,
         description="Общее описание для всех фрагментов из этой загрузки (попадает в RAG вместе с текстом)",
     ),
+    organization_id: UUID | None = Query(
+        None,
+        description="Супер-админ: id организации; без параметра — в глобальную (legacy) область",
+    ),
 ) -> KnowledgeUploadResponse:
+    scope = resolve_organization_scope(user, organization_id)
+    if scope is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Укажите organization_id либо войдите как администратор организации",
+        )
+    repo = SqlAlchemyKnowledgeRepository(session, organization_id=scope)
+    settings_repo = PostgresSettingsRepository(session, redis, organization_id=scope)
+    embedding = OpenAIEmbeddingService(settings=settings, settings_repo=settings_repo)
     if not files:
         raise HTTPException(status_code=400, detail="Добавьте хотя бы один файл")
     desc_common = (description or "").strip() or None
@@ -118,13 +139,13 @@ async def upload_knowledge(
                     content=content,
                     description=desc_common,
                     embedding=emb,
+                    organization_id=scope,
                 ),
             )
             if saved.id is None:
                 msg = "Не удалось получить id после сохранения"
                 raise RuntimeError(msg)
             created.append(KnowledgeUploadCreatedItem(id=saved.id, title=saved.title))
-    await session.commit()
     return KnowledgeUploadResponse(created_count=len(created), items=created)
 
 
@@ -136,11 +157,16 @@ async def upload_knowledge(
 )
 async def delete_knowledge_item(
     item_id: UUID,
+    user: PortalUserDep,
     session: AsyncSessionDep,
-    repo: KnowledgeRepositoryDep,
+    organization_id: UUID | None = Query(
+        None,
+        description="Супер-админ: id организации; без параметра — только глобальные (legacy) записи",
+    ),
 ) -> Response:
+    scope = resolve_organization_scope(user, organization_id)
+    repo = SqlAlchemyKnowledgeRepository(session, organization_id=scope)
     ok = await repo.delete_by_id(item_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Запись не найдена")
-    await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -227,3 +227,4 @@ class KnowledgeItem:
     embedding: list[float] | None = None
     created_at: datetime | None = None
     description: str | None = None
+    organization_id: UUID | None = None

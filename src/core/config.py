@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from functools import lru_cache
+from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator, model_validator
@@ -98,6 +99,11 @@ class Settings(BaseSettings):
     max_bot_token: str | None = Field(
         default=None,
         validation_alias="MAX_BOT_TOKEN",
+    )
+    # Опционально: при отладке — только один контекст long poll (иначе по одному воркеру на уникальный MAX_BOT_TOKEN)
+    max_long_poll_organization_id: UUID | None = Field(
+        default=None,
+        validation_alias="MAX_LONG_POLL_ORGANIZATION_ID",
     )
 
     # Голос: облачный STT/TTS (без локальных моделей)

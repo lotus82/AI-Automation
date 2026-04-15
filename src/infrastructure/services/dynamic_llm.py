@@ -12,6 +12,7 @@ from src.core.config import Settings
 from src.core.llm_chat_messages import memory_history_to_openai_messages
 from src.domain.default_system_prompts import FALLBACK_ANALYST_QA_PROMPT
 from src.domain import system_setting_keys as sk
+from src.domain.system_roles import get_analyst_prompt, get_default_consultant_prompt
 from src.use_cases.interfaces import ILLMService, ISettingsRepository, LLMToolCall
 
 _DEEPSEEK_BASE_URL = "https://api.deepseek.com"
@@ -121,7 +122,7 @@ class DynamicLLMService(ILLMService):
                 f"Текущий вопрос клиента:\n{prompt}"
             )
 
-        db_system = (await self._repo.get_value(sk.DEFAULT_CONSULTANT_PROMPT) or "").strip()
+        db_system = (await get_default_consultant_prompt(self._repo)).strip()
         system = (system_prompt or "").strip() or db_system or (
             "You are a helpful B2B sales assistant. Reply in the user's language when possible."
         )
@@ -203,7 +204,7 @@ class DynamicLLMService(ILLMService):
                 "ОКК недоступен: задайте API-ключ выбранного провайдера в настройках панели.",
             )
 
-        qa_prompt = (await self._repo.get_value(sk.ANALYST_QA_PROMPT) or "").strip()
+        qa_prompt = (await get_analyst_prompt(self._repo)).strip()
         system_content = qa_prompt or FALLBACK_ANALYST_QA_PROMPT
 
         completion = await client.chat.completions.create(

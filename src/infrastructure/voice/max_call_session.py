@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from uuid import UUID
 
 from redis.asyncio import Redis
 
@@ -34,13 +35,19 @@ async def run_max_inbound_call_background(
     user_label: str | None,
     redis: Redis,
     settings: Settings,
+    organization_id: UUID | None = None,
 ) -> None:
-    """Полный цикл: чтение задержки/приветствия из БД → sleep → answer_call → голосовой пайплайн."""
+    """Полный цикл: чтение задержки/приветствия из БД → sleep → answer_call → голосовой пайплайн.
+
+    ``organization_id``: настройки и RAG из ``organization_settings``; ``None`` — глобальные ``system_settings``.
+    """
     log_prefix = f"MAX VoIP call_id={call_id}"
+    if organization_id is not None:
+        log_prefix = f"{log_prefix} org={organization_id}"
     try:
         async with AsyncSessionLocal() as session:
             try:
-                repo = PostgresSettingsRepository(session, redis)
+                repo = PostgresSettingsRepository(session, redis, organization_id=organization_id)
                 delay_raw = (await repo.get_value(sk.MAX_CALL_ANSWER_DELAY) or "6").strip()
                 greeting = (await repo.get_value(sk.MAX_CALL_GREETING_PHRASE) or "").strip()
                 if not greeting:
@@ -60,7 +67,7 @@ async def run_max_inbound_call_background(
 
         async with AsyncSessionLocal() as session:
             try:
-                repo = PostgresSettingsRepository(session, redis)
+                repo = PostgresSettingsRepository(session, redis, organization_id=organization_id)
                 mx = MaxMessengerClient(
                     settings_repository=repo,
                     api_base_url=settings.max_api_base,
@@ -86,6 +93,7 @@ async def run_max_inbound_call_background(
             training_scenario=None,
             fixed_greeting_phrase=greeting,
             voice_user_name=user_label,
+            organization_id=organization_id,
         )
     except asyncio.CancelledError:
         raise

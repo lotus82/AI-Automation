@@ -17,14 +17,21 @@ import { LogsPage } from "./pages/LogsPage.jsx";
 import { LeadgenPage } from "./pages/LeadgenPage.jsx";
 import { OrganizationsPage } from "./pages/OrganizationsPage.jsx";
 import { OrgUsersPage } from "./pages/OrgUsersPage.jsx";
+import { DoctorMISPage } from "./pages/DoctorMISPage.jsx";
+import { PatientMISPage } from "./pages/PatientMISPage.jsx";
 import { PublicRegistrationPage } from "./pages/PublicRegistrationPage.jsx";
 import { PublicSurveyPage } from "./pages/PublicSurveyPage.jsx";
 import { QuestionnairesPage } from "./pages/QuestionnairesPage.jsx";
 import { QAPage } from "./pages/QAPage.jsx";
 import { SchedulePage } from "./pages/SchedulePage.jsx";
 import { RolesPage } from "./pages/RolesPage.jsx";
+import { MisPublicLayout } from "./components/layout/MisPublicLayout.jsx";
+import { StoreLayout } from "./components/layout/StoreLayout.jsx";
 import { PublicShopPage } from "./pages/PublicShopPage.jsx";
+import { StoreCartPage } from "./pages/StoreCartPage.jsx";
+import { StoreFrontPage } from "./pages/StoreFrontPage.jsx";
 import { SettingsPage } from "./pages/SettingsPage.jsx";
+import { ShopConstructorPage } from "./pages/ShopConstructorPage.jsx";
 import { ShopsPage } from "./pages/ShopsPage.jsx";
 import { TesterPage } from "./pages/TesterPage.jsx";
 
@@ -37,9 +44,18 @@ export default function App() {
       {/** Встраивание в Битрикс24: см. docs/BITRIX24_SCENARIOS_SETUP.md */}
       <Route path="/bitrix" element={<BitrixScenariosRedirect />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/survey/:id" element={<PublicSurveyPage />} />
+      {/** Старые ссылки с префиксом /public/survey (до согласования с Vite public/) */}
       <Route path="/public/survey/:id" element={<PublicSurveyPage />} />
       <Route path="/public/register/:eventId" element={<PublicRegistrationPage />} />
       <Route path="/public/shop/:slug" element={<PublicShopPage />} />
+      <Route path="/store/:slug" element={<StoreLayout />}>
+        <Route index element={<StoreFrontPage />} />
+        <Route path="cart" element={<StoreCartPage />} />
+      </Route>
+      <Route path="/public/mis/patient/:id" element={<MisPublicLayout />}>
+        <Route index element={<PatientMISPage />} />
+      </Route>
       <Route element={<RequireAuth />}>
         <Route element={<Layout />}>
           <Route path="scenarios" element={<ScenariosLayout />}>
@@ -69,6 +85,9 @@ export default function App() {
           <Route path="questionnaires" element={<QuestionnairesPage />} />
           <Route path="forms" element={<FormsPage />} />
           <Route path="shops" element={<ShopsPage />} />
+          <Route path="shops/:shopId/edit" element={<ShopConstructorPage />} />
+          <Route path="mis" element={<DoctorMISPage />} />
+          <Route path="mis/patients/:patientId" element={<DoctorMISPage />} />
           <Route path="portal/organizations" element={<OrganizationsPage />} />
           <Route path="portal/users" element={<OrgUsersPage />} />
         </Route>

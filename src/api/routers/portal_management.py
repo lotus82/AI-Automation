@@ -103,6 +103,10 @@ async def create_organization(
     session.add(org)
     await session.flush()
 
+    from src.infrastructure.org_settings_seed import seed_organization_settings_from_global
+
+    await seed_organization_settings_from_global(session, org.id)
+
     admin = PortalUserModel(
         organization_id=org.id,
         username=uname,

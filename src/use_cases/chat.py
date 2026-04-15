@@ -13,6 +13,7 @@ from src.core.llm_chat_messages import memory_history_to_openai_messages
 from src.core.utils.text_cleaner import remove_markdown
 from src.domain.default_system_prompts import FALLBACK_DEFAULT_CONSULTANT_PROMPT
 from src.domain import system_setting_keys as sk
+from src.domain.system_roles import get_effective_consultant_prompt, get_max_group_additional_prompt
 from src.use_cases.interfaces import (
     IChatMemoryRepository,
     IChatMonitoringPublisher,
@@ -144,11 +145,8 @@ class ProcessTextMessageUseCase:
         self._max_voice_synth_resolved = False
 
     async def _maybe_append_max_group_prompt(self, session_id: str, system_text: str) -> str:
-        """Если ``session_id`` совпадает с **MAX_GROUP_CHAT_ID**, добавляет **MAX_GROUP_ADDITIONAL_PROMPT**."""
-        configured = (await self._settings_repo.get_value(sk.MAX_GROUP_CHAT_ID) or "").strip()
-        if not configured or session_id.strip() != configured:
-            return system_text
-        extra = (await self._settings_repo.get_value(sk.MAX_GROUP_ADDITIONAL_PROMPT) or "").strip()
+        """Дополнительный фрагмент для группы MAX (после базового промпта роли и CRM)."""
+        extra = await get_max_group_additional_prompt(self._settings_repo, session_id)
         if not extra:
             return system_text
         return f"{system_text}\n\n---\n\n{extra}"
@@ -263,8 +261,9 @@ class ProcessTextMessageUseCase:
             if use_crm_tools:
                 system_text += SALES_TOOLS_INSTRUCTION_RU
         else:
-            db_prompt = (await self._settings_repo.get_value(sk.DEFAULT_CONSULTANT_PROMPT) or "").strip()
-            consultant_base = db_prompt or FALLBACK_DEFAULT_CONSULTANT_PROMPT
+            consultant_base = await get_effective_consultant_prompt(self._settings_repo, session_id=session_id)
+            if not consultant_base:
+                consultant_base = FALLBACK_DEFAULT_CONSULTANT_PROMPT
             system_text = consultant_base + (SALES_TOOLS_INSTRUCTION_RU if use_crm_tools else "")
 
         include_web_tool = (not skip_rag) and (await self._web_search_enabled())

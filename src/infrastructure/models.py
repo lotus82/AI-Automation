@@ -7,13 +7,28 @@
 
 from __future__ import annotations
 
+import enum
 import uuid
 from datetime import date, datetime
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, func, text as sql_text
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Enum as SQLEnum,
+    Float,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text as sql_text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -316,13 +331,33 @@ class CallAnalyticsModel(Base):
 
 
 class SystemSettingModel(Base):
-    """Динамические настройки (LLM, промпты, ключи API) — правка из панели.
+    """Глобальные настройки экземпляра (супер-админ) и шаблон для копирования в организации.
 
-    Известные ключи см. ``src.domain.system_setting_keys`` (в т.ч. **LLM_TEMPERATURE**, **MAX_VOICE_REPLY_ENABLED**, **MAX_CALL_ANSWER_DELAY**, **MAX_CALL_GREETING_PHRASE**, **MAX_BOT_TOKEN**, **MAX_BOT_USERNAME**, **MAX_GROUP_CHAT_ID**, **MAX_GROUP_ADDITIONAL_PROMPT**, **MAX_CONTEXT_LIMIT**, **TEXT_BOT_SYSTEM_SUPPLEMENT**).
+    Известные ключи см. ``src.domain.system_setting_keys`` (в т.ч. **LLM_TEMPERATURE**, **MAX_VOICE_REPLY_ENABLED**, **MAX_CALL_ANSWER_DELAY**, **MAX_CALL_GREETING_PHRASE**, **MAX_BOT_TOKEN**, **MAX_BOT_USERNAME**, **MAX_GROUP_CHAT_PROMPTS**, **MAX_GROUP_CHAT_ID**, **MAX_GROUP_ADDITIONAL_PROMPT**, **MAX_CONTEXT_LIMIT**, **TEXT_BOT_SYSTEM_SUPPLEMENT**).
     """
 
     __tablename__ = "system_settings"
 
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    description: Mapped[str] = mapped_column(String(512), nullable=False, server_default=sql_text("''"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        onupdate=func.now(),
+    )
+
+
+class OrganizationSettingModel(Base):
+    """Настройки, изолированные по организации (промпты, ключи API, MAX и т.д.)."""
+
+    __tablename__ = "organization_settings"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
     key: Mapped[str] = mapped_column(String(128), primary_key=True)
     value: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
     description: Mapped[str] = mapped_column(String(512), nullable=False, server_default=sql_text("''"))
@@ -417,6 +452,12 @@ class KnowledgeItemModel(Base):
         primary_key=True,
         server_default=sql_text("gen_random_uuid()"),
     )
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(512))
     content: Mapped[str] = mapped_column(Text())
     description: Mapped[str | None] = mapped_column(Text(), nullable=True)
@@ -509,6 +550,16 @@ class OrganizationModel(Base):
         nullable=False,
     )
 
+    shops: Mapped[list["ShopModel"]] = relationship("ShopModel", back_populates="organization")
+    medical_doctors: Mapped[list["MedicalDoctorModel"]] = relationship(
+        "MedicalDoctorModel",
+        back_populates="organization",
+    )
+    medical_patients: Mapped[list["MedicalPatientModel"]] = relationship(
+        "MedicalPatientModel",
+        back_populates="organization",
+    )
+
 
 class PortalUserModel(Base):
     """Пользователь панели: супер-админ (organization_id NULL) или пользователь организации."""
@@ -545,6 +596,11 @@ class PortalUserModel(Base):
     organization: Mapped["OrganizationModel | None"] = relationship(
         "OrganizationModel",
         lazy="joined",
+    )
+    medical_doctor_profile: Mapped["MedicalDoctorModel | None"] = relationship(
+        "MedicalDoctorModel",
+        back_populates="portal_user",
+        uselist=False,
     )
 
 
@@ -687,28 +743,55 @@ class RegistrationSubmissionModel(Base):
     )
 
 
+class ShopProductTag(str, enum.Enum):
+    """Метка товара на витрине."""
+
+    new = "new"
+    sale = "sale"
+    hot = "hot"
+
+
+class ShopOrderStatus(str, enum.Enum):
+    """Статус заказа магазина."""
+
+    new = "new"
+    paid = "paid"
+    assembling = "assembling"
+    delivering = "delivering"
+    completed = "completed"
+
+
 class ShopModel(Base):
-    """Витрина магазина (публичная ссылка для MAX / Telegram / VK)."""
+    """Витрина магазина (мультиарендность: привязка к организации).
+
+    Поле ``settings`` (JSONB): темы мессенджеров, контакты продавца, относительный путь логотипа и др.
+    Рекомендуемые ключи: ``messenger_themes``, ``seller_max_chat_id``, ``seller_telegram_chat_id``,
+    ``seller_vk_peer_id``, ``upload_logo_rel`` (файл в каталоге загрузок магазина).
+    """
 
     __tablename__ = "shops"
+    __table_args__ = (UniqueConstraint("organization_id", "slug", name="uq_shops_organization_slug"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
         server_default=sql_text("gen_random_uuid()"),
     )
-    slug: Mapped[str] = mapped_column(String(80), nullable=False, unique=True, index=True)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(512), nullable=False)
+    slug: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
-    logo_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    messenger_themes: Mapped[dict[str, Any]] = mapped_column(
+    logo_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
         server_default=sql_text("'{}'::jsonb"),
     )
-    seller_max_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    seller_telegram_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    seller_vk_peer_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=sql_text("now()"),
@@ -721,14 +804,80 @@ class ShopModel(Base):
         nullable=False,
     )
 
-    products: Mapped[list["ShopProductModel"]] = relationship(
-        "ShopProductModel",
+    organization: Mapped["OrganizationModel | None"] = relationship(
+        "OrganizationModel",
+        back_populates="shops",
+    )
+    categories: Mapped[list["CategoryModel"]] = relationship(
+        "CategoryModel",
+        back_populates="shop",
+        cascade="all, delete-orphan",
+    )
+    products: Mapped[list["ProductModel"]] = relationship(
+        "ProductModel",
+        back_populates="shop",
+        cascade="all, delete-orphan",
+    )
+    discounts: Mapped[list["DiscountModel"]] = relationship(
+        "DiscountModel",
+        back_populates="shop",
+        cascade="all, delete-orphan",
+    )
+    orders: Mapped[list["OrderModel"]] = relationship(
+        "OrderModel",
+        back_populates="shop",
+        cascade="all, delete-orphan",
+    )
+    static_pages: Mapped[list["StaticPageModel"]] = relationship(
+        "StaticPageModel",
         back_populates="shop",
         cascade="all, delete-orphan",
     )
 
 
-class ShopProductModel(Base):
+class CategoryModel(Base):
+    """Категория товаров (дерево по ``parent_id``)."""
+
+    __tablename__ = "shop_categories"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    shop_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("shops.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("shop_categories.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(512), nullable=False)
+    description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    order_index: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=sql_text("0"))
+
+    shop: Mapped["ShopModel"] = relationship("ShopModel", back_populates="categories")
+    parent: Mapped["CategoryModel | None"] = relationship(
+        "CategoryModel",
+        remote_side=[id],
+        foreign_keys=[parent_id],
+        back_populates="children",
+    )
+    children: Mapped[list["CategoryModel"]] = relationship(
+        "CategoryModel",
+        back_populates="parent",
+        foreign_keys=[parent_id],
+        cascade="all, delete-orphan",
+    )
+    products: Mapped[list["ProductModel"]] = relationship("ProductModel", back_populates="category")
+
+
+class ProductModel(Base):
     """Товар в витрине."""
 
     __tablename__ = "shop_products"
@@ -744,11 +893,22 @@ class ShopProductModel(Base):
         nullable=False,
         index=True,
     )
+    category_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("shop_categories.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(512), nullable=False)
     description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
     price: Mapped[Any] = mapped_column(Numeric(12, 2), nullable=False)
+    photos: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, server_default=sql_text("'[]'::jsonb"))
     stock_quantity: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=sql_text("0"))
-    photo_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    tag: Mapped[ShopProductTag | None] = mapped_column(
+        SQLEnum(ShopProductTag, name="shop_product_tag", native_enum=True, values_callable=lambda x: [e.value for e in x]),
+        nullable=True,
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=sql_text("true"))
     sort_order: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=sql_text("0"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -757,3 +917,265 @@ class ShopProductModel(Base):
     )
 
     shop: Mapped["ShopModel"] = relationship("ShopModel", back_populates="products")
+    category: Mapped["CategoryModel | None"] = relationship("CategoryModel", back_populates="products")
+
+
+class DiscountModel(Base):
+    """Скидка по магазину (период действия)."""
+
+    __tablename__ = "shop_discounts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    shop_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("shops.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(512), nullable=False)
+    percentage: Mapped[Any] = mapped_column(Numeric(5, 2), nullable=False)
+    start_date: Mapped[date] = mapped_column(Date(), nullable=False)
+    end_date: Mapped[date] = mapped_column(Date(), nullable=False)
+
+    shop: Mapped["ShopModel"] = relationship("ShopModel", back_populates="discounts")
+
+
+class OrderModel(Base):
+    """Заказ покупателя."""
+
+    __tablename__ = "shop_orders"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    shop_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("shops.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[ShopOrderStatus] = mapped_column(
+        SQLEnum(ShopOrderStatus, name="shop_order_status", native_enum=True, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=ShopOrderStatus.new,
+    )
+    customer_info: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default=sql_text("'{}'::jsonb"))
+    total_amount: Mapped[Any] = mapped_column(Numeric(14, 2), nullable=False, server_default=sql_text("0"))
+    delivery_address: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    delivery_status: Mapped[str] = mapped_column(String(128), nullable=False, server_default=sql_text("''"))
+
+    shop: Mapped["ShopModel"] = relationship("ShopModel", back_populates="orders")
+    items: Mapped[list["OrderItemModel"]] = relationship(
+        "OrderItemModel",
+        back_populates="order",
+        cascade="all, delete-orphan",
+    )
+
+
+class OrderItemModel(Base):
+    """Позиция заказа."""
+
+    __tablename__ = "shop_order_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("shop_orders.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    product_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("shop_products.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    quantity: Mapped[int] = mapped_column(Integer(), nullable=False)
+    price_at_time: Mapped[Any] = mapped_column(Numeric(12, 2), nullable=False)
+
+    order: Mapped["OrderModel"] = relationship("OrderModel", back_populates="items")
+
+
+class StaticPageModel(Base):
+    """Статическая страница витрины (контент по slug)."""
+
+    __tablename__ = "shop_static_pages"
+    __table_args__ = (UniqueConstraint("shop_id", "slug", name="uq_shop_static_pages_shop_slug"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    shop_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("shops.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    slug: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    content: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+
+    shop: Mapped["ShopModel"] = relationship("ShopModel", back_populates="static_pages")
+
+
+class MedicalEntryType(str, enum.Enum):
+    """Тип записи МИС: обследование или опросник."""
+
+    exam = "exam"
+    survey = "survey"
+
+
+class MedicalDoctorModel(Base):
+    """Врач МИС: привязка к организации и учётной записи портала."""
+
+    __tablename__ = "medical_doctors"
+    __table_args__ = (UniqueConstraint("portal_user_id", name="uq_medical_doctors_portal_user"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    portal_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("portal_users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    qualification: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=sql_text("true"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    organization: Mapped["OrganizationModel"] = relationship(
+        "OrganizationModel",
+        back_populates="medical_doctors",
+    )
+    portal_user: Mapped["PortalUserModel"] = relationship(
+        "PortalUserModel",
+        back_populates="medical_doctor_profile",
+    )
+    patients: Mapped[list["MedicalPatientModel"]] = relationship(
+        "MedicalPatientModel",
+        back_populates="doctor",
+    )
+
+
+class MedicalPatientModel(Base):
+    """Карта пациента МИС."""
+
+    __tablename__ = "medical_patients"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    doctor_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("medical_doctors.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    full_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    phone: Mapped[str] = mapped_column(String(64), nullable=False, server_default=sql_text("''"))
+    birth_date: Mapped[date | None] = mapped_column(Date(), nullable=True)
+    gender: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    height: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    weight: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    current_diagnosis: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    treatment_plan: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    organization: Mapped["OrganizationModel"] = relationship(
+        "OrganizationModel",
+        back_populates="medical_patients",
+    )
+    doctor: Mapped["MedicalDoctorModel"] = relationship(
+        "MedicalDoctorModel",
+        back_populates="patients",
+    )
+    entries: Mapped[list["MedicalEntryModel"]] = relationship(
+        "MedicalEntryModel",
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+
+
+class MedicalEntryModel(Base):
+    """Обследование или опросник: показатели и ответы в JSON."""
+
+    __tablename__ = "medical_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    patient_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("medical_patients.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    type: Mapped[MedicalEntryType] = mapped_column(
+        SQLEnum(MedicalEntryType, name="medical_entry_type", native_enum=True, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+    )
+    entry_date: Mapped[date] = mapped_column(Date(), nullable=False)
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default=sql_text("'{}'::jsonb"))
+    conclusion: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    recommendations: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+
+    patient: Mapped["MedicalPatientModel"] = relationship(
+        "MedicalPatientModel",
+        back_populates="entries",
+    )

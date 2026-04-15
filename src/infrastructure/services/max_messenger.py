@@ -13,6 +13,7 @@ import os
 import socket
 from collections import Counter
 from typing import Any
+from uuid import UUID
 
 import httpx
 from redis.asyncio import Redis
@@ -431,10 +432,13 @@ class MaxMessengerClient:
         stop_event: asyncio.Event,
         redis: Redis,
         app_settings: Settings,
+        organization_id: UUID | None = None,
     ) -> None:
         """Бесконечный long poll ``GET /updates``; для каждого события — ``use_case.execute`` + ``send_message``.
 
         Один цикл жизни **AsyncSession** на процесс (см. ``lifespan``): после каждой успешной пары реплик — ``commit``.
+        ``organization_id`` — контекст для входящего VoIP (``run_max_inbound_call_background``); текстовые события уже
+        используют ``use_case`` с тем же scope.
         """
         # TODO (рус.): Если пользователь захочет использовать официальную JS-библиотеку MAX, потребуется вынести этот поллинг в отдельный Node.js микросервис, который будет проксировать запросы на локальный FastAPI вебхук.
         marker: int | None = None
@@ -626,7 +630,11 @@ class MaxMessengerClient:
                 if parsed_call is not None:
                     call_id_v, user_label_v = parsed_call
 
-                    async def _voip_bg(c_id: str, u_lab: str | None) -> None:
+                    async def _voip_bg(
+                        c_id: str,
+                        u_lab: str | None,
+                        oid: UUID | None,
+                    ) -> None:
                         from src.infrastructure.voice.max_call_session import (
                             run_max_inbound_call_background,
                         )
@@ -636,9 +644,10 @@ class MaxMessengerClient:
                             user_label=u_lab,
                             redis=redis,
                             settings=app_settings,
+                            organization_id=oid,
                         )
 
-                    asyncio.create_task(_voip_bg(call_id_v, user_label_v))
+                    asyncio.create_task(_voip_bg(call_id_v, user_label_v, organization_id))
                     logger.info(
                         "MAX long poll: запланирована обработка VoIP call_id=%s instance=%s",
                         call_id_v,

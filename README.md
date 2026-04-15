@@ -85,10 +85,9 @@
 - **Цель**: бот может состоять в **группах** MAX (например чат отдела продаж), но **не реагирует** на обычные реплики — только если в тексте есть настраиваемая подстрока упоминания (**`MAX_BOT_USERNAME`**, по умолчанию вид **`@id…_bot`**). В **личных** чатах правило упоминания **не действует** (как раньше).
 - **Где решается**: **`apply_max_group_mention_rules`** и **`detect_max_group_chat`** — **`src/infrastructure/services/max_incoming_group.py`**. Вызываются из **`POST /api/max/webhook`** (**`max_bot.py`**) и из **long polling** (**`MaxMessengerClient.start_polling`**). Если группа без упоминания — ответ **`{"ok": true, "skipped": true}`**, сценарий и **запись в `chat_messages` / Redis** **не выполняются**.
 - **Текст для LLM и памяти**: упоминание **удаляется** из строки до вызова **`ProcessTextMessageUseCase.execute`**; в историю попадает уже **очищенный** вопрос.
-- **Дополнительный системный контекст**: при совпадении **`session_id`** с **`MAX_GROUP_CHAT_ID`** (строка с числовым **`chat_id`** группы из панели «Боты») к базовому промпту консультанта и блоку CRM добавляется **`MAX_GROUP_ADDITIONAL_PROMPT`**; затем — при включённом флаге мессенджера — **`TEXT_BOT_SYSTEM_SUPPLEMENT`**. Реализация: **`ProcessTextMessageUseCase._maybe_append_max_group_prompt`** (**`src/use_cases/chat.py`**).
-- **Миграция сидов**: **`014_max_group_chat`** вставляет ключи **`MAX_BOT_USERNAME`**, **`MAX_GROUP_CHAT_ID`**, **`MAX_GROUP_ADDITIONAL_PROMPT`** в **`system_settings`**.
-
-> **TODO (рус., архитектура):** сейчас заданы **один** идентификатор группы (**`MAX_GROUP_CHAT_ID`**) и **одно** дополнение к промпту; имя бота для проверки упоминания **общее** для всех групп. Дальнейшее развитие — отдельная сущность/таблица **`GroupChatConfig`** (несколько групп, разные промпты и при необходимости разные шаблоны `@username`).
+- **Роли и промпты**: JSON **`SYSTEM_ROLES_CONFIG`** — список ролей (`id` UUID, `name`, `prompt`), **`default_role_id`** (основная для чата и расписания), **`analyst_role_id`** (промпт ОКК). При сохранении зеркалируются **`DEFAULT_CONSULTANT_PROMPT`** и **`ANALYST_QA_PROMPT`**. Панель: SPA **«Роли и промпты»**.
+- **Группы MAX**: **`MAX_GROUP_CHAT_PROMPTS`** — для каждого **`chat_id`** объект **`{ role_id, additional_prompt }`** (или устаревшая строка только с доп. текстом; пустой **`role_id`** — основная роль по умолчанию). Реализация: **`src/domain/system_roles.py`**, **`ProcessTextMessageUseCase`** (**`src/use_cases/chat.py`**). Далее — **`TEXT_BOT_SYSTEM_SUPPLEMENT`**.
+- **Миграции**: **`014_max_group_chat`**; **`032_max_group_prompts_map`** — **`MAX_GROUP_CHAT_PROMPTS`**; **`033_system_roles`** — **`SYSTEM_ROLES_CONFIG`**.
 
 ---
 

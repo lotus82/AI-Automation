@@ -28,6 +28,7 @@ SECTION_LOGS = "logs"
 SECTION_KNOWLEDGE = "knowledge"
 SECTION_SCHEDULE = "schedule"
 SECTION_SHOPS = "shops"
+SECTION_MIS = "mis"
 
 ALL_SECTION_KEYS = (
     SECTION_QA_ANALYTICS,
@@ -41,6 +42,7 @@ ALL_SECTION_KEYS = (
     SECTION_LOGS,
     SECTION_KNOWLEDGE,
     SECTION_SCHEDULE,
+    SECTION_MIS,
 )
 
 # Полный доступ для администратора организации (и супер-админа)
@@ -53,6 +55,7 @@ DIRECTOR_DEFAULT_SECTIONS = [
     SECTION_FORMS,
     SECTION_SHOPS,
     SECTION_KNOWLEDGE,
+    SECTION_MIS,
 ]
 
 

@@ -15,6 +15,10 @@ class ChatTextRequest(BaseModel):
         default=None,
         description="Если не передан, создаётся новая сессия диалога",
     )
+    organization_id: UUID | None = Field(
+        default=None,
+        description="Сессия RAG в контексте организации; требует Authorization (портал). Без поля — глобальные настройки.",
+    )
 
 
 class ChatTextResponse(BaseModel):

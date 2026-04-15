@@ -82,7 +82,6 @@ function initialMaxForm() {
     maxCallAnswerDelay: "6",
     maxCallGreeting: DEFAULT_MAX_GREETING,
     maxBotUsername: "",
-    maxGroupChatId: "",
   };
 }
 
@@ -109,10 +108,6 @@ function buildMaxFormFromMap(map) {
       map[SK.MAX_BOT_USERNAME]?.value != null
         ? String(map[SK.MAX_BOT_USERNAME].value)
         : "",
-    maxGroupChatId:
-      map[SK.MAX_GROUP_CHAT_ID]?.value != null
-        ? String(map[SK.MAX_GROUP_CHAT_ID].value)
-        : "",
   };
 }
 
@@ -128,7 +123,6 @@ function collectMaxPayload(maxForm) {
 
   values[SK.MAX_CALL_GREETING_PHRASE] = maxForm.maxCallGreeting;
   values[SK.MAX_BOT_USERNAME] = maxForm.maxBotUsername.trim();
-  values[SK.MAX_GROUP_CHAT_ID] = maxForm.maxGroupChatId.trim();
 
   if (maxForm.maxBotToken.trim()) {
     values[SK.MAX_BOT_TOKEN] = maxForm.maxBotToken.trim();
@@ -685,24 +679,11 @@ export function IntegrationsPage() {
                 />
               </div>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-200" htmlFor="int-max-group-chat-id">
-                  ID группы для доп. промпта (MAX_GROUP_CHAT_ID)
-                </label>
-                <p className="text-sm text-slate-400">
-                  Числовой <code className="text-xs">chat_id</code> группы MAX. Текст доп. промпта задаётся в разделе{" "}
-                  <strong>«Роли»</strong>.
-                </p>
-                <input
-                  id="int-max-group-chat-id"
-                  className="w-full rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  type="text"
-                  autoComplete="off"
-                  placeholder="Например -1001234567890"
-                  value={maxForm.maxGroupChatId}
-                  onChange={(e) => setMaxField("maxGroupChatId", e.target.value)}
-                />
-              </div>
+              <p className="rounded-lg border border-slate-700/80 bg-slate-950/40 px-3 py-2 text-sm text-slate-400">
+                Дополнительные промпты для <strong>групповых</strong> чатов MAX (несколько{" "}
+                <code className="text-xs text-slate-300">chat_id</code>) настраиваются в разделе{" "}
+                <strong>«Роли и промпты»</strong> — блок «Групповые чаты MAX».
+              </p>
 
               <button
                 type="submit"

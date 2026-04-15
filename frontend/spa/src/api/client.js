@@ -15,6 +15,20 @@ apiClient.interceptors.request.use(
             config.headers.Authorization = `Bearer ${token}`;
         }
 
+        const { user, settingsOrganizationId } = useAuthStore.getState();
+        const orgScope = user?.organization_id ?? settingsOrganizationId;
+        const urlPath = String(config.url || '');
+        const needsOrg =
+            orgScope &&
+            (urlPath.includes('/settings') ||
+                urlPath.includes('/knowledge') ||
+                urlPath.includes('/shops') ||
+                urlPath.includes('/mis'));
+        if (needsOrg) {
+            const params = { ...(config.params || {}), organization_id: orgScope };
+            config.params = params;
+        }
+
         const { domain, appSid, extra } = useBitrixAuthStore.getState();
         const authId = extra?.AUTH_ID || '';
 

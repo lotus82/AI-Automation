@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import Depends, Request
 from redis.asyncio import Redis
@@ -246,31 +247,39 @@ ChatSessionQueryRepositoryDep = Annotated[
 ]
 
 
-def get_process_text_message_use_case(
-    embedding_service: EmbeddingServiceDep,
-    knowledge_repository: KnowledgeRepositoryDep,
-    llm_service: LLMServiceDep,
-    chat_memory: ChatMemoryRepositoryDep,
-    crm_service: CRMDep,
-    settings_repository: SettingsRepositoryDep,
-    chat_monitoring: ChatMonitoringPublisherDep,
-    search_service: SearchServiceDep,
-    redis: RedisDep,
-    settings: SettingsDep,
+def build_process_text_message_use_case(
+    session: AsyncSession,
+    redis: Redis,
+    settings: Settings,
+    *,
+    organization_id: UUID | None = None,
 ) -> ProcessTextMessageUseCase:
-    """Сценарий текстового RAG с историей в Redis."""
+    """Сборка сценария RAG с областью ``organization_id`` (настройки и база знаний организации) или глобально при ``None``."""
+    settings_repo = PostgresSettingsRepository(session, redis, organization_id=organization_id)
     return ProcessTextMessageUseCase(
-        embedding_service=embedding_service,
-        knowledge_repository=knowledge_repository,
-        llm_service=llm_service,
-        chat_memory=chat_memory,
-        crm_service=crm_service,
-        settings_repository=settings_repository,
-        chat_monitoring=chat_monitoring,
-        search_service=search_service,
+        embedding_service=OpenAIEmbeddingService(settings=settings, settings_repo=settings_repo),
+        knowledge_repository=SqlAlchemyKnowledgeRepository(session, organization_id=organization_id),
+        llm_service=DynamicLLMService(settings=settings, settings_repo=settings_repo),
+        chat_memory=HybridChatMemoryRepository(
+            RedisChatMemoryRepository(redis, ttl_seconds=settings.chat_memory_ttl_seconds),
+            session,
+        ),
+        crm_service=build_crm_service(settings.bitrix24_webhook_url),
+        settings_repository=settings_repo,
+        chat_monitoring=get_chat_events_broadcaster(),
+        search_service=DuckDuckGoSearchService(),
         redis_client=redis,
         app_settings=settings,
     )
+
+
+def get_process_text_message_use_case(
+    session: AsyncSessionDep,
+    redis: RedisDep,
+    settings: SettingsDep,
+) -> ProcessTextMessageUseCase:
+    """Сценарий текстового RAG с историей в Redis (глобальные настройки и БЗ без привязки к организации)."""
+    return build_process_text_message_use_case(session, redis, settings, organization_id=None)
 
 
 ProcessTextMessageUseCaseDep = Annotated[
@@ -296,24 +305,15 @@ def build_max_long_poll_stack(
     session: AsyncSession,
     redis: Redis,
     settings: Settings,
+    *,
+    organization_id: UUID | None = None,
 ) -> tuple[ProcessTextMessageUseCase, MaxMessengerClient]:
-    """Собирает сценарий текста и клиент MAX с **одним** ``PostgresSettingsRepository`` (долгоживущая сессия long poll)."""
-    settings_repo = PostgresSettingsRepository(session, redis)
-    use_case = ProcessTextMessageUseCase(
-        embedding_service=OpenAIEmbeddingService(settings=settings, settings_repo=settings_repo),
-        knowledge_repository=SqlAlchemyKnowledgeRepository(session),
-        llm_service=DynamicLLMService(settings=settings, settings_repo=settings_repo),
-        chat_memory=HybridChatMemoryRepository(
-            RedisChatMemoryRepository(redis, ttl_seconds=settings.chat_memory_ttl_seconds),
-            session,
-        ),
-        crm_service=build_crm_service(settings.bitrix24_webhook_url),
-        settings_repository=settings_repo,
-        chat_monitoring=get_chat_events_broadcaster(),
-        search_service=DuckDuckGoSearchService(),
-        redis_client=redis,
-        app_settings=settings,
-    )
+    """Собирает сценарий текста и клиент MAX с **одним** ``PostgresSettingsRepository`` (долгоживущая сессия long poll).
+
+    ``organization_id``: область настроек/БЗ (переменная окружения ``MAX_LONG_POLL_ORGANIZATION_ID``); ``None`` — глобальные настройки.
+    """
+    settings_repo = PostgresSettingsRepository(session, redis, organization_id=organization_id)
+    use_case = build_process_text_message_use_case(session, redis, settings, organization_id=organization_id)
     client = MaxMessengerClient(
         settings_repository=settings_repo,
         api_base_url=settings.max_api_base,

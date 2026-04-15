@@ -8,6 +8,7 @@ import logging
 from src.core.config import llm_system_time_prefix
 from src.core.utils.text_cleaner import remove_markdown
 from src.domain import system_setting_keys as sk
+from src.domain.system_roles import get_default_consultant_prompt
 from src.domain.default_system_prompts import FALLBACK_DEFAULT_CONSULTANT_PROMPT
 from src.domain.entities import Schedule, ScheduledEvent
 from src.use_cases.interfaces import (
@@ -71,8 +72,7 @@ class ExecuteProactiveScheduleUseCase:
             parts.append(f"Данные события (JSON):\n{payload}")
         user_for_rag = "\n\n".join(parts) if parts else "Сформируй короткое проактивное сообщение для чата."
 
-        db_prompt = (await self._settings_repo.get_value(sk.DEFAULT_CONSULTANT_PROMPT) or "").strip()
-        base = db_prompt or FALLBACK_DEFAULT_CONSULTANT_PROMPT
+        base = (await get_default_consultant_prompt(self._settings_repo)).strip() or FALLBACK_DEFAULT_CONSULTANT_PROMPT
         extra = (schedule.prompt or "").strip()
         if extra:
             full_system = f"{base}\n\n--- Инструкции расписания ---\n\n{extra}"

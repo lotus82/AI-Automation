@@ -23,7 +23,9 @@ from src.api.routers import (
     leads,
     max_bot,
     notifications,
+    mis,
     portal_management,
+    public_store,
     questionnaires,
     registration_forms,
     schedules,
@@ -40,6 +42,10 @@ from src.api.dependencies import build_max_long_poll_stack
 from src.core.config import get_settings
 from src.core.logging import setup_logging
 from src.infrastructure.database import AsyncSessionLocal
+from src.infrastructure.max_bot_identity import (
+    enumerate_max_bot_long_poll_org_ids,
+    sync_all_max_bot_user_ids_from_stored_tokens,
+)
 from src.infrastructure.portal_bootstrap import ensure_portal_bootstrap
 
 logger = logging.getLogger(__name__)
@@ -58,8 +64,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.ari_stop_event = asyncio.Event()
     app.state.ari_listener_task = None
     app.state.max_poll_stop = None
-    app.state.max_poll_task = None
-    app.state.max_poll_session_cm = None
+    app.state.max_poll_tasks = []
+    app.state.max_poll_session_cms = []
     if (
         (settings.asterisk_url or "").strip()
         and (settings.asterisk_ari_user or "").strip()
@@ -71,47 +77,79 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             run_ari_event_listener(settings, app.state.redis, app.state.ari_stop_event),
             name="ari-event-listener",
         )
-    # Long poll MAX всегда поднимаем фоновой задачей; реально дергается /updates только если
-    # MAX_USE_POLLING=1 в system_settings (панель). Раньше при MAX_USE_POLLING=false в .env задача
-    # не создавалась — БД «вкл» игнорировалось, бот молчал без вебхука.
+
     app.state.max_poll_stop = asyncio.Event()
-    sess_cm = AsyncSessionLocal()
-    app.state.max_poll_session_cm = sess_cm
-    app.state.max_poll_session = await sess_cm.__aenter__()
-    uc, mx_client = build_max_long_poll_stack(
-        app.state.max_poll_session,
-        app.state.redis,
-        settings,
-    )
-    app.state.max_poll_task = asyncio.create_task(
-        mx_client.start_polling(
-            uc,
-            session=app.state.max_poll_session,
-            stop_event=app.state.max_poll_stop,
-            redis=app.state.redis,
-            app_settings=settings,
-        ),
-        name="max-long-polling",
-    )
-    logger.info(
-        "Задача MAX long polling запущена; опрос platform-api при MAX_USE_POLLING в БД; "
-        "переменная окружения MAX_USE_POLLING больше не отключает создание воркера (см. README)."
-    )
+
     async with AsyncSessionLocal() as bootstrap_session:
         await ensure_portal_bootstrap(bootstrap_session)
+        await sync_all_max_bot_user_ids_from_stored_tokens(
+            bootstrap_session,
+            app.state.redis,
+            app_settings=settings,
+        )
+        targets = await enumerate_max_bot_long_poll_org_ids(bootstrap_session)
+        await bootstrap_session.commit()
+
+    if settings.max_long_poll_organization_id is not None:
+        flt = settings.max_long_poll_organization_id
+        before = len(targets)
+        targets = [t for t in targets if t == flt]
+        logger.info(
+            "MAX long poll: фильтр MAX_LONG_POLL_ORGANIZATION_ID=%s — контекстов %s → %s",
+            flt,
+            before,
+            len(targets),
+        )
+
+    if not targets:
+        logger.info(
+            "MAX long poll: в БД нет MAX_BOT_TOKEN (ни в system_settings, ни в organization_settings) — "
+            "задачи опроса /updates не созданы",
+        )
+    else:
+        for org_id in targets:
+            sess_cm = AsyncSessionLocal()
+            poll_session = await sess_cm.__aenter__()
+            app.state.max_poll_session_cms.append(sess_cm)
+            uc, mx_client = build_max_long_poll_stack(
+                poll_session,
+                app.state.redis,
+                settings,
+                organization_id=org_id,
+            )
+            task_name = "max-long-poll-global" if org_id is None else f"max-long-poll-org-{org_id}"
+            t = asyncio.create_task(
+                mx_client.start_polling(
+                    uc,
+                    session=poll_session,
+                    stop_event=app.state.max_poll_stop,
+                    redis=app.state.redis,
+                    app_settings=settings,
+                    organization_id=org_id,
+                ),
+                name=task_name,
+            )
+            app.state.max_poll_tasks.append(t)
+        logger.info(
+            "Запущено задач MAX long polling: %s (опрос при MAX_USE_POLLING в соответствующих настройках)",
+            len(app.state.max_poll_tasks),
+        )
     try:
         yield
     finally:
         if app.state.max_poll_stop is not None:
             app.state.max_poll_stop.set()
-        if app.state.max_poll_task is not None:
-            app.state.max_poll_task.cancel()
+        for t in app.state.max_poll_tasks:
+            t.cancel()
             try:
-                await app.state.max_poll_task
+                await t
             except asyncio.CancelledError:
                 pass
-        if app.state.max_poll_session_cm is not None:
-            await app.state.max_poll_session_cm.__aexit__(None, None, None)
+        for cm in app.state.max_poll_session_cms:
+            try:
+                await cm.__aexit__(None, None, None)
+            except Exception:
+                logger.exception("Ошибка закрытия сессии MAX long poll")
         if app.state.ari_listener_task is not None:
             app.state.ari_stop_event.set()
             app.state.ari_listener_task.cancel()
@@ -156,6 +194,9 @@ def create_app() -> FastAPI:
     application.include_router(questionnaires.router, prefix="/api")
     application.include_router(registration_forms.router, prefix="/api")
     application.include_router(shops.router, prefix="/api")
+    application.include_router(public_store.router, prefix="/api")
+    application.include_router(mis.router, prefix="/api")
+    application.include_router(mis.public_router, prefix="/api")
     application.include_router(knowledge.router, prefix="/api", tags=["knowledge"])
     application.include_router(telephony.router, prefix="/api", tags=["telephony"])
     application.include_router(dialer.router, prefix="/api", tags=["dialer"])

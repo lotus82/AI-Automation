@@ -113,7 +113,7 @@ function mapApiToForm(data) {
 /** Абсолютная ссылка на прохождение опроса без панели (мессенджеры, Битрикс и т.д.). */
 function publicSurveyUrl(id) {
   if (typeof window === "undefined") return "";
-  const path = `/public/survey/${id}`;
+  const path = `/survey/${id}`;
   return `${window.location.origin}${path}`;
 }
 

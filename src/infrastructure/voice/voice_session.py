@@ -36,14 +36,19 @@ from src.use_cases.interfaces import IVoiceTransport
 _VoiceModeLit = Literal["consultant", "trainer_client"]
 
 
-async def load_salutespeech_auth_key(settings: Settings, redis: Redis) -> str:
-    """Authorization Key SaluteSpeech: переменная окружения или **system_settings** (кэш Redis)."""
+async def load_salutespeech_auth_key(
+    settings: Settings,
+    redis: Redis,
+    *,
+    organization_id: UUID | None = None,
+) -> str:
+    """Authorization Key SaluteSpeech: переменная окружения или **system_settings** / **organization_settings**."""
     env_key = (settings.salutespeech_auth_key or "").strip()
     if env_key:
         return env_key
     async with AsyncSessionLocal() as session:
         try:
-            repo = PostgresSettingsRepository(session, redis)
+            repo = PostgresSettingsRepository(session, redis, organization_id=organization_id)
             db_key = (await repo.get_value(sk.SALUTESPEECH_AUTH_KEY) or "").strip()
             await session.commit()
         except Exception:
@@ -53,13 +58,16 @@ async def load_salutespeech_auth_key(settings: Settings, redis: Redis) -> str:
 
 
 async def resolve_effective_voice_stt_provider(
-    settings: Settings, redis: Redis
+    settings: Settings,
+    redis: Redis,
+    *,
+    organization_id: UUID | None = None,
 ) -> tuple[str, str | None]:
     """Фактический STT: при отсутствии **DEEPGRAM_API_KEY** переключаемся на SaluteSpeech, если ключ Сбера задан.
 
     Возвращает ``(effective_stt, reason_to_close_ws)``; ``reason`` — ``None``, если можно запускать пайплайн.
     """
-    salute = await load_salutespeech_auth_key(settings, redis)
+    salute = await load_salutespeech_auth_key(settings, redis, organization_id=organization_id)
     effective = settings.voice_stt_provider
     if effective == "deepgram" and not (settings.deepgram_api_key or "").strip():
         if salute:
@@ -97,6 +105,7 @@ async def run_voice_pipeline_session(
     voice_stt_provider_effective: str | None = None,
     fixed_greeting_phrase: str | None = None,
     voice_user_name: str | None = None,
+    organization_id: UUID | None = None,
 ) -> None:
     """STT → RAG/тренажёр → TTS; в конце постановка analyze_conversation_task."""
     from src.infrastructure.voice.processor import VoicePipelineOrchestrator
@@ -104,7 +113,11 @@ async def run_voice_pipeline_session(
     if voice_stt_provider_effective is not None:
         stt_eff = voice_stt_provider_effective
     else:
-        stt_eff, gate_err = await resolve_effective_voice_stt_provider(settings, redis)
+        stt_eff, gate_err = await resolve_effective_voice_stt_provider(
+            settings,
+            redis,
+            organization_id=organization_id,
+        )
         if gate_err:
             raise ValueError(gate_err)
 
@@ -120,13 +133,13 @@ async def run_voice_pipeline_session(
     ) -> str:
         async with AsyncSessionLocal() as session:
             try:
-                knowledge = SqlAlchemyKnowledgeRepository(session)
+                knowledge = SqlAlchemyKnowledgeRepository(session, organization_id=organization_id)
                 redis_memory = RedisChatMemoryRepository(
                     redis,
                     ttl_seconds=settings.chat_memory_ttl_seconds,
                 )
                 memory = HybridChatMemoryRepository(redis_memory, session)
-                settings_repo = PostgresSettingsRepository(session, redis)
+                settings_repo = PostgresSettingsRepository(session, redis, organization_id=organization_id)
                 embeddings = OpenAIEmbeddingService(settings=settings, settings_repo=settings_repo)
                 llm = DynamicLLMService(settings=settings, settings_repo=settings_repo)
                 crm = build_crm_service(settings.bitrix24_webhook_url)
@@ -168,10 +181,10 @@ async def run_voice_pipeline_session(
     salute_auth: SaluteSpeechAuthManager | None = None
     salute_voice: str | None = None
     if stt_eff == "salutespeech" or settings.voice_tts_provider == "salutespeech":
-        raw_key = await load_salutespeech_auth_key(settings, redis)
+        raw_key = await load_salutespeech_auth_key(settings, redis, organization_id=organization_id)
         async with AsyncSessionLocal() as session:
             try:
-                repo = PostgresSettingsRepository(session, redis)
+                repo = PostgresSettingsRepository(session, redis, organization_id=organization_id)
                 raw_scope = (
                     (await repo.get_value(sk.SALUTESPEECH_SCOPE) or "").strip()
                     or (settings.salutespeech_scope or "SALUTE_SPEECH_PERS").strip()

@@ -196,20 +196,12 @@
         </div>
 
         <div class="voice-tester__field">
-          <label class="voice-tester__label" for="max-group-chat-id">ID группы для доп. промпта (MAX_GROUP_CHAT_ID)</label>
+          <label class="voice-tester__label" for="max-group-chat-prompts">Групповые чаты MAX (MAX_GROUP_CHAT_PROMPTS)</label>
           <p class="dashboard__lead dashboard__lead--small" style="margin-top:0;">
-            Числовой <code>chat_id</code> группы MAX (как в панели «Боты»). Если <code>session_id</code> совпадает с этим значением, к базовому промпту консультанта добавляется текст ниже. Оставьте пустым, если не нужно.
+            JSON-объект: ключ — <code>chat_id</code> группы (строка), значение — дополнительный промпт для этой группы.
+            Удобнее править в SPA: раздел «Роли и промпты». Пустой объект <code>{}</code> — без доп. промптов по группам (устаревшие MAX_GROUP_CHAT_ID / MAX_GROUP_ADDITIONAL_PROMPT всё ещё учитываются, если ключа нет в JSON).
           </p>
-          <input class="voice-tester__input" type="text" id="max-group-chat-id" autocomplete="off"
-                 placeholder="Например -1001234567890" />
-        </div>
-
-        <div class="voice-tester__field">
-          <label class="voice-tester__label" for="max-group-prompt">Дополнительный промпт для группы (MAX_GROUP_ADDITIONAL_PROMPT)</label>
-          <p class="dashboard__lead dashboard__lead--small" style="margin-top:0;">
-            Вставляется в системное сообщение после основного промпта консультанта и инструкций по CRM, до дополнения для текстовых ботов.
-          </p>
-          <textarea id="max-group-prompt" class="voice-tester__input" rows="3" style="resize:vertical;"></textarea>
+          <textarea id="max-group-chat-prompts" class="voice-tester__input" rows="5" style="resize:vertical;" placeholder='{"-1001234567890": "Промпт для группы 1"}'></textarea>
         </div>
 
         <h2 class="dashboard__subtitle">Голос: SaluteSpeech (Сбер)</h2>

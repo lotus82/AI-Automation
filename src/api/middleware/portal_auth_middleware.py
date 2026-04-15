@@ -55,6 +55,14 @@ def _is_public_path(path: str, method: str) -> bool:
         return True
     if method == "POST" and re.match(r"^/api/shops/public/[^/]+/order$", path):
         return True
+    if method == "GET" and re.match(r"^/api/public-store/[^/]+$", path):
+        return True
+    if method == "POST" and re.match(r"^/api/public-store/[^/]+/orders$", path):
+        return True
+    if method == "GET" and re.match(r"^/api/public/mis/patient/[^/]+$", path):
+        return True
+    if method == "POST" and re.match(r"^/api/public/mis/patient/[^/]+/diary$", path):
+        return True
     if method == "GET" and path.startswith("/api/shops/assets/"):
         return True
     return False

@@ -12,8 +12,9 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import and_, select, update as sa_update
+from sqlalchemy.exc import IntegrityError
 from starlette.responses import FileResponse, Response
 
 from src.api.dependencies import (
@@ -22,8 +23,24 @@ from src.api.dependencies import (
     SettingsDep,
     SettingsRepositoryDep,
 )
+from src.api.dependencies_portal import PortalUserDep
+from src.api.org_scope import resolve_organization_scope
+from src.infrastructure.repositories.shop_repositories import (
+    SqlAlchemyCategoryRepository,
+    SqlAlchemyDiscountRepository,
+    SqlAlchemyShopOrderRepository,
+    SqlAlchemyShopRepository,
+    SqlAlchemyStaticPageRepository,
+)
 from src.api.schemas.shops import (
+    CategoryAdmin,
+    CategoryCreate,
+    CategoryPatch,
+    DiscountAdmin,
+    DiscountCreate,
     MessengerThemesPatch,
+    OrderAdmin,
+    OrderItemAdmin,
     ProductAdmin,
     ProductCreate,
     ProductPublic,
@@ -34,6 +51,9 @@ from src.api.schemas.shops import (
     ShopListItem,
     ShopOrderCreate,
     ShopOrderResponse,
+    StaticPageAdmin,
+    StaticPageCreate,
+    StaticPagePatch,
     ShopUpdate,
     ThemeColors,
 )
@@ -44,7 +64,7 @@ from src.infrastructure.services.shop_order_notify import (
     send_vk_order_message,
 )
 from src.core.config import Settings
-from src.infrastructure.models import ShopModel, ShopProductModel
+from src.infrastructure.models import ProductModel, ShopModel, ShopProductTag
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +162,73 @@ def _public_file_url(request: Request, shop_id: UUID, relative: str) -> str:
     return f"{base}/api/shops/assets/{shop_id}/{rel}"
 
 
+def _shop_settings(row: ShopModel) -> dict[str, Any]:
+    return dict(row.settings or {})
+
+
+def _row_logo_upload_rel(row: ShopModel) -> str | None:
+    raw = _shop_settings(row).get("upload_logo_rel")
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    return s or None
+
+
+def _resolve_logo_url(request: Request, row: ShopModel) -> str | None:
+    if row.logo_url and str(row.logo_url).strip():
+        return str(row.logo_url).strip()
+    rel = _row_logo_upload_rel(row)
+    if rel:
+        return _public_file_url(request, row.id, rel)
+    return None
+
+
+def _seller_from_settings(row: ShopModel, key: str) -> str | None:
+    raw = _shop_settings(row).get(key)
+    if raw is None:
+        return None
+    return _strip_opt(str(raw))
+
+
+def _product_primary_photo_rel(photos: object | None) -> str | None:
+    if not isinstance(photos, list) or not photos:
+        return None
+    p0 = photos[0]
+    if p0 is None:
+        return None
+    s = str(p0).strip()
+    return s or None
+
+
+def _product_to_admin(request: Request, shop_id: UUID, p: ProductModel) -> ProductAdmin:
+    rels = p.photos if isinstance(p.photos, list) else []
+    photo_urls: list[str] = []
+    for x in rels:
+        if x is None:
+            continue
+        s = str(x).strip()
+        if not s:
+            continue
+        photo_urls.append(_public_file_url(request, shop_id, s))
+    primary = photo_urls[0] if photo_urls else None
+    price = _decimal_price(p.price)
+    tag_val = p.tag.value if p.tag is not None else None
+    return ProductAdmin(
+        id=p.id,
+        name=p.name,
+        description=p.description or "",
+        price=f"{price:.2f}",
+        stock_quantity=int(p.stock_quantity or 0),
+        photo_url=primary,
+        sort_order=p.sort_order,
+        created_at=p.created_at,
+        category_id=p.category_id,
+        tag=tag_val,
+        is_active=bool(p.is_active),
+        photo_urls=photo_urls,
+    )
+
+
 def _slug_base_from_name(name: str) -> str:
     s = name.lower().strip()
     s = re.sub(r"[^a-z0-9]+", "-", s)
@@ -151,11 +238,16 @@ def _slug_base_from_name(name: str) -> str:
     return f"shop-{uuid.uuid4().hex[:10]}"
 
 
-async def _unique_slug(session: AsyncSessionDep, base: str) -> str:
+async def _unique_slug(session: AsyncSessionDep, base: str, organization_id: UUID | None) -> str:
     candidate = base
     n = 0
     while True:
-        ex = await session.scalar(select(ShopModel.id).where(ShopModel.slug == candidate))
+        org_clause = (
+            ShopModel.organization_id.is_(None)
+            if organization_id is None
+            else ShopModel.organization_id == organization_id
+        )
+        ex = await session.scalar(select(ShopModel.id).where(ShopModel.slug == candidate, org_clause))
         if ex is None:
             return candidate
         n += 1
@@ -177,19 +269,23 @@ async def _shop_admin_detail(session: AsyncSessionDep, request: Request, shop_id
     row = await session.get(ShopModel, shop_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Магазин не найден")
-    logo = _public_file_url(request, row.id, row.logo_path) if row.logo_path else None
+    logo = _resolve_logo_url(request, row)
+    st = _shop_settings(row)
+    mt = st.get("messenger_themes")
+    themes = dict(mt) if isinstance(mt, dict) else {}
     return ShopAdminDetail(
         id=row.id,
+        organization_id=row.organization_id,
         slug=row.slug,
         name=row.name,
         description=row.description or "",
         logo_url=logo,
         created_at=row.created_at,
         updated_at=row.updated_at,
-        messenger_themes=dict(row.messenger_themes or {}),
-        seller_max_chat_id=row.seller_max_chat_id,
-        seller_telegram_chat_id=row.seller_telegram_chat_id,
-        seller_vk_peer_id=row.seller_vk_peer_id,
+        messenger_themes=themes,
+        seller_max_chat_id=_seller_from_settings(row, "seller_max_chat_id"),
+        seller_telegram_chat_id=_seller_from_settings(row, "seller_telegram_chat_id"),
+        seller_vk_peer_id=_seller_from_settings(row, "seller_vk_peer_id"),
     )
 
 
@@ -206,9 +302,16 @@ async def public_place_order(
     s = (slug or "").strip().lower()
     if not s:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Магазин не найден")
-    shop = await session.scalar(select(ShopModel).where(ShopModel.slug == s))
-    if shop is None:
+    stmt = select(ShopModel).where(ShopModel.slug == s)
+    matches = (await session.scalars(stmt)).all()
+    if not matches:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Магазин не найден")
+    if len(matches) > 1:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Несколько магазинов с таким адресом. Используйте ссылку с явным идентификатором магазина.",
+        )
+    shop = matches[0]
 
     m = (body.messenger or "max").strip().lower()
     if m not in DEFAULT_MESSENGER_THEMES:
@@ -223,12 +326,12 @@ async def public_place_order(
         qty_by_pid[it.product_id] += it.quantity
 
     p_result = await session.execute(
-        select(ShopProductModel).where(
-            ShopProductModel.shop_id == shop.id,
-            ShopProductModel.id.in_(list(qty_by_pid.keys())),
+        select(ProductModel).where(
+            ProductModel.shop_id == shop.id,
+            ProductModel.id.in_(list(qty_by_pid.keys())),
         ),
     )
-    found: dict[UUID, ShopProductModel] = {p.id: p for p in p_result.scalars().all()}
+    found: dict[UUID, ProductModel] = {p.id: p for p in p_result.scalars().all()}
     if len(found) != len(qty_by_pid):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Один из товаров не найден в этом магазине")
 
@@ -246,7 +349,7 @@ async def public_place_order(
     vk_tok = ""
 
     if m == "max":
-        raw_sid = _strip_opt(shop.seller_max_chat_id)
+        raw_sid = _seller_from_settings(shop, "seller_max_chat_id")
         if not raw_sid:
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -265,7 +368,7 @@ async def public_place_order(
                 detail="Бот MAX не настроен (MAX_BOT_TOKEN)",
             )
     elif m == "telegram":
-        raw_sid = _strip_opt(shop.seller_telegram_chat_id)
+        raw_sid = _seller_from_settings(shop, "seller_telegram_chat_id")
         if not raw_sid:
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -279,7 +382,7 @@ async def public_place_order(
                 detail="Бот Telegram не настроен (TELEGRAM_BOT_TOKEN)",
             )
     elif m == "vk":
-        raw_sid = _strip_opt(shop.seller_vk_peer_id)
+        raw_sid = _seller_from_settings(shop, "seller_vk_peer_id")
         if not raw_sid:
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -321,15 +424,15 @@ async def public_place_order(
     try:
         for pid, q in qty_by_pid.items():
             stmt = (
-                sa_update(ShopProductModel)
+                sa_update(ProductModel)
                 .where(
                     and_(
-                        ShopProductModel.id == pid,
-                        ShopProductModel.shop_id == shop.id,
-                        ShopProductModel.stock_quantity >= q,
+                        ProductModel.id == pid,
+                        ProductModel.shop_id == shop.id,
+                        ProductModel.stock_quantity >= q,
                     ),
                 )
-                .values(stock_quantity=ShopProductModel.stock_quantity - q)
+                .values(stock_quantity=ProductModel.stock_quantity - q)
             )
             res = await session.execute(stmt)
             if res.rowcount != 1:
@@ -345,9 +448,9 @@ async def public_place_order(
     async def _restore_stock() -> None:
         for pid, q in qty_by_pid.items():
             await session.execute(
-                sa_update(ShopProductModel)
-                .where(and_(ShopProductModel.id == pid, ShopProductModel.shop_id == shop.id))
-                .values(stock_quantity=ShopProductModel.stock_quantity + q),
+                sa_update(ProductModel)
+                .where(and_(ProductModel.id == pid, ProductModel.shop_id == shop.id))
+                .values(stock_quantity=ProductModel.stock_quantity + q),
             )
         await session.commit()
 
@@ -395,20 +498,31 @@ async def public_shop_by_slug(
     m = (messenger or "max").strip().lower()
     if m not in DEFAULT_MESSENGER_THEMES:
         m = "max"
-    row = await session.scalar(select(ShopModel).where(ShopModel.slug == slug.strip().lower()))
-    if row is None:
+    s_slug = slug.strip().lower()
+    stmt = select(ShopModel).where(ShopModel.slug == s_slug)
+    matches = (await session.scalars(stmt)).all()
+    if not matches:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Магазин не найден")
+    if len(matches) > 1:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Несколько магазинов с таким адресом. Используйте ссылку с id магазина.",
+        )
+    row = matches[0]
     r = await session.execute(
-        select(ShopProductModel)
-        .where(ShopProductModel.shop_id == row.id)
-        .order_by(ShopProductModel.sort_order, ShopProductModel.name),
+        select(ProductModel)
+        .where(ProductModel.shop_id == row.id, ProductModel.is_active.is_(True))
+        .order_by(ProductModel.sort_order, ProductModel.name),
     )
     products = r.scalars().all()
-    theme = _merge_themes(dict(row.messenger_themes or {}), m)
-    logo_url = _public_file_url(request, row.id, row.logo_path) if row.logo_path else None
+    st = _shop_settings(row)
+    mt = st.get("messenger_themes")
+    theme = _merge_themes(dict(mt) if isinstance(mt, dict) else {}, m)
+    logo_url = _resolve_logo_url(request, row)
     plist: list[ProductPublic] = []
     for p in products:
-        photo = _public_file_url(request, row.id, p.photo_path) if p.photo_path else None
+        rel = _product_primary_photo_rel(p.photos)
+        photo = _public_file_url(request, row.id, rel) if rel else None
         price = _decimal_price(p.price)
         plist.append(
             ProductPublic(
@@ -441,10 +555,11 @@ async def list_shops(session: AsyncSessionDep, request: Request) -> list[ShopLis
     rows = r.scalars().all()
     out: list[ShopListItem] = []
     for row in rows:
-        logo = _public_file_url(request, row.id, row.logo_path) if row.logo_path else None
+        logo = _resolve_logo_url(request, row)
         out.append(
             ShopListItem(
                 id=row.id,
+                organization_id=row.organization_id,
                 slug=row.slug,
                 name=row.name,
                 description=row.description or "",
@@ -464,22 +579,390 @@ async def create_shop(
     settings: SettingsDep,
 ) -> ShopAdminDetail:
     base = body.slug or _slug_base_from_name(body.name)
-    slug = await _unique_slug(session, base)
-    themes = _themes_patch_to_dict(body.messenger_themes)
+    slug = await _unique_slug(session, base, body.organization_id)
+    patch = _themes_patch_to_dict(body.messenger_themes)
+    settings: dict[str, Any] = {
+        "messenger_themes": _merge_stored_themes({}, patch) if patch else {},
+    }
+    for fld in ("seller_max_chat_id", "seller_telegram_chat_id", "seller_vk_peer_id"):
+        v = getattr(body, fld, None)
+        if v is not None:
+            settings[fld] = _strip_opt(str(v))
     row = ShopModel(
+        organization_id=body.organization_id,
         slug=slug,
         name=body.name.strip(),
         description=(body.description or "").strip(),
-        messenger_themes=themes,
-        seller_max_chat_id=_strip_opt(body.seller_max_chat_id),
-        seller_telegram_chat_id=_strip_opt(body.seller_telegram_chat_id),
-        seller_vk_peer_id=_strip_opt(body.seller_vk_peer_id),
+        settings=settings,
     )
     session.add(row)
     await session.commit()
     await session.refresh(row)
     _shop_root(settings, row.id).mkdir(parents=True, exist_ok=True)
     return await _shop_admin_detail(session, request, row.id)
+
+
+@router.get("/organization", response_model=list[ShopListItem])
+async def list_shops_by_organization(
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    request: Request,
+    organization_id: UUID | None = Query(
+        None,
+        description="Супер-админ: id организации; без параметра — магазины без привязки к организации",
+    ),
+) -> list[ShopListItem]:
+    """Список магазинов в области текущего тенанта (JWT + ``resolve_organization_scope``)."""
+    scope = resolve_organization_scope(user, organization_id)
+    repo = SqlAlchemyShopRepository(session, organization_id=scope)
+    rows = await repo.list_shops()
+    out: list[ShopListItem] = []
+    for row in rows:
+        logo = _resolve_logo_url(request, row)
+        out.append(
+            ShopListItem(
+                id=row.id,
+                organization_id=row.organization_id,
+                slug=row.slug,
+                name=row.name,
+                description=row.description or "",
+                logo_url=logo,
+                created_at=row.created_at,
+                updated_at=row.updated_at,
+            ),
+        )
+    return out
+
+
+@router.post("/organization", response_model=ShopAdminDetail, status_code=status.HTTP_201_CREATED)
+async def create_shop_by_organization(
+    user: PortalUserDep,
+    body: ShopCreate,
+    session: AsyncSessionDep,
+    request: Request,
+    settings: SettingsDep,
+    organization_id: UUID | None = Query(
+        None,
+        description="Супер-админ: id организации; иначе берётся из JWT / тела",
+    ),
+) -> ShopAdminDetail:
+    """Создание магазина в организации (или без организации, если супер-админ не передал scope)."""
+    oid_q = organization_id if organization_id is not None else body.organization_id
+    scope = resolve_organization_scope(user, oid_q)
+    base = body.slug or _slug_base_from_name(body.name)
+    slug = await _unique_slug(session, base, scope)
+    patch = _themes_patch_to_dict(body.messenger_themes)
+    settings_dict: dict[str, Any] = {
+        "messenger_themes": _merge_stored_themes({}, patch) if patch else {},
+    }
+    for fld in ("seller_max_chat_id", "seller_telegram_chat_id", "seller_vk_peer_id"):
+        v = getattr(body, fld, None)
+        if v is not None:
+            settings_dict[fld] = _strip_opt(str(v))
+    row = ShopModel(
+        organization_id=scope,
+        slug=slug,
+        name=body.name.strip(),
+        description=(body.description or "").strip(),
+        settings=settings_dict,
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    _shop_root(settings, row.id).mkdir(parents=True, exist_ok=True)
+    return await _shop_admin_detail(session, request, row.id)
+
+
+# --- Админ: категории, статические страницы, скидки, заказы (JWT + organization_id в query) ---
+
+
+@router.get("/{shop_id}/categories", response_model=list[CategoryAdmin])
+async def admin_list_categories(
+    shop_id: UUID,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None),
+) -> list[CategoryAdmin]:
+    scope = resolve_organization_scope(user, organization_id)
+    repo = SqlAlchemyCategoryRepository(session, organization_id=scope)
+    rows = await repo.list_categories(shop_id)
+    return [
+        CategoryAdmin(
+            id=r.id,
+            parent_id=r.parent_id,
+            name=r.name,
+            description=r.description or "",
+            order_index=r.order_index,
+        )
+        for r in rows
+    ]
+
+
+@router.post("/{shop_id}/categories", response_model=CategoryAdmin, status_code=status.HTTP_201_CREATED)
+async def admin_create_category(
+    shop_id: UUID,
+    body: CategoryCreate,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None),
+) -> CategoryAdmin:
+    scope = resolve_organization_scope(user, organization_id)
+    repo = SqlAlchemyCategoryRepository(session, organization_id=scope)
+    row = await repo.create_category(
+        shop_id,
+        name=body.name,
+        description=body.description,
+        parent_id=body.parent_id,
+        order_index=body.order_index,
+    )
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Магазин не найден или нет доступа")
+    await session.commit()
+    await session.refresh(row)
+    return CategoryAdmin(
+        id=row.id,
+        parent_id=row.parent_id,
+        name=row.name,
+        description=row.description or "",
+        order_index=row.order_index,
+    )
+
+
+@router.patch("/{shop_id}/categories/{category_id}", response_model=CategoryAdmin)
+async def admin_patch_category(
+    shop_id: UUID,
+    category_id: UUID,
+    body: CategoryPatch,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None),
+) -> CategoryAdmin:
+    scope = resolve_organization_scope(user, organization_id)
+    repo = SqlAlchemyCategoryRepository(session, organization_id=scope)
+    row = await repo.update_category(
+        shop_id,
+        category_id,
+        name=body.name,
+        description=body.description,
+        order_index=body.order_index,
+    )
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Категория не найдена")
+    await session.commit()
+    await session.refresh(row)
+    return CategoryAdmin(
+        id=row.id,
+        parent_id=row.parent_id,
+        name=row.name,
+        description=row.description or "",
+        order_index=row.order_index,
+    )
+
+
+@router.delete("/{shop_id}/categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_category(
+    shop_id: UUID,
+    category_id: UUID,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None),
+) -> Response:
+    scope = resolve_organization_scope(user, organization_id)
+    repo = SqlAlchemyCategoryRepository(session, organization_id=scope)
+    ok = await repo.delete_category(shop_id, category_id)
+    if not ok:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Категория не найдена")
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{shop_id}/static-pages", response_model=list[StaticPageAdmin])
+async def admin_list_static_pages(
+    shop_id: UUID,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None),
+) -> list[StaticPageAdmin]:
+    scope = resolve_organization_scope(user, organization_id)
+    repo = SqlAlchemyStaticPageRepository(session, organization_id=scope)
+    rows = await repo.list_pages(shop_id)
+    return [StaticPageAdmin(id=r.id, title=r.title, slug=r.slug, content=r.content or "") for r in rows]
+
+
+@router.post("/{shop_id}/static-pages", response_model=StaticPageAdmin, status_code=status.HTTP_201_CREATED)
+async def admin_create_static_page(
+    shop_id: UUID,
+    body: StaticPageCreate,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None),
+) -> StaticPageAdmin:
+    scope = resolve_organization_scope(user, organization_id)
+    repo = SqlAlchemyStaticPageRepository(session, organization_id=scope)
+    row = await repo.create_page(shop_id, title=body.title, slug=body.slug, content=body.content)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Магазин не найден или нет доступа")
+    try:
+        await session.commit()
+        await session.refresh(row)
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Страница с таким slug уже есть") from None
+    return StaticPageAdmin(id=row.id, title=row.title, slug=row.slug, content=row.content or "")
+
+
+@router.patch("/{shop_id}/static-pages/{page_id}", response_model=StaticPageAdmin)
+async def admin_patch_static_page(
+    shop_id: UUID,
+    page_id: UUID,
+    body: StaticPagePatch,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None),
+) -> StaticPageAdmin:
+    scope = resolve_organization_scope(user, organization_id)
+    repo = SqlAlchemyStaticPageRepository(session, organization_id=scope)
+    row = await repo.update_page(
+        shop_id,
+        page_id,
+        title=body.title,
+        slug=body.slug,
+        content=body.content,
+    )
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Страница не найдена или slug занят")
+    try:
+        await session.commit()
+        await session.refresh(row)
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Конфликт slug") from None
+    return StaticPageAdmin(id=row.id, title=row.title, slug=row.slug, content=row.content or "")
+
+
+@router.delete("/{shop_id}/static-pages/{page_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_static_page(
+    shop_id: UUID,
+    page_id: UUID,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None),
+) -> Response:
+    scope = resolve_organization_scope(user, organization_id)
+    repo = SqlAlchemyStaticPageRepository(session, organization_id=scope)
+    ok = await repo.delete_page(shop_id, page_id)
+    if not ok:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Страница не найдена")
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{shop_id}/discounts", response_model=list[DiscountAdmin])
+async def admin_list_discounts(
+    shop_id: UUID,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None),
+) -> list[DiscountAdmin]:
+    scope = resolve_organization_scope(user, organization_id)
+    repo = SqlAlchemyDiscountRepository(session, organization_id=scope)
+    rows = await repo.list_discounts(shop_id)
+    out: list[DiscountAdmin] = []
+    for r in rows:
+        pct = _decimal_price(r.percentage)
+        out.append(
+            DiscountAdmin(
+                id=r.id,
+                name=r.name,
+                percentage=f"{pct:.2f}",
+                start_date=r.start_date,
+                end_date=r.end_date,
+            ),
+        )
+    return out
+
+
+@router.post("/{shop_id}/discounts", response_model=DiscountAdmin, status_code=status.HTTP_201_CREATED)
+async def admin_create_discount(
+    shop_id: UUID,
+    body: DiscountCreate,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None),
+) -> DiscountAdmin:
+    scope = resolve_organization_scope(user, organization_id)
+    repo = SqlAlchemyDiscountRepository(session, organization_id=scope)
+    row = await repo.create_discount(
+        shop_id,
+        name=body.name,
+        percentage=body.percentage,
+        start_date=body.start_date,
+        end_date=body.end_date,
+    )
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Магазин не найден или нет доступа")
+    await session.commit()
+    await session.refresh(row)
+    pct = _decimal_price(row.percentage)
+    return DiscountAdmin(
+        id=row.id,
+        name=row.name,
+        percentage=f"{pct:.2f}",
+        start_date=row.start_date,
+        end_date=row.end_date,
+    )
+
+
+@router.delete("/{shop_id}/discounts/{discount_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_discount(
+    shop_id: UUID,
+    discount_id: UUID,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None),
+) -> Response:
+    scope = resolve_organization_scope(user, organization_id)
+    repo = SqlAlchemyDiscountRepository(session, organization_id=scope)
+    ok = await repo.delete_discount(shop_id, discount_id)
+    if not ok:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Скидка не найдена")
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{shop_id}/orders", response_model=list[OrderAdmin])
+async def admin_list_orders(
+    shop_id: UUID,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None),
+) -> list[OrderAdmin]:
+    scope = resolve_organization_scope(user, organization_id)
+    repo = SqlAlchemyShopOrderRepository(session, organization_id=scope)
+    rows = await repo.list_orders_with_items(shop_id)
+    out: list[OrderAdmin] = []
+    for o in rows:
+        items_out = [
+            OrderItemAdmin(
+                id=it.id,
+                product_id=it.product_id,
+                quantity=it.quantity,
+                price_at_time=f"{_decimal_price(it.price_at_time):.2f}",
+            )
+            for it in (o.items or [])
+        ]
+        out.append(
+            OrderAdmin(
+                id=o.id,
+                status=o.status.value if hasattr(o.status, "value") else str(o.status),
+                customer_info=dict(o.customer_info or {}),
+                total_amount=f"{_decimal_price(o.total_amount):.2f}",
+                delivery_address=o.delivery_address or "",
+                delivery_status=o.delivery_status or "",
+                items=items_out,
+            ),
+        )
+    return out
 
 
 @router.get("/{shop_id}", response_model=ShopAdminDetail)
@@ -502,19 +985,32 @@ async def patch_shop(
     if body.description is not None:
         row.description = body.description.strip()
     if body.slug is not None:
-        other = await session.scalar(select(ShopModel.id).where(ShopModel.slug == body.slug, ShopModel.id != shop_id))
+        org_clause = (
+            ShopModel.organization_id.is_(None)
+            if row.organization_id is None
+            else ShopModel.organization_id == row.organization_id
+        )
+        other = await session.scalar(
+            select(ShopModel.id).where(
+                ShopModel.slug == body.slug,
+                ShopModel.id != shop_id,
+                org_clause,
+            ),
+        )
         if other is not None:
             raise HTTPException(status.HTTP_409_CONFLICT, detail="Такой slug уже занят")
         row.slug = body.slug
+    st = dict(row.settings or {})
     if body.messenger_themes is not None:
         patch = _themes_patch_to_dict(body.messenger_themes)
-        row.messenger_themes = _merge_stored_themes(dict(row.messenger_themes or {}), patch)
+        st["messenger_themes"] = _merge_stored_themes(dict(st.get("messenger_themes") or {}), patch)
     if "seller_max_chat_id" in body.model_fields_set:
-        row.seller_max_chat_id = _strip_opt(body.seller_max_chat_id)
+        st["seller_max_chat_id"] = _strip_opt(body.seller_max_chat_id)
     if "seller_telegram_chat_id" in body.model_fields_set:
-        row.seller_telegram_chat_id = _strip_opt(body.seller_telegram_chat_id)
+        st["seller_telegram_chat_id"] = _strip_opt(body.seller_telegram_chat_id)
     if "seller_vk_peer_id" in body.model_fields_set:
-        row.seller_vk_peer_id = _strip_opt(body.seller_vk_peer_id)
+        st["seller_vk_peer_id"] = _strip_opt(body.seller_vk_peer_id)
+    row.settings = st
     await session.commit()
     await session.refresh(row)
     return await _shop_admin_detail(session, request, shop_id)
@@ -560,7 +1056,9 @@ async def upload_shop_logo(
     root.mkdir(parents=True, exist_ok=True)
     dest = root / rel
     dest.write_bytes(raw)
-    row.logo_path = rel
+    st = dict(row.settings or {})
+    st["upload_logo_rel"] = rel
+    row.settings = st
     await session.commit()
     await session.refresh(row)
     return await _shop_admin_detail(session, request, shop_id)
@@ -572,28 +1070,12 @@ async def list_products(shop_id: UUID, session: AsyncSessionDep, request: Reques
     if shop is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Магазин не найден")
     r = await session.execute(
-        select(ShopProductModel)
-        .where(ShopProductModel.shop_id == shop_id)
-        .order_by(ShopProductModel.sort_order, ShopProductModel.name),
+        select(ProductModel)
+        .where(ProductModel.shop_id == shop_id)
+        .order_by(ProductModel.sort_order, ProductModel.name),
     )
     rows = r.scalars().all()
-    out: list[ProductAdmin] = []
-    for p in rows:
-        photo = _public_file_url(request, shop_id, p.photo_path) if p.photo_path else None
-        price = _decimal_price(p.price)
-        out.append(
-            ProductAdmin(
-                id=p.id,
-                name=p.name,
-                description=p.description or "",
-                price=f"{price:.2f}",
-                stock_quantity=int(p.stock_quantity or 0),
-                photo_url=photo,
-                sort_order=p.sort_order,
-                created_at=p.created_at,
-            ),
-        )
-    return out
+    return [_product_to_admin(request, shop_id, p) for p in rows]
 
 
 @router.post("/{shop_id}/products", response_model=ProductAdmin, status_code=status.HTTP_201_CREATED)
@@ -607,27 +1089,25 @@ async def create_product(
     if shop is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Магазин не найден")
     price = _decimal_price(body.price)
-    p = ShopProductModel(
+    tag_enum: ShopProductTag | None = None
+    if body.tag is not None:
+        tag_enum = ShopProductTag(body.tag)
+    p = ProductModel(
         shop_id=shop_id,
+        category_id=body.category_id,
         name=body.name.strip(),
         description=(body.description or "").strip(),
         price=price,
         stock_quantity=body.stock_quantity,
         sort_order=body.sort_order,
+        photos=[],
+        is_active=body.is_active,
+        tag=tag_enum,
     )
     session.add(p)
     await session.commit()
     await session.refresh(p)
-    return ProductAdmin(
-        id=p.id,
-        name=p.name,
-        description=p.description or "",
-        price=f"{_decimal_price(p.price):.2f}",
-        stock_quantity=int(p.stock_quantity or 0),
-        photo_url=None,
-        sort_order=p.sort_order,
-        created_at=p.created_at,
-    )
+    return _product_to_admin(request, shop_id, p)
 
 
 @router.patch("/{shop_id}/products/{product_id}", response_model=ProductAdmin)
@@ -638,7 +1118,7 @@ async def patch_product(
     session: AsyncSessionDep,
     request: Request,
 ) -> ProductAdmin:
-    p = await session.get(ShopProductModel, product_id)
+    p = await session.get(ProductModel, product_id)
     if p is None or p.shop_id != shop_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Товар не найден")
     if body.name is not None:
@@ -651,19 +1131,15 @@ async def patch_product(
         p.sort_order = body.sort_order
     if body.stock_quantity is not None:
         p.stock_quantity = body.stock_quantity
+    if "category_id" in body.model_fields_set:
+        p.category_id = body.category_id
+    if "tag" in body.model_fields_set:
+        p.tag = ShopProductTag(body.tag) if body.tag is not None else None
+    if "is_active" in body.model_fields_set and body.is_active is not None:
+        p.is_active = body.is_active
     await session.commit()
     await session.refresh(p)
-    photo = _public_file_url(request, shop_id, p.photo_path) if p.photo_path else None
-    return ProductAdmin(
-        id=p.id,
-        name=p.name,
-        description=p.description or "",
-        price=f"{_decimal_price(p.price):.2f}",
-        stock_quantity=int(p.stock_quantity or 0),
-        photo_url=photo,
-        sort_order=p.sort_order,
-        created_at=p.created_at,
-    )
+    return _product_to_admin(request, shop_id, p)
 
 
 @router.delete("/{shop_id}/products/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -673,10 +1149,10 @@ async def delete_product(
     session: AsyncSessionDep,
     settings: SettingsDep,
 ) -> Response:
-    p = await session.get(ShopProductModel, product_id)
+    p = await session.get(ProductModel, product_id)
     if p is None or p.shop_id != shop_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Товар не найден")
-    rel = p.photo_path
+    rel = _product_primary_photo_rel(p.photos)
     await session.delete(p)
     await session.commit()
     if rel:
@@ -695,7 +1171,7 @@ async def upload_product_photo(
     settings: SettingsDep,
     file: UploadFile = File(...),
 ) -> ProductAdmin:
-    p = await session.get(ShopProductModel, product_id)
+    p = await session.get(ProductModel, product_id)
     if p is None or p.shop_id != shop_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Товар не найден")
     raw = await _read_upload_limit(file)
@@ -709,17 +1185,7 @@ async def upload_product_photo(
     if dest is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Некорректный путь")
     dest.write_bytes(raw)
-    p.photo_path = rel
+    p.photos = [rel]
     await session.commit()
     await session.refresh(p)
-    photo = _public_file_url(request, shop_id, p.photo_path) if p.photo_path else None
-    return ProductAdmin(
-        id=p.id,
-        name=p.name,
-        description=p.description or "",
-        price=f"{_decimal_price(p.price):.2f}",
-        stock_quantity=int(p.stock_quantity or 0),
-        photo_url=photo,
-        sort_order=p.sort_order,
-        created_at=p.created_at,
-    )
+    return _product_to_admin(request, shop_id, p)
