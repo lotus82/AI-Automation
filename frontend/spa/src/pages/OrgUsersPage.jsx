@@ -3,6 +3,24 @@ import { Navigate } from "react-router-dom";
 import api from "../api/client.js";
 import { useAuthStore } from "../store/authStore.js";
 
+/** Текст ошибки FastAPI (detail: string | { msg }[]). */
+function formatApiDetail(d) {
+  if (d == null) return "";
+  if (typeof d === "string") return d;
+  if (Array.isArray(d)) {
+    return d
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && "msg" in item) return String(item.msg);
+        return JSON.stringify(item);
+      })
+      .filter(Boolean)
+      .join("; ");
+  }
+  if (typeof d === "object") return d.message ? String(d.message) : JSON.stringify(d);
+  return String(d);
+}
+
 const SECTION_OPTIONS = [
   { id: "qa-analytics", label: "QA-аналитика" },
   { id: "ai-trainer", label: "ИИ-тренер" },
@@ -10,6 +28,7 @@ const SECTION_OPTIONS = [
   { id: "questionnaires", label: "Опросники" },
   { id: "forms", label: "Формы" },
   { id: "shops", label: "Магазины" },
+  { id: "mis", label: "МИС" },
   { id: "integrations", label: "Интеграции" },
   { id: "roles", label: "Роли" },
   { id: "settings", label: "Настройки" },
@@ -31,8 +50,11 @@ function roleLabel(role) {
 export function OrgUsersPage() {
   const user = useAuthStore((s) => s.user);
   const canManage = user?.role === "org_admin" || user?.role === "director";
+  const isOrgAdmin = user?.role === "org_admin";
 
   const [rows, setRows] = useState([]);
+  /** portal_user_id пользователей, у которых уже есть профиль врача МИС */
+  const [misDoctorPortalIds, setMisDoctorPortalIds] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -48,15 +70,25 @@ export function OrgUsersPage() {
     setLoading(true);
     setError("");
     try {
-      const { data } = await api.get("/portal/users");
+      const usersReq = api.get("/portal/users");
+      const doctorsReq =
+        user?.role === "org_admin"
+          ? api.get("/mis/admin/doctors").catch(() => ({ data: [] }))
+          : Promise.resolve({ data: [] });
+      const [{ data }, doctorsRes] = await Promise.all([usersReq, doctorsReq]);
       setRows(Array.isArray(data) ? data : []);
+      const ids = new Set(
+        (Array.isArray(doctorsRes.data) ? doctorsRes.data : []).map((d) => String(d.portal_user_id)),
+      );
+      setMisDoctorPortalIds(ids);
     } catch (e) {
-      setError(e?.response?.data?.detail ?? e?.message ?? String(e));
+      setError(formatApiDetail(e?.response?.data?.detail) || e?.message || String(e));
       setRows([]);
+      setMisDoctorPortalIds(new Set());
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.role]);
 
   useEffect(() => {
     if (canManage) load();
@@ -95,8 +127,7 @@ export function OrgUsersPage() {
       setFormMsg("Пользователь создан.");
       await load();
     } catch (err) {
-      const d = err?.response?.data?.detail;
-      setFormMsg(typeof d === "string" ? d : "Ошибка создания");
+      setFormMsg(formatApiDetail(err?.response?.data?.detail) || "Ошибка создания");
     } finally {
       setCreating(false);
     }
@@ -135,6 +166,26 @@ export function OrgUsersPage() {
     }
   };
 
+  const onAssignMisDoctor = async (row) => {
+    const q = window.prompt(
+      `Специализация / должность для «${row.username}» (можно оставить пустым):`,
+      "",
+    );
+    if (q === null) return;
+    try {
+      await api.post("/mis/admin/doctors", {
+        portal_user_id: row.id,
+        qualification: String(q).trim(),
+      });
+      setMisDoctorPortalIds((prev) => new Set(prev).add(String(row.id)));
+      window.alert(
+        "Пользователь назначен врачом МИС. При необходимости включите раздел «МИС» в правах доступа ниже.",
+      );
+    } catch (err) {
+      window.alert(formatApiDetail(err?.response?.data?.detail) || err?.message || "Ошибка");
+    }
+  };
+
   return (
     <div className="w-full min-w-0 space-y-8 text-slate-100">
       <div>
@@ -143,6 +194,12 @@ export function OrgUsersPage() {
           Администратор организации создаёт директоров и сотрудников и задаёт права доступа к разделам. Директор может
           добавлять только сотрудников.
         </p>
+        {isOrgAdmin ? (
+          <p className="mt-2 text-sm text-slate-500">
+            МИС: у сотрудника или директора нажмите «Назначить врачом», затем при необходимости отметьте раздел «МИС» в
+            правах — иначе пункт меню не появится.
+          </p>
+        ) : null}
       </div>
 
       <section className="rounded-xl border border-slate-700/80 bg-slate-900/40 p-6">
@@ -241,9 +298,24 @@ export function OrgUsersPage() {
                   <div>
                     <span className="font-mono text-sky-300">{row.username}</span>
                     <span className="ml-2 text-slate-500">· {roleLabel(row.role)}</span>
+                    {misDoctorPortalIds.has(String(row.id)) ? (
+                      <span className="ml-2 rounded bg-teal-900/50 px-1.5 py-0.5 text-xs text-teal-200">врач МИС</span>
+                    ) : null}
                     {!row.is_active ? <span className="ml-2 text-amber-400">отключён</span> : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    {isOrgAdmin &&
+                    row.is_active &&
+                    !misDoctorPortalIds.has(String(row.id)) &&
+                    (row.role === "employee" || row.role === "director" || row.role === "org_admin") ? (
+                      <button
+                        type="button"
+                        className="rounded border border-teal-700 px-2 py-1 text-xs text-teal-200 hover:bg-teal-950/80"
+                        onClick={() => onAssignMisDoctor(row)}
+                      >
+                        Назначить врачом
+                      </button>
+                    ) : null}
                     {row.id !== user.id && (user.role === "org_admin" || (user.role === "director" && row.role === "employee")) ? (
                       <button
                         type="button"
