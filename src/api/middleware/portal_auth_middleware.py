@@ -18,6 +18,7 @@ _UUID_RE = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-f
 # Публичное прохождение опроса
 _RE_QUESTIONNAIRE_GET = re.compile(rf"^/api/questionnaires/{_UUID_RE}$")
 _RE_QUESTIONNAIRE_ASSESS = re.compile(rf"^/api/questionnaires/{_UUID_RE}/assess$")
+_RE_QUESTIONNAIRE_ASSESS_STREAM = re.compile(rf"^/api/questionnaires/{_UUID_RE}/assess-stream$")
 _RE_FORMS_PUBLIC_GET = re.compile(rf"^/api/forms/public/events/{_UUID_RE}$")
 _RE_FORMS_PUBLIC_SUBMIT = re.compile(rf"^/api/forms/public/events/{_UUID_RE}/submit$")
 
@@ -46,6 +47,8 @@ def _is_public_path(path: str, method: str) -> bool:
     if method == "GET" and _RE_QUESTIONNAIRE_GET.match(path):
         return True
     if method == "POST" and _RE_QUESTIONNAIRE_ASSESS.match(path):
+        return True
+    if method == "POST" and _RE_QUESTIONNAIRE_ASSESS_STREAM.match(path):
         return True
     if method == "GET" and _RE_FORMS_PUBLIC_GET.match(path):
         return True

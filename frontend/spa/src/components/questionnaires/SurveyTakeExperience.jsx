@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import api from "../../api/client.js";
+import { useAuthStore } from "../../store/authStore.js";
 
 function formatApiDetail(err) {
   const body = err?.response?.data;
@@ -20,8 +22,118 @@ function sortQuestions(qs) {
   return [...(qs || [])].sort((a, b) => a.order - b.order || String(a.id).localeCompare(String(b.id)));
 }
 
+function sortOptionsByScore(options) {
+  return [...(options || [])].sort((a, b) => a.score - b.score || String(a.id).localeCompare(String(b.id)));
+}
+
+const verdictMdComponents = {
+  p: ({ children }) => <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>,
+  strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
+  ol: ({ children }) => <ol className="mb-3 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>,
+  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+  h1: ({ children }) => <h3 className="mb-2 mt-4 text-base font-bold text-slate-900 first:mt-0">{children}</h3>,
+  h2: ({ children }) => <h3 className="mb-2 mt-4 text-base font-bold text-slate-900 first:mt-0">{children}</h3>,
+  h3: ({ children }) => <h4 className="mb-2 mt-3 text-sm font-semibold text-slate-900 first:mt-0">{children}</h4>,
+  code: ({ children }) => (
+    <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.85em] text-teal-900">{children}</code>
+  ),
+  pre: ({ children }) => (
+    <pre className="mb-3 overflow-x-auto rounded-lg bg-slate-100 p-3 text-xs text-slate-800 last:mb-0">{children}</pre>
+  ),
+  a: ({ href, children }) => (
+    <a href={href} className="font-medium text-teal-700 underline decoration-teal-300 hover:text-teal-800" target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ),
+};
+
+const verdictMdComponentsDark = {
+  ...verdictMdComponents,
+  p: ({ children }) => <p className="mb-3 last:mb-0 leading-relaxed text-slate-200">{children}</p>,
+  strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
+  li: ({ children }) => <li className="leading-relaxed text-slate-200">{children}</li>,
+  h1: ({ children }) => <h3 className="mb-2 mt-4 text-base font-bold text-white first:mt-0">{children}</h3>,
+  h2: ({ children }) => <h3 className="mb-2 mt-4 text-base font-bold text-white first:mt-0">{children}</h3>,
+  h3: ({ children }) => <h4 className="mb-2 mt-3 text-sm font-semibold text-slate-100 first:mt-0">{children}</h4>,
+  code: ({ children }) => (
+    <code className="rounded bg-slate-800 px-1 py-0.5 font-mono text-[0.85em] text-teal-200">{children}</code>
+  ),
+  pre: ({ children }) => (
+    <pre className="mb-3 overflow-x-auto rounded-lg bg-slate-950/80 p-3 text-xs text-slate-200 last:mb-0">{children}</pre>
+  ),
+  a: ({ href, children }) => (
+    <a href={href} className="font-medium text-teal-300 underline hover:text-teal-200" target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ),
+};
+
+async function postAssessStream(questionnaireId, payload, { onDelta, onDone, onError }) {
+  const token = useAuthStore.getState().token;
+  const res = await fetch(`/api/questionnaires/${questionnaireId}/assess-stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try {
+      const j = await res.json();
+      if (typeof j?.detail === "string") msg = j.detail;
+    } catch {
+      /* ignore */
+    }
+    onError(msg);
+    return;
+  }
+  const reader = res.body?.getReader();
+  if (!reader) {
+    onError("Нет тела ответа");
+    return;
+  }
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+      for (const block of parts) {
+        for (const line of block.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") {
+            onDone();
+            return;
+          }
+          try {
+            const j = JSON.parse(data);
+            if (j.error) {
+              onError(typeof j.error === "string" ? j.error : JSON.stringify(j.error));
+              return;
+            }
+            if (typeof j.t === "string" && j.t) onDelta(j.t);
+          } catch {
+            /* ignore malformed chunk */
+          }
+        }
+      }
+    }
+    onDone();
+  } catch (e) {
+    onError(e?.message ?? String(e));
+  }
+}
+
 /**
- * Загрузка опросника, форма ответов, POST assess, вывод вердикта ИИ.
+ * Загрузка опросника, форма ответов, SSE assess-stream, вывод вердикта ИИ.
  * @param {{ questionnaireId: string, onClose?: () => void, variant?: 'panel' | 'public' }} props
  */
 export function SurveyTakeExperience({ questionnaireId, onClose, variant = "panel" }) {
@@ -32,10 +144,12 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
   const [values, setValues] = useState({});
   const [phase, setPhase] = useState("form");
   const [analysis, setAnalysis] = useState("");
+  const [streamActive, setStreamActive] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [pdfBusy, setPdfBusy] = useState(false);
 
   const ordered = useMemo(() => sortQuestions(qn?.questions), [qn]);
+  const isPublic = variant === "public";
 
   const load = useCallback(async () => {
     if (!questionnaireId) return;
@@ -43,6 +157,7 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
     setLoadError("");
     setPhase("form");
     setAnalysis("");
+    setStreamActive(false);
     setSubmitError("");
     setValues({});
     try {
@@ -109,6 +224,28 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
     return { answers };
   };
 
+  /** Сообщение об ошибке, если не на все вопросы дан ответ; иначе пустая строка. */
+  const validateAllAnswered = () => {
+    for (const q of ordered) {
+      const v = values[q.id] || { optionIds: [], text: "" };
+      const shortQ = q.text.length > 120 ? `${q.text.slice(0, 120)}…` : q.text;
+      if (q.type === "text") {
+        if (!(v.text || "").trim()) {
+          return `Ответьте на вопрос: ${shortQ}`;
+        }
+      } else if (q.type === "single") {
+        if ((v.optionIds || []).length !== 1) {
+          return `Выберите один вариант ответа: ${shortQ}`;
+        }
+      } else if (q.type === "multiple") {
+        if (!(v.optionIds || []).length) {
+          return `Выберите хотя бы один вариант: ${shortQ}`;
+        }
+      }
+    }
+    return "";
+  };
+
   const onSubmit = async (ev) => {
     ev.preventDefault();
     setSubmitError("");
@@ -116,30 +253,66 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
       setSubmitError("В опроснике нет вопросов.");
       return;
     }
-    setPhase("loading");
+    const validationError = validateAllAnswered();
+    if (validationError) {
+      setSubmitError(validationError);
+      return;
+    }
+    setPhase("result");
+    setAnalysis("");
+    setStreamActive(true);
     try {
-      const { data } = await api.post(
-        `/questionnaires/${questionnaireId}/assess`,
-        buildPayload(),
-      );
-      setAnalysis((data?.analysis || "").trim() || "Пустой ответ модели.");
-      setPhase("result");
+      await postAssessStream(questionnaireId, buildPayload(), {
+        onDelta: (t) => setAnalysis((prev) => prev + t),
+        onDone: () => setStreamActive(false),
+        onError: (msg) => {
+          setStreamActive(false);
+          setSubmitError(msg || "Ошибка оценки");
+          setPhase("form");
+        },
+      });
     } catch (e) {
       console.error(e);
+      setStreamActive(false);
       setSubmitError(formatApiDetail(e) || "Ошибка оценки");
       setPhase("form");
     }
   };
 
-  const shell =
-    variant === "public"
-      ? "mx-auto max-w-2xl rounded-xl border border-slate-800 bg-slate-900/90 p-6 shadow-xl"
-      : "rounded-xl border border-slate-800 bg-slate-900/60 p-6";
+  const shell = isPublic
+    ? "mx-auto max-w-2xl rounded-2xl border border-teal-100/90 bg-white p-6 shadow-lg shadow-teal-900/5"
+    : "rounded-xl border border-slate-800 bg-slate-900/60 p-6";
+
+  const titleClass = isPublic ? "text-lg font-semibold text-slate-900" : "text-lg font-semibold text-white";
+  const qTextClass = isPublic ? "text-sm font-medium text-slate-800" : "text-sm font-medium text-slate-200";
+  const rangeClass = isPublic ? "mt-1 text-xs text-slate-500" : "mt-1 text-xs text-slate-500";
+  const optionRowClass = isPublic
+    ? "mt-2 flex cursor-pointer items-center gap-2 rounded-xl border border-transparent px-2 py-2 hover:border-teal-100 hover:bg-teal-50/50"
+    : "mt-2 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-800/60";
+  const optionTextClass = isPublic ? "text-sm text-slate-700" : "text-sm text-slate-300";
+  const optionScoreClass = isPublic ? "text-slate-500" : "text-slate-500";
+  const inputTextareaClass = isPublic
+    ? "mt-3 w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500/30"
+    : "mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-600 focus:outline-none";
+  const dividerClass = isPublic ? "border-b border-slate-100 pb-5 last:border-0" : "border-b border-slate-800 pb-5 last:border-0";
+  const verdictBoxClass = isPublic
+    ? "rounded-xl border border-teal-100 bg-gradient-to-b from-teal-50/40 to-white p-4 text-sm text-slate-800"
+    : "rounded-lg bg-slate-950/80 p-4 text-sm leading-relaxed text-slate-200";
+  const mdComponents = isPublic ? verdictMdComponents : verdictMdComponentsDark;
+  const primaryBtnClass = isPublic
+    ? "rounded-xl bg-teal-600 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-teal-500 sm:w-auto sm:px-8"
+    : "rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-500 sm:w-auto sm:px-8";
+  const secondaryBtnClass = isPublic
+    ? "rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+    : "rounded-lg border border-slate-500 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700 disabled:opacity-50";
+  const closeBtnClass = isPublic
+    ? "shrink-0 rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+    : "shrink-0 rounded-lg px-2 py-1 text-sm text-slate-400 hover:bg-slate-800 hover:text-white";
 
   if (loading) {
     return (
       <div className={shell}>
-        <p className="text-sm text-slate-400">Загрузка опросника…</p>
+        <p className={isPublic ? "text-sm text-slate-600" : "text-sm text-slate-400"}>Загрузка опросника…</p>
       </div>
     );
   }
@@ -147,13 +320,9 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
   if (loadError) {
     return (
       <div className={shell}>
-        <p className="text-sm text-red-400">{loadError}</p>
+        <p className={isPublic ? "text-sm text-red-600" : "text-sm text-red-400"}>{loadError}</p>
         {onClose ? (
-          <button
-            type="button"
-            className="mt-4 rounded-lg bg-slate-700 px-3 py-1.5 text-sm text-white hover:bg-slate-600"
-            onClick={onClose}
-          >
+          <button type="button" className={`mt-4 ${primaryBtnClass} px-3 py-1.5`} onClick={onClose}>
             Закрыть
           </button>
         ) : null}
@@ -161,50 +330,55 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
     );
   }
 
+  const showVerdict = phase === "result";
+
   return (
     <div className={shell}>
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-white">{qn?.title}</h2>
-          {variant === "public" ? (
-            <p className="mt-1 text-xs text-slate-500">Внешняя ссылка на опрос</p>
-          ) : null}
+          <h2 className={titleClass}>{qn?.title}</h2>
         </div>
         {onClose ? (
-          <button
-            type="button"
-            className="shrink-0 rounded-lg px-2 py-1 text-sm text-slate-400 hover:bg-slate-800 hover:text-white"
-            onClick={onClose}
-            aria-label="Закрыть"
-          >
+          <button type="button" className={closeBtnClass} onClick={onClose} aria-label="Закрыть">
             ✕
           </button>
         ) : null}
       </div>
 
-      {phase === "loading" ? (
-        <div className="flex flex-col items-center gap-3 py-12">
-          <div
-            className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400"
-            aria-hidden
-          />
-          <p className="text-sm text-slate-400">ИИ анализирует ответы…</p>
-        </div>
-      ) : null}
-
-      {phase === "result" ? (
+      {showVerdict ? (
         <div className="space-y-4">
-          <h3 className="text-sm font-medium text-emerald-400">Вердикт ИИ</h3>
-          <div className="whitespace-pre-wrap rounded-lg bg-slate-950/80 p-4 text-sm leading-relaxed text-slate-200">
-            {analysis}
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className={isPublic ? "text-sm font-semibold text-teal-800" : "text-sm font-medium text-emerald-400"}>
+              Заключение
+            </h3>
+            {streamActive ? (
+              <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+                <span
+                  className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-teal-500"
+                  aria-hidden
+                />
+                формируется…
+              </span>
+            ) : null}
+          </div>
+          <div className={verdictBoxClass}>
+            {analysis.trim() ? (
+              <ReactMarkdown components={mdComponents}>{analysis}</ReactMarkdown>
+            ) : streamActive ? (
+              <p className={isPublic ? "text-slate-500" : "text-slate-400"}>Подключение к модели…</p>
+            ) : (
+              <p className={isPublic ? "text-slate-500" : "text-slate-400"}>Пустой ответ модели.</p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+              className={primaryBtnClass}
+              disabled={streamActive}
               onClick={() => {
                 setPhase("form");
                 setAnalysis("");
+                setStreamActive(false);
                 load();
               }}
             >
@@ -212,8 +386,8 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
             </button>
             <button
               type="button"
-              disabled={pdfBusy || !analysis}
-              className="rounded-lg border border-slate-500 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700 disabled:opacity-50"
+              disabled={pdfBusy || !analysis.trim() || streamActive}
+              className={secondaryBtnClass}
               onClick={async () => {
                 setPdfBusy(true);
                 try {
@@ -258,14 +432,10 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
                 }
               }}
             >
-              {pdfBusy ? "PDF…" : "Скачать"}
+              {pdfBusy ? "PDF…" : "Скачать PDF"}
             </button>
             {onClose ? (
-              <button
-                type="button"
-                className="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
-                onClick={onClose}
-              >
+              <button type="button" className={secondaryBtnClass} onClick={onClose}>
                 Закрыть
               </button>
             ) : null}
@@ -276,71 +446,85 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
       {phase === "form" ? (
         <form onSubmit={onSubmit} className="space-y-6">
           {!ordered.length ? (
-            <p className="text-sm text-amber-400">В этом опроснике пока нет вопросов.</p>
+            <p className={isPublic ? "text-sm text-amber-700" : "text-sm text-amber-400"}>
+              В этом опроснике пока нет вопросов.
+            </p>
           ) : null}
-          {ordered.map((q) => (
-            <div key={q.id} className="border-b border-slate-800 pb-5 last:border-0">
-              <p className="text-sm font-medium text-slate-200">{q.text}</p>
-              <p className="mt-1 text-xs text-slate-500">
-                Диапазон баллов: {q.min_score} — {q.max_score}
-              </p>
-              {q.type === "text" ? (
-                <textarea
-                  className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-600 focus:outline-none"
-                  rows={4}
-                  placeholder="Ваш ответ"
-                  value={values[q.id]?.text ?? ""}
-                  onChange={(e) => setText(q.id, e.target.value)}
-                />
-              ) : null}
-              {q.type === "single"
-                ? (q.options || []).map((o) => (
-                    <label
-                      key={o.id}
-                      className="mt-2 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-800/60"
-                    >
-                      <input
-                        type="radio"
-                        name={`q-${q.id}`}
-                        className="text-emerald-500 focus:ring-emerald-500"
-                        checked={(values[q.id]?.optionIds || []).includes(o.id)}
-                        onChange={() => setOptionSingle(q.id, o.id)}
-                      />
-                      <span className="text-sm text-slate-300">
-                        {o.text}{" "}
-                        <span className="text-slate-500">({o.score} б.)</span>
-                      </span>
-                    </label>
-                  ))
-                : null}
-              {q.type === "multiple"
-                ? (q.options || []).map((o) => (
-                    <label
-                      key={o.id}
-                      className="mt-2 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-800/60"
-                    >
-                      <input
-                        type="checkbox"
-                        className="rounded border-slate-600 text-emerald-500 focus:ring-emerald-500"
-                        checked={(values[q.id]?.optionIds || []).includes(o.id)}
-                        onChange={() => toggleOptionMultiple(q.id, o.id)}
-                      />
-                      <span className="text-sm text-slate-300">
-                        {o.text}{" "}
-                        <span className="text-slate-500">({o.score} б.)</span>
-                      </span>
-                    </label>
-                  ))
-                : null}
-            </div>
-          ))}
-          {submitError ? <p className="text-sm text-red-400">{submitError}</p> : null}
+          {ordered.map((q) => {
+            const opts = sortOptionsByScore(q.options);
+            return (
+              <div key={q.id} className={dividerClass}>
+                <p className={qTextClass}>{q.text}</p>
+                {!isPublic ? (
+                  <p className={rangeClass}>
+                    Диапазон баллов: {q.min_score} — {q.max_score}
+                  </p>
+                ) : null}
+                {q.type === "text" ? (
+                  <textarea
+                    className={inputTextareaClass}
+                    rows={4}
+                    placeholder="Ваш ответ"
+                    value={values[q.id]?.text ?? ""}
+                    onChange={(e) => setText(q.id, e.target.value)}
+                  />
+                ) : null}
+                {q.type === "single"
+                  ? opts.map((o) => (
+                      <label key={o.id} className={optionRowClass}>
+                        <input
+                          type="radio"
+                          name={`q-${q.id}`}
+                          className={isPublic ? "text-teal-600 focus:ring-teal-500" : "text-emerald-500 focus:ring-emerald-500"}
+                          checked={(values[q.id]?.optionIds || []).includes(o.id)}
+                          onChange={() => setOptionSingle(q.id, o.id)}
+                        />
+                        <span className={optionTextClass}>
+                          {o.text}
+                          {!isPublic ? (
+                            <>
+                              {" "}
+                              <span className={optionScoreClass}>({o.score} б.)</span>
+                            </>
+                          ) : null}
+                        </span>
+                      </label>
+                    ))
+                  : null}
+                {q.type === "multiple"
+                  ? opts.map((o) => (
+                      <label key={o.id} className={optionRowClass}>
+                        <input
+                          type="checkbox"
+                          className={
+                            isPublic
+                              ? "rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                              : "rounded border-slate-600 text-emerald-500 focus:ring-emerald-500"
+                          }
+                          checked={(values[q.id]?.optionIds || []).includes(o.id)}
+                          onChange={() => toggleOptionMultiple(q.id, o.id)}
+                        />
+                        <span className={optionTextClass}>
+                          {o.text}
+                          {!isPublic ? (
+                            <>
+                              {" "}
+                              <span className={optionScoreClass}>({o.score} б.)</span>
+                            </>
+                          ) : null}
+                        </span>
+                      </label>
+                    ))
+                  : null}
+              </div>
+            );
+          })}
+          {submitError ? (
+            <p className={isPublic ? "text-sm text-red-600" : "text-sm text-red-400"}>{submitError}</p>
+          ) : null}
           {ordered.length > 0 ? (
-            <button
-              type="submit"
-              className="w-full rounded-lg bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-500 sm:w-auto sm:px-8"
-            >
-              Отправить на оценку ИИ
+            <button type="submit" className={`w-full ${primaryBtnClass}`}>
+              Отправить на оценку
             </button>
           ) : null}
         </form>

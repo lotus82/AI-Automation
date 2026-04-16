@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
 from loguru import logger
-from starlette.responses import Response
+from redis.asyncio import Redis
+from starlette.responses import Response, StreamingResponse
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.api.dependencies import AsyncSessionDep, QuestionnaireLLMServiceDep, SettingsDep
+from src.api.dependencies import AsyncSessionDep, QuestionnaireLLMServiceDep, RedisDep, SettingsDep
 from src.api.dependencies_portal import PortalUserDep
 from src.api.org_scope import resolve_organization_scope
 from src.domain.portal_roles import ROLE_SUPER_ADMIN
@@ -25,7 +28,9 @@ from src.api.schemas.questionnaires import (
     QuestionOptionPublic,
     QuestionPublic,
 )
+from src.domain import system_setting_keys as sk
 from src.infrastructure.models import QuestionnaireModel, QuestionModel, QuestionOptionModel
+from src.infrastructure.repositories import PostgresSettingsRepository
 from src.infrastructure.verdict_pdf import build_questionnaire_verdict_pdf
 
 router = APIRouter(tags=["questionnaires"])
@@ -59,7 +64,7 @@ def questionnaire_to_public(row: QuestionnaireModel) -> QuestionnairePublic:
                 max_score=q.max_score,
                 options=[
                     QuestionOptionPublic(id=o.id, text=o.text, score=o.score)
-                    for o in sorted(q.options, key=lambda x: str(x.id))
+                    for o in sorted(q.options, key=lambda x: (x.score, str(x.id)))
                 ],
             )
             for q in questions_sorted
@@ -268,14 +273,7 @@ def _assert_option_score_in_range(q: QuestionModel, score: float) -> None:
         )
 
 
-@router.post("/questionnaires/{questionnaire_id}/assess", response_model=AssessResponse)
-async def assess_questionnaire(
-    questionnaire_id: UUID,
-    body: AssessRequest,
-    session: AsyncSessionDep,
-    llm: QuestionnaireLLMServiceDep,
-) -> AssessResponse:
-    qn = await _get_questionnaire_or_404(session, questionnaire_id)
+def _build_answers_for_llm(qn: QuestionnaireModel, body: AssessRequest) -> list[dict]:
     ordered = sorted(qn.questions, key=lambda x: (x.order, str(x.id)))
     if not ordered:
         raise HTTPException(
@@ -387,12 +385,36 @@ async def assess_questionnaire(
                     "question_score_range": {"min": q.min_score, "max": q.max_score},
                 }
             )
+    return answers_for_llm
 
+
+async def _output_format_supplement_for_questionnaire(
+    session: AsyncSession,
+    redis: Redis,
+    qn: QuestionnaireModel,
+) -> str:
+    repo = PostgresSettingsRepository(session, redis, organization_id=qn.organization_id)
+    raw = await repo.get_value(sk.TEXT_BOT_SYSTEM_SUPPLEMENT)
+    return (raw or "").strip()
+
+
+@router.post("/questionnaires/{questionnaire_id}/assess", response_model=AssessResponse)
+async def assess_questionnaire(
+    questionnaire_id: UUID,
+    body: AssessRequest,
+    session: AsyncSessionDep,
+    redis: RedisDep,
+    llm: QuestionnaireLLMServiceDep,
+) -> AssessResponse:
+    qn = await _get_questionnaire_or_404(session, questionnaire_id)
+    answers_for_llm = _build_answers_for_llm(qn, body)
     criteria = (qn.llm_criteria or "").strip()
+    supplement = await _output_format_supplement_for_questionnaire(session, redis, qn)
     try:
         analysis = await llm.assess_answers(
             criteria=criteria,
             answers_for_llm=answers_for_llm,
+            output_format_supplement=supplement,
         )
     except RuntimeError as e:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
@@ -404,3 +426,44 @@ async def assess_questionnaire(
         ) from e
 
     return AssessResponse(analysis=analysis)
+
+
+@router.post("/questionnaires/{questionnaire_id}/assess-stream")
+async def assess_questionnaire_stream(
+    questionnaire_id: UUID,
+    body: AssessRequest,
+    session: AsyncSessionDep,
+    redis: RedisDep,
+    llm: QuestionnaireLLMServiceDep,
+) -> StreamingResponse:
+    """Потоковая ИИ-оценка (SSE): фрагменты текста в событиях ``data: {"t":"..."}``; завершение — ``data: [DONE]``."""
+
+    qn = await _get_questionnaire_or_404(session, questionnaire_id)
+    answers_for_llm = _build_answers_for_llm(qn, body)
+    criteria = (qn.llm_criteria or "").strip()
+    supplement = await _output_format_supplement_for_questionnaire(session, redis, qn)
+
+    async def gen():
+        try:
+            async for piece in llm.assess_answers_stream(
+                criteria=criteria,
+                answers_for_llm=answers_for_llm,
+                output_format_supplement=supplement,
+            ):
+                yield f"data: {json.dumps({'t': piece}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+        except RuntimeError as e:
+            yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.exception("questionnaire assess stream LLM failed")
+            yield f"data: {json.dumps({'error': f'Ошибка LLM: {e!s}'}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream; charset=utf-8",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
