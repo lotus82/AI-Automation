@@ -1115,6 +1115,13 @@ class MedicalPatientModel(Base):
             unique=True,
             postgresql_where=sql_text("max_user_id IS NOT NULL AND trim(max_user_id) <> ''"),
         ),
+        Index(
+            "uq_medical_patients_org_max_chat_id_nonempty",
+            "organization_id",
+            "max_chat_id",
+            unique=True,
+            postgresql_where=sql_text("max_chat_id IS NOT NULL AND trim(max_chat_id) <> ''"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -1138,6 +1145,7 @@ class MedicalPatientModel(Base):
     phone: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     max_user_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    max_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     tg_user_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     vk_user_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     is_verified: Mapped[bool] = mapped_column(

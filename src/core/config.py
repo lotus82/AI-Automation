@@ -315,6 +315,11 @@ class Settings(BaseSettings):
         validation_alias="MIS_MAX_PATIENT_MINI_APP_BASE_URL",
         description="Базовый URL мини-приложения пациента для deep link из бота (опционально).",
     )
+    mis_patient_public_base_url: str | None = Field(
+        default=None,
+        validation_alias="MIS_PATIENT_PUBLIC_BASE_URL",
+        description="Публичный origin SPA (https://домен) для ссылок на портал /public/mis/patient/… из бота MAX.",
+    )
 
     # Панель «Логи»: Docker Engine API по Unix-сокету (монтирование в compose, токен в заголовке)
     admin_logs_token: str | None = Field(

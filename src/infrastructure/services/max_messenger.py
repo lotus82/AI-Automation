@@ -654,6 +654,28 @@ class MaxMessengerClient:
                         instance_tag,
                     )
                     continue
+                try:
+                    from src.infrastructure.mis_max_bot_patient_reg_flow import (
+                        try_max_bot_mis_patient_registration_flow,
+                    )
+
+                    mis_reg = await try_max_bot_mis_patient_registration_flow(
+                        raw_update,
+                        session=session,
+                        redis=redis,
+                        settings=app_settings,
+                        query_organization_id=organization_id,
+                    )
+                except Exception:
+                    await session.rollback()
+                    logger.exception("MAX long poll: сбой регистрации МИС (вебхук-совместимый сценарий)")
+                    continue
+                if mis_reg is not None:
+                    try:
+                        await session.commit()
+                    except Exception:
+                        await session.rollback()
+                    continue
                 parsed = parse_max_webhook_incoming(raw_update)
                 if parsed is None:
                     if logger.isEnabledFor(logging.DEBUG):
