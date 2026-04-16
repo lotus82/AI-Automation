@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { BookOpen, ClipboardList, HeartPulse, Loader2 } from "lucide-react";
+import { BookOpen, ClipboardList, HeartPulse, Loader2, LogOut } from "lucide-react";
+import patientMisClient from "../api/patientMisClient.js";
+import { PatientAuthGuard } from "../components/mis/PatientAuthGuard.jsx";
+import {
+  clearPatientSession,
+  getStoredPatientId,
+  setPatientSession,
+} from "../utils/patientMisAuth.js";
 
 const card =
-  "rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm shadow-slate-200/50";
+  "rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm shadow-slate-200/50 sm:p-5";
 
 function formatDate(d) {
   if (!d) return "—";
@@ -14,12 +21,114 @@ function formatDate(d) {
   }
 }
 
-export function PatientMISPage() {
-  const { id } = useParams();
+function PatientMaxRegistrationForm({ draft, onSuccess }) {
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [confirmDoctor, setConfirmDoctor] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const submit = async (e) => {
+    e.preventDefault();
+    const fn = fullName.trim();
+    if (!fn) {
+      setMsg("Укажите ФИО.");
+      return;
+    }
+    const ph = phone.trim();
+    if (!ph) {
+      setMsg("Укажите телефон.");
+      return;
+    }
+    if (!confirmDoctor) {
+      setMsg("Подтвердите привязку к лечащему врачу.");
+      return;
+    }
+    setBusy(true);
+    setMsg("");
+    try {
+      const { data } = await patientMisClient.post("/mis/auth/max/register", {
+        organization_id: draft.organizationId,
+        init_data: draft.initData,
+        full_name: fn,
+        phone: ph,
+        confirm_doctor: true,
+      });
+      if (data.access_token && data.patient_id) {
+        setPatientSession(data.access_token, data.patient_id, data.organization_id);
+        onSuccess(String(data.patient_id));
+        return;
+      }
+      setMsg("Не удалось завершить регистрацию.");
+    } catch (err) {
+      const det = err?.response?.data?.detail;
+      setMsg(
+        Array.isArray(det)
+          ? det.map((x) => x?.msg ?? x).join("; ")
+          : typeof det === "string"
+            ? det
+            : err?.message || "Ошибка",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className={card}>
+      <h1 className="text-lg font-semibold text-slate-900">Регистрация</h1>
+      <p className="mt-1 text-sm text-slate-600">
+        Заполните данные для привязки аккаунта MAX к карте у выбранного врача.
+      </p>
+      <form onSubmit={submit} className="mt-4 space-y-3">
+        <label className="block text-xs font-medium text-slate-600">
+          ФИО
+          <input
+            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 outline-none ring-teal-500/30 focus:ring-2"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            autoComplete="name"
+            required
+          />
+        </label>
+        <label className="block text-xs font-medium text-slate-600">
+          Телефон
+          <input
+            type="tel"
+            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 outline-none ring-teal-500/30 focus:ring-2"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            autoComplete="tel"
+            placeholder="+7…"
+            required
+          />
+        </label>
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-100 bg-slate-50/80 p-3 text-sm text-slate-800">
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+            checked={confirmDoctor}
+            onChange={(e) => setConfirmDoctor(e.target.checked)}
+          />
+          <span>Подтверждаю привязку к лечащему врачу из приглашения в MAX</span>
+        </label>
+        {msg ? <p className="text-sm text-red-700">{msg}</p> : null}
+        <button
+          type="submit"
+          disabled={busy}
+          className="w-full rounded-xl bg-teal-600 py-3 text-sm font-semibold text-white shadow-md shadow-teal-600/25 disabled:opacity-50"
+        >
+          {busy ? "Сохранение…" : "Зарегистрироваться"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function PatientCabinetContent({ patientId, maxSession, onLogout }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
-
   const [dDate, setDDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [dMetric, setDMetric] = useState("");
   const [dValue, setDValue] = useState("");
@@ -27,11 +136,11 @@ export function PatientMISPage() {
   const [dMsg, setDMsg] = useState("");
 
   const load = useCallback(async () => {
-    if (!id) return;
+    if (!patientId) return;
     setLoading(true);
     setErr("");
     try {
-      const res = await fetch(`/api/public/mis/patient/${encodeURIComponent(id)}`);
+      const res = await fetch(`/api/public/mis/patient/${encodeURIComponent(patientId)}`);
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error(typeof j?.detail === "string" ? j.detail : `Ошибка ${res.status}`);
@@ -43,7 +152,7 @@ export function PatientMISPage() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [patientId]);
 
   useEffect(() => {
     load();
@@ -51,14 +160,12 @@ export function PatientMISPage() {
 
   const recentExams = useMemo(() => {
     const entries = data?.entries ?? [];
-    return entries
-      .filter((e) => e.type === "exam")
-      .slice(0, 8);
+    return entries.filter((e) => e.type === "exam").slice(0, 8);
   }, [data?.entries]);
 
   const submitDiary = async (e) => {
     e.preventDefault();
-    if (!id) return;
+    if (!patientId) return;
     const metric = dMetric.trim();
     const value = dValue.trim();
     if (!metric || !value) {
@@ -68,7 +175,7 @@ export function PatientMISPage() {
     setDBusy(true);
     setDMsg("");
     try {
-      const res = await fetch(`/api/public/mis/patient/${encodeURIComponent(id)}/diary`, {
+      const res = await fetch(`/api/public/mis/patient/${encodeURIComponent(patientId)}/diary`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ entry_date: dDate, metric, value }),
@@ -102,6 +209,15 @@ export function PatientMISPage() {
       <div className={`${card} border-red-200 bg-red-50/80 text-red-800`}>
         <p className="font-medium">Не удалось открыть карту</p>
         <p className="mt-1 text-sm">{err}</p>
+        {maxSession ? (
+          <button
+            type="button"
+            className="mt-3 text-sm font-medium text-teal-800 underline"
+            onClick={onLogout}
+          >
+            Выйти и войти снова
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -109,17 +225,26 @@ export function PatientMISPage() {
   const p = data?.patient;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 pb-24 sm:space-y-6 sm:pb-12">
       <section className={card}>
         <h1 className="text-lg font-semibold text-slate-900">{p?.full_name}</h1>
         <p className="mt-1 text-sm text-slate-600">
           Дата рождения: {formatDate(p?.birth_date)} · Тел.: {p?.phone || "—"}
         </p>
+        {maxSession ? (
+          <button
+            type="button"
+            className="mt-3 hidden text-sm font-medium text-teal-700 underline sm:inline"
+            onClick={onLogout}
+          >
+            Выйти
+          </button>
+        ) : null}
       </section>
 
       <section className={card}>
         <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
-          <ClipboardList className="h-5 w-5 text-teal-600" strokeWidth={1.75} aria-hidden />
+          <ClipboardList className="h-5 w-5 shrink-0 text-teal-600" strokeWidth={1.75} aria-hidden />
           Последние обследования
         </h2>
         {recentExams.length === 0 ? (
@@ -130,7 +255,9 @@ export function PatientMISPage() {
               <li key={e.id} className="rounded-xl border border-slate-100 bg-slate-50/80 p-3 text-sm">
                 <div className="flex flex-wrap justify-between gap-2 text-slate-700">
                   <span className="font-medium">{formatDate(e.entry_date)}</span>
-                  <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-800">Обследование</span>
+                  <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-800">
+                    Обследование
+                  </span>
                 </div>
                 {(e.conclusion || "").trim() ? (
                   <p className="mt-2 text-slate-700">{e.conclusion}</p>
@@ -148,7 +275,7 @@ export function PatientMISPage() {
 
       <section className={card}>
         <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
-          <HeartPulse className="h-5 w-5 text-teal-600" strokeWidth={1.75} aria-hidden />
+          <HeartPulse className="h-5 w-5 shrink-0 text-teal-600" strokeWidth={1.75} aria-hidden />
           Дневник здоровья
         </h2>
         <p className="mt-1 text-xs text-slate-500">
@@ -159,7 +286,7 @@ export function PatientMISPage() {
             Дата
             <input
               type="date"
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-teal-500/30 focus:ring-2"
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 outline-none ring-teal-500/30 focus:ring-2"
               value={dDate}
               onChange={(e) => setDDate(e.target.value)}
               required
@@ -168,7 +295,7 @@ export function PatientMISPage() {
           <label className="block text-xs font-medium text-slate-600">
             Показатель
             <input
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-teal-500/30 focus:ring-2"
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 outline-none ring-teal-500/30 focus:ring-2"
               placeholder="Например: артериальное давление"
               value={dMetric}
               onChange={(e) => setDMetric(e.target.value)}
@@ -177,7 +304,7 @@ export function PatientMISPage() {
           <label className="block text-xs font-medium text-slate-600">
             Значение
             <input
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-teal-500/30 focus:ring-2"
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 outline-none ring-teal-500/30 focus:ring-2"
               placeholder="Например: 120/80"
               value={dValue}
               onChange={(e) => setDValue(e.target.value)}
@@ -187,7 +314,7 @@ export function PatientMISPage() {
           <button
             type="submit"
             disabled={dBusy}
-            className="w-full rounded-xl bg-teal-600 py-2.5 text-sm font-semibold text-white shadow-md shadow-teal-600/25 disabled:opacity-50"
+            className="w-full rounded-xl bg-teal-600 py-3 text-sm font-semibold text-white shadow-md shadow-teal-600/25 disabled:opacity-50"
           >
             {dBusy ? "Отправка…" : "Отправить врачу"}
           </button>
@@ -196,7 +323,7 @@ export function PatientMISPage() {
 
       <section className={card}>
         <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
-          <BookOpen className="h-5 w-5 text-teal-600" strokeWidth={1.75} aria-hidden />
+          <BookOpen className="h-5 w-5 shrink-0 text-teal-600" strokeWidth={1.75} aria-hidden />
           Полезные материалы
         </h2>
         <ul className="mt-3 list-inside list-disc space-y-2 text-sm text-slate-700">
@@ -215,6 +342,74 @@ export function PatientMISPage() {
           </li>
         </ul>
       </section>
+
+      {maxSession ? (
+        <nav
+          className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200/90 bg-white/95 px-4 py-3 shadow-[0_-4px_20px_rgba(15,23,42,0.06)] backdrop-blur-md sm:hidden"
+          style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom, 0px))" }}
+        >
+          <button
+            type="button"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-800 active:bg-slate-50"
+            onClick={onLogout}
+          >
+            <LogOut className="h-5 w-5" aria-hidden />
+            Выйти
+          </button>
+        </nav>
+      ) : null}
     </div>
+  );
+}
+
+export function PatientMISPage() {
+  const { id: routePatientId } = useParams();
+  const legacyId = routePatientId || "";
+
+  const [maxPatientId, setMaxPatientId] = useState("");
+  const [regDraft, setRegDraft] = useState(null);
+
+  const handleLogout = useCallback(() => {
+    clearPatientSession();
+    setMaxPatientId("");
+    setRegDraft(null);
+    if (typeof window !== "undefined") {
+      window.location.assign("/public/mis/patient");
+    }
+  }, []);
+
+  const effectivePatientId = legacyId || maxPatientId || getStoredPatientId();
+
+  if (legacyId) {
+    return <PatientCabinetContent patientId={legacyId} maxSession={false} />;
+  }
+
+  return (
+    <PatientAuthGuard
+      onAuthenticated={(pid) => {
+        setMaxPatientId(pid);
+        setRegDraft(null);
+      }}
+      onRegistrationRequired={(d) => {
+        setRegDraft(d);
+        setMaxPatientId("");
+      }}
+    >
+      {regDraft ? (
+        <PatientMaxRegistrationForm
+          draft={regDraft}
+          onSuccess={(pid) => {
+            setMaxPatientId(pid);
+            setRegDraft(null);
+          }}
+        />
+      ) : effectivePatientId ? (
+        <PatientCabinetContent
+          patientId={effectivePatientId}
+          maxSession
+          onLogout={handleLogout}
+        />
+      ) : null}
+    </PatientAuthGuard>
   );
 }

@@ -295,6 +295,26 @@ class Settings(BaseSettings):
         validation_alias="PORTAL_JWT_EXPIRE_MINUTES",
         description="Срок жизни access-токена портала (минуты), по умолчанию 24 ч.",
     )
+    # МИС: JWT пациента после авторизации в Mini App MAX (тот же PORTAL_JWT_SECRET)
+    mis_patient_jwt_expire_minutes: int = Field(
+        default=10080,
+        ge=60,
+        le=525600,
+        validation_alias="MIS_PATIENT_JWT_EXPIRE_MINUTES",
+        description="Срок жизни токена пациента (мессенджер MAX), минуты; по умолчанию 7 суток.",
+    )
+    mis_max_init_data_max_age_sec: int = Field(
+        default=3600,
+        ge=60,
+        le=86400,
+        validation_alias="MIS_MAX_INIT_DATA_MAX_AGE_SEC",
+        description="Допустимый возраст auth_date в initData MAX (секунды), см. dev.max.ru/docs/webapps/validation.",
+    )
+    mis_max_patient_mini_app_base_url: str | None = Field(
+        default=None,
+        validation_alias="MIS_MAX_PATIENT_MINI_APP_BASE_URL",
+        description="Базовый URL мини-приложения пациента для deep link из бота (опционально).",
+    )
 
     # Панель «Логи»: Docker Engine API по Unix-сокету (монтирование в compose, токен в заголовке)
     admin_logs_token: str | None = Field(

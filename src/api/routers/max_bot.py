@@ -29,6 +29,7 @@ from src.api.dependencies import (
 from src.infrastructure.max_bot_identity import resolve_max_webhook_organization_id
 from src.infrastructure.repositories import PostgresSettingsRepository
 from src.infrastructure.services.max_incoming_group import apply_max_group_mention_rules
+from src.infrastructure.mis_max_bot_deep_link import try_max_bot_mis_patient_start_registration
 from src.infrastructure.services.max_messenger import (
     MaxMessengerClient,
     parse_max_voice_call_incoming,
@@ -78,6 +79,16 @@ async def max_messenger_webhook(
             org_scope,
         )
         return {"ok": True, "call": "accepted_pipeline_scheduled"}
+
+    start_reg = await try_max_bot_mis_patient_start_registration(
+        body,
+        session=session,
+        redis=redis,
+        settings=settings,
+        query_organization_id=organization_id,
+    )
+    if start_reg is not None:
+        return start_reg
 
     parsed = parse_max_webhook_incoming(body)
     if parsed is None:

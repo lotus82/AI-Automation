@@ -57,6 +57,9 @@ apiClient.interceptors.response.use(
                 return Promise.reject(error);
             }
             const path = window.location?.pathname || '';
+            if (path.startsWith('/public/mis/patient')) {
+                return Promise.reject(error);
+            }
             useAuthStore.getState().clearAuth();
             if (!path.startsWith('/login') && path !== '/') {
                 window.location.assign('/login');

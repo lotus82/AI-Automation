@@ -53,8 +53,9 @@ export default function App() {
         <Route index element={<StoreFrontPage />} />
         <Route path="cart" element={<StoreCartPage />} />
       </Route>
-      <Route path="/public/mis/patient/:id" element={<MisPublicLayout />}>
+      <Route path="/public/mis/patient" element={<MisPublicLayout />}>
         <Route index element={<PatientMISPage />} />
+        <Route path=":id" element={<PatientMISPage />} />
       </Route>
       <Route element={<RequireAuth />}>
         <Route element={<Layout />}>

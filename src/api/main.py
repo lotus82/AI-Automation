@@ -24,6 +24,7 @@ from src.api.routers import (
     max_bot,
     notifications,
     mis,
+    mis_patient_auth,
     portal_management,
     public_store,
     questionnaires,
@@ -196,6 +197,7 @@ def create_app() -> FastAPI:
     application.include_router(shops.router, prefix="/api")
     application.include_router(public_store.router, prefix="/api")
     application.include_router(mis.router, prefix="/api")
+    application.include_router(mis_patient_auth.router, prefix="/api")
     application.include_router(mis.public_router, prefix="/api")
     application.include_router(knowledge.router, prefix="/api", tags=["knowledge"])
     application.include_router(telephony.router, prefix="/api", tags=["telephony"])

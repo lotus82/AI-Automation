@@ -99,6 +99,11 @@ def _doctor_out(row: MedicalDoctorModel, display_name: str | None = None) -> Med
     )
 
 
+def _norm_phone(v: str | None) -> str | None:
+    s = (v or "").strip()
+    return s if s else None
+
+
 def _patient_out(p: MedicalPatientModel) -> MedicalPatientOut:
     return MedicalPatientOut(
         id=p.id,
@@ -272,7 +277,7 @@ async def mis_admin_create_patient(
         organization_id=scope,
         doctor_id=doc.id,
         full_name=body.full_name.strip(),
-        phone=(body.phone or "").strip(),
+        phone=_norm_phone(body.phone),
         birth_date=body.birth_date,
         gender=(body.gender or "").strip() or None,
         height=body.height,
@@ -306,8 +311,8 @@ async def mis_admin_patch_patient(
     data = body.model_dump(exclude_unset=True)
     if "full_name" in data and data["full_name"] is not None:
         p.full_name = data["full_name"].strip()
-    if "phone" in data and data["phone"] is not None:
-        p.phone = data["phone"].strip()
+    if "phone" in data:
+        p.phone = None if data["phone"] is None else _norm_phone(str(data["phone"]))
     if "birth_date" in data:
         p.birth_date = data["birth_date"]
     if "gender" in data:
@@ -350,7 +355,7 @@ async def mis_admin_ai_consult(
     entries = (await session.scalars(stmt)).all()
     patient_block = (
         f"Пациент: {p.full_name}\n"
-        f"Телефон: {p.phone}\n"
+        f"Телефон: {p.phone or '—'}\n"
         f"Дата рождения: {p.birth_date}\n"
         f"Пол: {p.gender}\n"
         f"Рост/вес: {p.height} / {p.weight}\n"
@@ -475,7 +480,7 @@ async def mis_doctor_create_patient(
         organization_id=doctor.organization_id,
         doctor_id=doctor.id,
         full_name=body.full_name.strip(),
-        phone=(body.phone or "").strip(),
+        phone=_norm_phone(body.phone),
         birth_date=body.birth_date,
         gender=(body.gender or "").strip() or None,
         height=body.height,
@@ -503,8 +508,8 @@ async def mis_doctor_update_patient(
     data = body.model_dump(exclude_unset=True)
     if "full_name" in data and data["full_name"] is not None:
         p.full_name = data["full_name"].strip()
-    if "phone" in data and data["phone"] is not None:
-        p.phone = data["phone"].strip()
+    if "phone" in data:
+        p.phone = None if data["phone"] is None else _norm_phone(str(data["phone"]))
     if "birth_date" in data:
         p.birth_date = data["birth_date"]
     if "gender" in data:
@@ -618,7 +623,7 @@ async def mis_doctor_ai_consult(
 
     patient_block = (
         f"Пациент: {p.full_name}\n"
-        f"Телефон: {p.phone}\n"
+        f"Телефон: {p.phone or '—'}\n"
         f"Дата рождения: {p.birth_date}\n"
         f"Пол: {p.gender}\n"
         f"Рост/вес: {p.height} / {p.weight}\n"

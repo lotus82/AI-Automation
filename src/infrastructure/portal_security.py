@@ -50,5 +50,25 @@ def create_portal_access_token(
     return jwt.encode(payload, secret, algorithm="HS256")
 
 
+def create_mis_patient_access_token(
+    *,
+    patient_id: UUID,
+    organization_id: UUID,
+    secret: str,
+    expire_minutes: int,
+) -> str:
+    """JWT личного кабинета пациента МИС (мессенджер MAX и др.). ``typ``: ``mis_patient``."""
+    now = datetime.now(UTC)
+    payload: dict[str, Any] = {
+        "sub": str(patient_id),
+        "role": "mis_patient",
+        "org_id": str(organization_id),
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=expire_minutes)).timestamp()),
+        "typ": "mis_patient",
+    }
+    return jwt.encode(payload, secret, algorithm="HS256")
+
+
 def decode_portal_token(token: str, secret: str) -> dict[str, Any]:
     return jwt.decode(token, secret, algorithms=["HS256"])

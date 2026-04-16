@@ -21,6 +21,7 @@ from sqlalchemy import (
     Enum as SQLEnum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -1099,6 +1100,22 @@ class MedicalPatientModel(Base):
     """Карта пациента МИС."""
 
     __tablename__ = "medical_patients"
+    __table_args__ = (
+        Index(
+            "uq_medical_patients_org_phone_nonempty",
+            "organization_id",
+            "phone",
+            unique=True,
+            postgresql_where=sql_text("phone IS NOT NULL AND trim(phone) <> ''"),
+        ),
+        Index(
+            "uq_medical_patients_org_max_user_id_nonempty",
+            "organization_id",
+            "max_user_id",
+            unique=True,
+            postgresql_where=sql_text("max_user_id IS NOT NULL AND trim(max_user_id) <> ''"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -1118,7 +1135,16 @@ class MedicalPatientModel(Base):
         index=True,
     )
     full_name: Mapped[str] = mapped_column(String(512), nullable=False)
-    phone: Mapped[str] = mapped_column(String(64), nullable=False, server_default=sql_text("''"))
+    phone: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    max_user_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    tg_user_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    vk_user_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    is_verified: Mapped[bool] = mapped_column(
+        Boolean(),
+        nullable=False,
+        server_default=sql_text("false"),
+    )
     birth_date: Mapped[date | None] = mapped_column(Date(), nullable=True)
     gender: Mapped[str | None] = mapped_column(String(32), nullable=True)
     height: Mapped[float | None] = mapped_column(Float(), nullable=True)

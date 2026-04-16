@@ -68,6 +68,10 @@ def _is_public_path(path: str, method: str) -> bool:
         return True
     if method == "GET" and path.startswith("/api/shops/assets/"):
         return True
+    if method == "GET" and path == "/api/mis/auth/max/init":
+        return True
+    if method == "POST" and path == "/api/mis/auth/max/register":
+        return True
     return False
 
 
@@ -91,7 +95,18 @@ class PortalAuthMiddleware(BaseHTTPMiddleware):
             payload = decode_portal_token(token, settings.portal_jwt_secret)
         except Exception:
             return JSONResponse({"detail": "Недействительный или просроченный токен"}, status_code=401)
-        if payload.get("typ") != "portal" or not payload.get("sub"):
+
+        typ = payload.get("typ")
+        if path.startswith("/api/mis/patient-session"):
+            if typ != "mis_patient" or not payload.get("sub"):
+                return JSONResponse(
+                    {"detail": "Для этого раздела нужен токен пациента (авторизация через MAX)"},
+                    status_code=401,
+                )
+            request.state.mis_patient_token_payload = payload
+            return await call_next(request)
+
+        if typ != "portal" or not payload.get("sub"):
             return JSONResponse({"detail": "Недействительный токен"}, status_code=401)
         request.state.portal_token_payload = payload
         return await call_next(request)
