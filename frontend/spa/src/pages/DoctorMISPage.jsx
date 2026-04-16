@@ -14,7 +14,9 @@ import {
 import QRCode from "react-qr-code";
 import api from "../api/client.js";
 import { IconCopyButton, IconQrButton } from "../components/ui/IconActionButtons.jsx";
+import { SK } from "../constants/systemSettingsKeys.js";
 import { useAuthStore } from "../store/authStore.js";
+import { mapFromList } from "../utils/systemSettingsForm.js";
 
 function formatApiDetail(err) {
   const det = err?.response?.data?.detail;
@@ -51,6 +53,13 @@ const AI_ANALYSIS_QUESTION =
   "Проанализируй историю болезни и обследований пациента. Дай структурированные рекомендации для врача " +
   "(обобщение данных, на что обратить внимание, идеи для дифференциальной диагностики). " +
   "Не ставь окончательный диагноз и не заменяй очный осмотр. Ответ на русском.";
+
+/** Логин бота в MAX (как в настройках): `@id…_bot` → сегмент пути `id…_bot`. */
+function maxBotPathSlugFromSetting(raw) {
+  const s = (raw || "").trim();
+  if (!s) return "";
+  return s.replace(/^@+/, "").replace(/^\/+/, "").trim();
+}
 
 /** UUID организации/врача для deep link MAX: snake_case или camelCase с бэкенда. */
 function misDeepLinkIds(patient, user, isMisAdmin, settingsOrganizationId) {
@@ -122,6 +131,9 @@ export function DoctorMISPage() {
   const misStartCopyTimer = useRef(null);
   const phoneCopyTimer = useRef(null);
 
+  /** Упоминание бота (интеграции MAX → MAX_BOT_USERNAME), для ссылок max.ru / max:// */
+  const [maxBotUsernameSetting, setMaxBotUsernameSetting] = useState("");
+
   const loadList = useCallback(async () => {
     setListErr("");
     setListLoading(true);
@@ -162,6 +174,23 @@ export function DoctorMISPage() {
       loadMisDoctors();
     }
   }, [patientId, loadList, loadMisDoctors]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get("/settings");
+        const map = mapFromList(data);
+        const v = map[SK.MAX_BOT_USERNAME]?.value;
+        if (!cancelled) setMaxBotUsernameSetting(v != null ? String(v) : "");
+      } catch {
+        if (!cancelled) setMaxBotUsernameSetting("");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadDetail = useCallback(async () => {
     if (!patientId) return;
@@ -359,7 +388,7 @@ export function DoctorMISPage() {
     return "";
   }, [isMisAdmin, npDoctorId, misDoctors]);
 
-  const misMaxStartCommand = useMemo(() => {
+  const misMaxStartPayload = useMemo(() => {
     const patient = patientId ? detail?.patient : null;
     const { org: o0, doc: d0 } = misDeepLinkIds(patient, user, isMisAdmin, settingsOrganizationId);
     let org = o0;
@@ -368,7 +397,7 @@ export function DoctorMISPage() {
       doc = adminListDoctorId;
     }
     if (!org || !doc) return "";
-    return `/start reg_org_${String(org).toLowerCase()}_doc_${String(doc).toLowerCase()}`;
+    return `reg_org_${String(org).toLowerCase()}_doc_${String(doc).toLowerCase()}`;
   }, [
     patientId,
     detail?.patient,
@@ -378,10 +407,42 @@ export function DoctorMISPage() {
     adminListDoctorId,
   ]);
 
+  const misMaxStartCommand = useMemo(
+    () => (misMaxStartPayload ? `/start ${misMaxStartPayload}` : ""),
+    [misMaxStartPayload],
+  );
+
+  const maxBotPathSlug = useMemo(
+    () => maxBotPathSlugFromSetting(maxBotUsernameSetting),
+    [maxBotUsernameSetting],
+  );
+
+  /** Открытие профиля бота в браузере / перехват в приложении MAX. */
+  const misMaxBotLinkHttps = useMemo(() => {
+    if (!maxBotPathSlug || !misMaxStartPayload) return "";
+    return `https://max.ru/${maxBotPathSlug}?start=${encodeURIComponent(misMaxStartPayload)}`;
+  }, [maxBotPathSlug, misMaxStartPayload]);
+
+  /** Явное открытие в приложении MAX (QR и универсальные сценарии). */
+  const misMaxBotLinkApp = useMemo(() => {
+    if (!maxBotPathSlug || !misMaxStartPayload) return "";
+    return `max://max.ru/${maxBotPathSlug}?start=${encodeURIComponent(misMaxStartPayload)}`;
+  }, [maxBotPathSlug, misMaxStartPayload]);
+
+  const misMaxRegistrationQrValue = useMemo(
+    () => misMaxBotLinkApp || misMaxStartCommand,
+    [misMaxBotLinkApp, misMaxStartCommand],
+  );
+
+  const misMaxLinkToCopy = useMemo(
+    () => misMaxBotLinkHttps || misMaxStartCommand,
+    [misMaxBotLinkHttps, misMaxStartCommand],
+  );
+
   const copyMisMaxStart = useCallback(() => {
-    if (!misMaxStartCommand) return;
+    if (!misMaxLinkToCopy) return;
     navigator.clipboard
-      ?.writeText(misMaxStartCommand)
+      ?.writeText(misMaxLinkToCopy)
       .then(() => {
         if (misStartCopyTimer.current) clearTimeout(misStartCopyTimer.current);
         setMisStartCopied(true);
@@ -391,7 +452,7 @@ export function DoctorMISPage() {
         }, 2000);
       })
       .catch(() => {});
-  }, [misMaxStartCommand]);
+  }, [misMaxLinkToCopy]);
 
   const copyPhone = useCallback(() => {
     const phone = detail?.patient?.phone;
@@ -489,13 +550,44 @@ export function DoctorMISPage() {
             <section className={`${card} mb-4`}>
               <h2 className="text-base font-semibold text-slate-900">Регистрация пациентов через MAX</h2>
               <p className="mt-1 text-xs text-slate-600">
-                Команда для бота (привязка к этому врачу). Скопируйте или покажите QR — без открытой карты пациента.
+                Ссылка и QR ведут на профиль бота в MAX (как{" "}
+                <a
+                  href="https://max.ru/"
+                  className="font-medium text-violet-800 underline decoration-violet-300"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  max.ru/id…_bot
+                </a>
+                ). Имя в пути берётся из «Упоминание бота в группе MAX» (<strong>MAX_BOT_USERNAME</strong>) в разделе
+                Интеграции. Параметр <code className="rounded bg-slate-100 px-1 font-mono text-[10px]">start</code> —
+                привязка к этому врачу.
               </p>
+              {!maxBotPathSlug ? (
+                <p className="mt-2 rounded-lg border border-amber-100 bg-amber-50/80 px-3 py-2 text-xs text-amber-900">
+                  Укажите <strong>MAX_BOT_USERNAME</strong> в «Интеграции» → MAX, чтобы показать ссылку{" "}
+                  <code className="font-mono">https://max.ru/…</code> и QR с открытием приложения. Пока доступна только
+                  команда для чата.
+                </p>
+              ) : null}
               <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-violet-100 bg-violet-50/60 px-3 py-2 text-xs text-slate-700">
-                <span className="min-w-0 flex-1 break-all font-mono text-[11px] sm:text-xs">{misMaxStartCommand}</span>
+                <span className="min-w-0 flex-1 break-all text-[11px] sm:text-xs">
+                  {misMaxBotLinkHttps ? (
+                    <a
+                      href={misMaxBotLinkHttps}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-violet-900 underline decoration-violet-300"
+                    >
+                      {misMaxBotLinkHttps}
+                    </a>
+                  ) : (
+                    <span className="font-mono text-slate-800">{misMaxStartCommand}</span>
+                  )}
+                </span>
                 <IconCopyButton
                   variant="light"
-                  title="Скопировать команду"
+                  title={misMaxBotLinkHttps ? "Скопировать ссылку" : "Скопировать команду"}
                   copied={misStartCopied}
                   className="focus-visible:ring-violet-500/50"
                   onClick={copyMisMaxStart}
@@ -507,6 +599,12 @@ export function DoctorMISPage() {
                   onClick={() => setQrModalOpen(true)}
                 />
               </div>
+              {misMaxBotLinkHttps && misMaxStartCommand ? (
+                <p className="mt-2 text-[11px] leading-snug text-slate-500">
+                  Если чат не подхватил стартовый параметр, отправьте боту:{" "}
+                  <code className="rounded bg-white px-1 font-mono text-[10px] text-slate-700">{misMaxStartCommand}</code>
+                </p>
+              ) : null}
             </section>
           ) : isMisAdmin && misDoctors.length > 1 && !npDoctorId ? (
             <section className={`${card} mb-4 border-violet-100 bg-violet-50/40`}>
@@ -680,14 +778,34 @@ export function DoctorMISPage() {
               </div>
               {misMaxStartCommand ? (
                 <div className="mt-3">
-                  <p className="text-xs font-medium text-slate-600">Команда для бота MAX (регистрация по врачу)</p>
+                  <p className="text-xs font-medium text-slate-600">Регистрация в MAX по этому врачу</p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    Ссылка на бота из <strong>MAX_BOT_USERNAME</strong>; QR кодирует <code className="font-mono">max://max.ru/…</code> для
+                    открытия приложения.
+                  </p>
+                  {!maxBotPathSlug ? (
+                    <p className="mt-2 rounded-lg border border-amber-100 bg-amber-50/80 px-2 py-1.5 text-[11px] text-amber-900">
+                      Заполните MAX_BOT_USERNAME в Интеграции → MAX для ссылки на профиль бота.
+                    </p>
+                  ) : null}
                   <div className="mt-1.5 flex flex-wrap items-center gap-2 rounded-xl border border-violet-100 bg-violet-50/60 px-3 py-2 text-xs text-slate-700">
-                    <span className="min-w-0 flex-1 break-all font-mono text-[11px] sm:text-xs">
-                      {misMaxStartCommand}
+                    <span className="min-w-0 flex-1 break-all text-[11px] sm:text-xs">
+                      {misMaxBotLinkHttps ? (
+                        <a
+                          href={misMaxBotLinkHttps}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-violet-900 underline decoration-violet-300"
+                        >
+                          {misMaxBotLinkHttps}
+                        </a>
+                      ) : (
+                        <span className="font-mono text-slate-800">{misMaxStartCommand}</span>
+                      )}
                     </span>
                     <IconCopyButton
                       variant="light"
-                      title="Скопировать команду"
+                      title={misMaxBotLinkHttps ? "Скопировать ссылку" : "Скопировать команду"}
                       copied={misStartCopied}
                       className="focus-visible:ring-violet-500/50"
                       onClick={copyMisMaxStart}
@@ -699,6 +817,12 @@ export function DoctorMISPage() {
                       onClick={() => setQrModalOpen(true)}
                     />
                   </div>
+                  {misMaxBotLinkHttps && misMaxStartCommand ? (
+                    <p className="mt-2 text-[11px] text-slate-500">
+                      Вручную в чате:{" "}
+                      <code className="rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-700">{misMaxStartCommand}</code>
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
             </header>
@@ -940,7 +1064,7 @@ export function DoctorMISPage() {
       </div>
       )}
 
-      {qrModalOpen && misMaxStartCommand ? (
+      {qrModalOpen && misMaxRegistrationQrValue ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]"
           role="presentation"
@@ -963,13 +1087,35 @@ export function DoctorMISPage() {
               <X className="h-5 w-5" aria-hidden />
             </button>
             <h2 id="mis-qr-title" className="pr-10 text-base font-semibold text-slate-900">
-              QR для команды MAX
+              QR: открыть бота в MAX
             </h2>
-            <p className="mt-1 text-xs text-slate-600">Отсканируйте в приложении MAX — в буфер попадёт текст команды.</p>
+            <p className="mt-1 text-xs text-slate-600">
+              {misMaxBotLinkApp
+                ? "В QR закодирована ссылка max://max.ru/… — при сканировании камерой обычно открывается приложение MAX."
+                : "Отсканируйте и отправьте боту команду из текста ниже."}
+            </p>
             <div className="mt-4 flex justify-center rounded-xl bg-white p-3 ring-1 ring-slate-100">
-              <QRCode value={misMaxStartCommand} size={220} level="M" />
+              <QRCode value={misMaxRegistrationQrValue} size={220} level="M" />
             </div>
-            <p className="mt-4 break-all font-mono text-[11px] leading-snug text-slate-700">{misMaxStartCommand}</p>
+            {misMaxBotLinkHttps ? (
+              <p className="mt-4 text-xs text-slate-600">
+                Открыть в браузере:{" "}
+                <a
+                  href={misMaxBotLinkHttps}
+                  className="break-all font-mono text-[11px] font-medium text-violet-800 underline"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {misMaxBotLinkHttps}
+                </a>
+              </p>
+            ) : null}
+            {misMaxBotLinkApp ? (
+              <p className="mt-2 break-all font-mono text-[10px] leading-snug text-slate-500">{misMaxBotLinkApp}</p>
+            ) : null}
+            {misMaxStartCommand ? (
+              <p className="mt-3 break-all font-mono text-[11px] leading-snug text-slate-700">{misMaxStartCommand}</p>
+            ) : null}
           </div>
         </div>
       ) : null}
