@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
+  ChevronDown,
   Loader2,
   MessageCircle,
   Search,
@@ -102,6 +103,8 @@ export function DoctorMISPage() {
   const [qnrBusy, setQnrBusy] = useState(false);
   const [qnrMsg, setQnrMsg] = useState("");
 
+  const [entriesOpen, setEntriesOpen] = useState(false);
+
   const [npName, setNpName] = useState("");
   const [npPhone, setNpPhone] = useState("");
   const [npBirth, setNpBirth] = useState("");
@@ -192,6 +195,7 @@ export function DoctorMISPage() {
       setMaxMsg("");
       setQnrMsg("");
       setQrModalOpen(false);
+      setEntriesOpen(false);
     }
   }, [patientId, loadDetail]);
 
@@ -765,41 +769,59 @@ export function DoctorMISPage() {
             </section>
 
             <section className={card}>
-              <h2 className="text-base font-semibold text-slate-900">История обследований и записей</h2>
-              <ul className="mt-3 space-y-3">
-                {entries.map((e) => (
-                  <li key={e.id} className="rounded-xl border border-slate-100 bg-slate-50/90 p-3 text-sm">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-slate-800">{formatDate(e.entry_date)}</span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          e.type === "exam" ? "bg-blue-100 text-blue-800" : "bg-violet-100 text-violet-800"
-                        }`}
-                      >
-                        {e.type === "exam" ? "Обследование" : "Опрос / дневник"}
-                      </span>
-                    </div>
-                    {e.data && Object.keys(e.data).length > 0 ? (
-                      <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-white p-2 text-xs text-slate-700 ring-1 ring-slate-100">
-                        {JSON.stringify(e.data, null, 2)}
-                      </pre>
-                    ) : null}
-                    {(e.conclusion || "").trim() ? (
-                      <p className="mt-2 text-slate-700">
-                        <span className="font-medium text-slate-600">Заключение: </span>
-                        {e.conclusion}
-                      </p>
-                    ) : null}
-                    {(e.recommendations || "").trim() ? (
-                      <p className="mt-1 text-slate-700">
-                        <span className="font-medium text-slate-600">Рекомендации: </span>
-                        {e.recommendations}
-                      </p>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-              {entries.length === 0 ? <p className="mt-2 text-sm text-slate-500">Записей пока нет.</p> : null}
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-2 text-left"
+                onClick={() => setEntriesOpen((v) => !v)}
+                aria-expanded={entriesOpen}
+              >
+                <h2 className="text-base font-semibold text-slate-900">История обследований и записей</h2>
+                <span className="flex shrink-0 items-center gap-2 text-xs text-slate-500">
+                  {entries.length ? `${entries.length} запис.` : "пусто"}
+                  <ChevronDown
+                    className={`h-5 w-5 text-slate-400 transition-transform ${entriesOpen ? "rotate-180" : ""}`}
+                    aria-hidden
+                  />
+                </span>
+              </button>
+              {entriesOpen ? (
+                <>
+                  <ul className="mt-3 space-y-3">
+                    {entries.map((e) => (
+                      <li key={e.id} className="rounded-xl border border-slate-100 bg-slate-50/90 p-3 text-sm">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium text-slate-800">{formatDate(e.entry_date)}</span>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                              e.type === "exam" ? "bg-blue-100 text-blue-800" : "bg-violet-100 text-violet-800"
+                            }`}
+                          >
+                            {e.type === "exam" ? "Обследование" : "Опрос / дневник"}
+                          </span>
+                        </div>
+                        {e.data && Object.keys(e.data).length > 0 ? (
+                          <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-white p-2 text-xs text-slate-700 ring-1 ring-slate-100">
+                            {JSON.stringify(e.data, null, 2)}
+                          </pre>
+                        ) : null}
+                        {(e.conclusion || "").trim() ? (
+                          <p className="mt-2 text-slate-700">
+                            <span className="font-medium text-slate-600">Заключение: </span>
+                            {e.conclusion}
+                          </p>
+                        ) : null}
+                        {(e.recommendations || "").trim() ? (
+                          <p className="mt-1 text-slate-700">
+                            <span className="font-medium text-slate-600">Рекомендации: </span>
+                            {e.recommendations}
+                          </p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                  {entries.length === 0 ? <p className="mt-2 text-sm text-slate-500">Записей пока нет.</p> : null}
+                </>
+              ) : null}
             </section>
 
             <section className={`${card} border-teal-200/80 bg-gradient-to-br from-white to-teal-50/40`}>

@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { BookOpen, ClipboardList, HeartPulse, ListChecks, Loader2, LogOut } from "lucide-react";
+import {
+  BookOpen,
+  ChevronDown,
+  ClipboardList,
+  HeartPulse,
+  ListChecks,
+  Loader2,
+  LogOut,
+} from "lucide-react";
 import patientMisClient from "../api/patientMisClient.js";
 import { PatientAuthGuard } from "../components/mis/PatientAuthGuard.jsx";
 import {
@@ -19,6 +27,19 @@ function formatDate(d) {
   } catch {
     return d;
   }
+}
+
+function birthDateInputValue(iso) {
+  if (!iso) return "";
+  const s = String(iso);
+  return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
+function formatPatientPatchError(err) {
+  const det = err?.response?.data?.detail;
+  if (typeof det === "string") return det;
+  if (Array.isArray(det)) return det.map((x) => (typeof x === "object" && x != null ? x.msg ?? x : x)).join("; ");
+  return err?.message ?? "Ошибка сохранения";
 }
 
 function PatientMaxRegistrationForm({ draft, onSuccess }) {
@@ -135,6 +156,17 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
   const [dBusy, setDBusy] = useState(false);
   const [dMsg, setDMsg] = useState("");
 
+  const [profileFullName, setProfileFullName] = useState("");
+  const [profileBirth, setProfileBirth] = useState("");
+  const [profilePhone, setProfilePhone] = useState("");
+  const [profileHeight, setProfileHeight] = useState("");
+  const [profileWeight, setProfileWeight] = useState("");
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileSaveMsg, setProfileSaveMsg] = useState("");
+  const [profileErr, setProfileErr] = useState("");
+
+  const [surveysOpen, setSurveysOpen] = useState(false);
+
   const load = useCallback(async () => {
     if (!patientId) return;
     setLoading(true);
@@ -158,6 +190,18 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
     load();
   }, [load]);
 
+  useEffect(() => {
+    const p = data?.patient;
+    if (!p) return;
+    setProfileFullName(p.full_name || "");
+    setProfileBirth(birthDateInputValue(p.birth_date));
+    setProfilePhone(p.phone || "");
+    setProfileHeight(p.height != null && p.height !== "" ? String(p.height) : "");
+    setProfileWeight(p.weight != null && p.weight !== "" ? String(p.weight) : "");
+    setProfileSaveMsg("");
+    setProfileErr("");
+  }, [data]);
+
   const recentExams = useMemo(() => {
     const entries = data?.entries ?? [];
     return entries.filter((e) => e.type === "exam").slice(0, 8);
@@ -175,6 +219,54 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
       })
       .slice(0, 12);
   }, [data?.entries]);
+
+  const saveProfile = async (e) => {
+    e.preventDefault();
+    if (!maxSession) return;
+    const fn = profileFullName.trim();
+    if (!fn) {
+      setProfileErr("Укажите ФИО.");
+      setProfileSaveMsg("");
+      return;
+    }
+    let heightVal = null;
+    let weightVal = null;
+    if (profileHeight.trim() !== "") {
+      heightVal = parseFloat(String(profileHeight).replace(",", "."));
+      if (!Number.isFinite(heightVal)) {
+        setProfileErr("Укажите рост числом (см).");
+        setProfileSaveMsg("");
+        return;
+      }
+    }
+    if (profileWeight.trim() !== "") {
+      weightVal = parseFloat(String(profileWeight).replace(",", "."));
+      if (!Number.isFinite(weightVal)) {
+        setProfileErr("Укажите вес числом (кг).");
+        setProfileSaveMsg("");
+        return;
+      }
+    }
+
+    setProfileBusy(true);
+    setProfileErr("");
+    setProfileSaveMsg("");
+    try {
+      await patientMisClient.patch("/mis/patient-session/me", {
+        full_name: fn,
+        phone: profilePhone.trim() || null,
+        birth_date: profileBirth.trim() || null,
+        height: heightVal,
+        weight: weightVal,
+      });
+      setProfileSaveMsg("Данные сохранены.");
+      await load();
+    } catch (err) {
+      setProfileErr(formatPatientPatchError(err));
+    } finally {
+      setProfileBusy(false);
+    }
+  };
 
   const submitDiary = async (e) => {
     e.preventDefault();
@@ -240,19 +332,102 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
   return (
     <div className="space-y-4 pb-24 sm:space-y-6 sm:pb-12">
       <section className={card}>
-        <h1 className="text-lg font-semibold text-slate-900">{p?.full_name}</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Дата рождения: {formatDate(p?.birth_date)} · Тел.: {p?.phone || "—"}
-        </p>
+        <h1 className="text-lg font-semibold text-slate-900">Мои данные</h1>
         {maxSession ? (
-          <button
-            type="button"
-            className="mt-3 hidden text-sm font-medium text-teal-700 underline sm:inline"
-            onClick={onLogout}
-          >
-            Выйти
-          </button>
-        ) : null}
+          <>
+            <p className="mt-1 text-xs text-slate-500">
+              ФИО, дата рождения, телефон, рост и вес видны лечащему врачу. Диагноз и план лечения меняются только врачом.
+            </p>
+            <form className="mt-4 space-y-3" onSubmit={saveProfile}>
+              <label className="block text-xs font-medium text-slate-600">
+                ФИО
+                <input
+                  required
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 outline-none ring-teal-500/30 focus:ring-2"
+                  value={profileFullName}
+                  onChange={(e) => setProfileFullName(e.target.value)}
+                  autoComplete="name"
+                />
+              </label>
+              <label className="block text-xs font-medium text-slate-600">
+                Дата рождения
+                <input
+                  type="date"
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 outline-none ring-teal-500/30 focus:ring-2"
+                  value={profileBirth}
+                  onChange={(e) => setProfileBirth(e.target.value)}
+                />
+              </label>
+              <label className="block text-xs font-medium text-slate-600">
+                Телефон
+                <input
+                  type="tel"
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 outline-none ring-teal-500/30 focus:ring-2"
+                  value={profilePhone}
+                  onChange={(e) => setProfilePhone(e.target.value)}
+                  autoComplete="tel"
+                  placeholder="+7…"
+                />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-xs font-medium text-slate-600">
+                  Рост (см)
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 outline-none ring-teal-500/30 focus:ring-2"
+                    value={profileHeight}
+                    onChange={(e) => setProfileHeight(e.target.value)}
+                    placeholder="например 175"
+                  />
+                </label>
+                <label className="block text-xs font-medium text-slate-600">
+                  Вес (кг)
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 outline-none ring-teal-500/30 focus:ring-2"
+                    value={profileWeight}
+                    onChange={(e) => setProfileWeight(e.target.value)}
+                    placeholder="например 72"
+                  />
+                </label>
+              </div>
+              {profileErr ? <p className="text-sm text-red-700">{profileErr}</p> : null}
+              {profileSaveMsg ? <p className="text-sm text-teal-800">{profileSaveMsg}</p> : null}
+              <button
+                type="submit"
+                disabled={profileBusy}
+                className="w-full rounded-xl bg-teal-600 py-3 text-sm font-semibold text-white shadow-md shadow-teal-600/25 disabled:opacity-50 sm:w-auto sm:px-8"
+              >
+                {profileBusy ? "Сохранение…" : "Сохранить изменения"}
+              </button>
+            </form>
+            <button
+              type="button"
+              className="mt-4 hidden text-sm font-medium text-teal-700 underline sm:inline"
+              onClick={onLogout}
+            >
+              Выйти
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="mt-1 text-sm text-slate-600">
+              <span className="font-medium text-slate-800">{p?.full_name}</span>
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              Дата рождения: {formatDate(p?.birth_date)} · Тел.: {p?.phone || "—"}
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              Рост: {p?.height != null && p?.height !== "" ? `${p.height} см` : "—"} · Вес:{" "}
+              {p?.weight != null && p?.weight !== "" ? `${p.weight} кг` : "—"}
+            </p>
+            <p className="mt-3 rounded-xl border border-amber-100 bg-amber-50/80 px-3 py-2 text-xs text-amber-900">
+              Чтобы редактировать данные, откройте кабинет через мини-приложение MAX (вход по аккаунту мессенджера).
+            </p>
+          </>
+        )}
       </section>
 
       <section className={card}>
@@ -287,36 +462,54 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
       </section>
 
       <section className={card}>
-        <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
-          <ListChecks className="h-5 w-5 shrink-0 text-teal-600" strokeWidth={1.75} aria-hidden />
-          Опросники от врача
-        </h2>
-        <p className="mt-1 text-xs text-slate-500">
-          Здесь отображаются опросы, на которые вас направил лечащий врач через личные сообщения.
-        </p>
-        {doctorQuestionnaires.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-500">Пока нет завершённых опросов по приглашению врача.</p>
-        ) : (
-          <ul className="mt-3 space-y-3">
-            {doctorQuestionnaires.map((e) => (
-              <li key={e.id} className="rounded-xl border border-teal-100 bg-teal-50/50 p-3 text-sm">
-                <div className="flex flex-wrap justify-between gap-2 text-slate-800">
-                  <span className="font-medium">
-                    {(e.data?.questionnaire_title && String(e.data.questionnaire_title).trim()) || "Опросник"}
-                  </span>
-                  <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-teal-800 ring-1 ring-teal-100">
-                    {formatDate(e.entry_date)}
-                  </span>
-                </div>
-                {(e.conclusion || "").trim() ? (
-                  <p className="mt-2 whitespace-pre-wrap text-slate-700">{e.conclusion}</p>
-                ) : (
-                  <p className="mt-2 text-slate-500">Заключение пока не добавлено.</p>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-2 text-left"
+          onClick={() => setSurveysOpen((o) => !o)}
+          aria-expanded={surveysOpen}
+        >
+          <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
+            <ListChecks className="h-5 w-5 shrink-0 text-teal-600" strokeWidth={1.75} aria-hidden />
+            Опросники от врача
+          </h2>
+          <span className="flex shrink-0 items-center gap-2 text-xs text-slate-500">
+            {doctorQuestionnaires.length ? `${doctorQuestionnaires.length} запис.` : "нет записей"}
+            <ChevronDown
+              className={`h-5 w-5 shrink-0 text-slate-400 transition-transform ${surveysOpen ? "rotate-180" : ""}`}
+              aria-hidden
+            />
+          </span>
+        </button>
+        {surveysOpen ? (
+          <>
+            <p className="mt-2 text-xs text-slate-500">
+              Здесь отображаются опросы, на которые вас направил лечащий врач через личные сообщения.
+            </p>
+            {doctorQuestionnaires.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">Пока нет завершённых опросов по приглашению врача.</p>
+            ) : (
+              <ul className="mt-3 space-y-3">
+                {doctorQuestionnaires.map((e) => (
+                  <li key={e.id} className="rounded-xl border border-teal-100 bg-teal-50/50 p-3 text-sm">
+                    <div className="flex flex-wrap justify-between gap-2 text-slate-800">
+                      <span className="font-medium">
+                        {(e.data?.questionnaire_title && String(e.data.questionnaire_title).trim()) || "Опросник"}
+                      </span>
+                      <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-teal-800 ring-1 ring-teal-100">
+                        {formatDate(e.entry_date)}
+                      </span>
+                    </div>
+                    {(e.conclusion || "").trim() ? (
+                      <p className="mt-2 whitespace-pre-wrap text-slate-700">{e.conclusion}</p>
+                    ) : (
+                      <p className="mt-2 text-slate-500">Заключение пока не добавлено.</p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        ) : null}
       </section>
 
       <section className={card}>

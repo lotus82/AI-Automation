@@ -55,6 +55,16 @@ class MedicalPatientUpdate(BaseModel):
     treatment_plan: str | None = None
 
 
+class MedicalPatientPortalSelfUpdate(BaseModel):
+    """Поля карты, которые пациент может менять сам (личный кабинет MAX)."""
+
+    full_name: str | None = Field(default=None, min_length=1, max_length=512)
+    phone: str | None = None
+    birth_date: date | None = None
+    height: float | None = None
+    weight: float | None = None
+
+
 class MedicalPatientOut(BaseModel):
     id: UUID
     organization_id: UUID

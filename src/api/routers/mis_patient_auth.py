@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from src.api.dependencies import AsyncSessionDep, RedisDep, SettingsDep
 from src.api.dependencies_mis_patient import MisPatientDep
 from src.api.routers.mis import _norm_phone, _patient_out
-from src.api.schemas.mis import MedicalPatientOut
+from src.api.schemas.mis import MedicalPatientOut, MedicalPatientPortalSelfUpdate
 from src.domain import system_setting_keys as sk
 from src.infrastructure.max_webapp_validation import (
     max_init_data_max_user_id,
@@ -247,4 +247,32 @@ async def mis_max_patient_register(
 @router.get("/patient-session/me", response_model=MedicalPatientOut)
 async def mis_patient_session_me(patient: MisPatientDep) -> MedicalPatientOut:
     """Пример защищённого эндпоинта личного кабинета (только JWT ``mis_patient``)."""
+    return _patient_out(patient)
+
+
+@router.patch("/patient-session/me", response_model=MedicalPatientOut)
+async def mis_patient_session_update_me(
+    body: MedicalPatientPortalSelfUpdate,
+    patient: MisPatientDep,
+    session: AsyncSessionDep,
+) -> MedicalPatientOut:
+    """Обновление ФИО, контактов и антропометрии пациентом (без диагноза и плана лечения)."""
+    data = body.model_dump(exclude_unset=True)
+    if not data:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Нет полей для обновления",
+        )
+    if "full_name" in data and data["full_name"] is not None:
+        patient.full_name = data["full_name"].strip()
+    if "phone" in data:
+        patient.phone = None if data["phone"] is None else _norm_phone(str(data["phone"]))
+    if "birth_date" in data:
+        patient.birth_date = data["birth_date"]
+    if "height" in data:
+        patient.height = data["height"]
+    if "weight" in data:
+        patient.weight = data["weight"]
+    await session.commit()
+    await session.refresh(patient)
     return _patient_out(patient)
