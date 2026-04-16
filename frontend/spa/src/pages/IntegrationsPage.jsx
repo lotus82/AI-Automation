@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plug } from "lucide-react";
+import { IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
 import { useSearchParams } from "react-router-dom";
 import api from "../api/client.js";
 import { AgentChat } from "../components/Chat/AgentChat.jsx";
@@ -511,21 +512,9 @@ export function IntegrationsPage() {
                               </button>
                             </div>
                           ) : (
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                className="rounded border border-slate-600 px-2 py-1 text-xs text-sky-300 hover:bg-slate-800"
-                                onClick={() => startEdit(row)}
-                              >
-                                Редактировать
-                              </button>
-                              <button
-                                type="button"
-                                className="rounded border border-red-900/50 px-2 py-1 text-xs text-red-300 hover:bg-red-950/30"
-                                onClick={() => onDelete(row.id)}
-                              >
-                                Удалить
-                              </button>
+                            <div className="flex flex-wrap items-center gap-1">
+                              <IconEditButton title="Редактировать название" onClick={() => startEdit(row)} />
+                              <IconDeleteButton title="Удалить интеграцию" onClick={() => onDelete(row.id)} />
                             </div>
                           )}
                         </td>

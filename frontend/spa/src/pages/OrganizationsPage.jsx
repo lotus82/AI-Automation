@@ -2,6 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import api from "../api/client.js";
 import { useAuthStore } from "../store/authStore.js";
+import {
+  IconEditButton,
+  IconOrganizationActiveToggle,
+} from "../components/ui/IconActionButtons.jsx";
 
 export function OrganizationsPage() {
   const user = useAuthStore((s) => s.user);
@@ -18,6 +22,13 @@ export function OrganizationsPage() {
   const [adminPass, setAdminPass] = useState("");
   const [adminName, setAdminName] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const [editingOrg, setEditingOrg] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editOrgDisplayName, setEditOrgDisplayName] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editMsg, setEditMsg] = useState("");
+  const [toggleBusyId, setToggleBusyId] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -67,6 +78,57 @@ export function OrganizationsPage() {
       setMsg(typeof d === "string" ? d : "Ошибка создания");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openEdit = (o) => {
+    setEditingOrg(o);
+    setEditName(o.name || "");
+    setEditOrgDisplayName(o.display_name || "");
+    setEditMsg("");
+  };
+
+  const closeEdit = () => {
+    setEditingOrg(null);
+    setEditMsg("");
+  };
+
+  const saveEdit = async (e) => {
+    e.preventDefault();
+    if (!editingOrg) return;
+    const n = editName.trim();
+    if (!n) {
+      setEditMsg("Укажите полное название организации.");
+      return;
+    }
+    setEditSaving(true);
+    setEditMsg("");
+    try {
+      await api.patch(`/portal/organizations/${editingOrg.id}`, {
+        name: n,
+        organization_display_name: editOrgDisplayName.trim() || null,
+      });
+      closeEdit();
+      await load();
+    } catch (err) {
+      const d = err?.response?.data?.detail;
+      setEditMsg(typeof d === "string" ? d : "Ошибка сохранения");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const toggleOrgActive = async (o) => {
+    setToggleBusyId(o.id);
+    setError("");
+    try {
+      await api.patch(`/portal/organizations/${o.id}`, { is_active: !o.is_active });
+      await load();
+    } catch (err) {
+      const d = err?.response?.data?.detail;
+      setError(typeof d === "string" ? d : err?.message ?? String(err));
+    } finally {
+      setToggleBusyId(null);
     }
   };
 
@@ -198,6 +260,9 @@ export function OrganizationsPage() {
                   <th className="px-3 py-2 text-xs font-medium uppercase text-slate-400">Slug</th>
                   <th className="px-3 py-2 text-xs font-medium uppercase text-slate-400">Активна</th>
                   <th className="px-3 py-2 text-xs font-medium uppercase text-slate-400">Создана</th>
+                  <th className="px-3 py-2 text-xs font-medium uppercase text-slate-400 w-24">
+                    <span className="sr-only">Действия</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -210,6 +275,16 @@ export function OrganizationsPage() {
                     <td className="px-3 py-2 text-slate-500">
                       {o.created_at ? new Date(o.created_at).toLocaleString("ru-RU") : "—"}
                     </td>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-nowrap items-center justify-end gap-1">
+                        <IconEditButton onClick={() => openEdit(o)} />
+                        <IconOrganizationActiveToggle
+                          isActive={o.is_active}
+                          disabled={toggleBusyId === o.id}
+                          onClick={() => toggleOrgActive(o)}
+                        />
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -217,6 +292,70 @@ export function OrganizationsPage() {
           </div>
         )}
       </section>
+
+      {editingOrg ? (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-40 bg-black/60"
+            aria-label="Закрыть"
+            onClick={closeEdit}
+          />
+          <div
+            className="fixed left-1/2 top-1/2 z-50 w-[min(100%-2rem,24rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-600 bg-slate-900 p-5 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="org-edit-title"
+          >
+            <h2 id="org-edit-title" className="text-lg font-semibold text-white">
+              Редактирование организации
+            </h2>
+            <form className="mt-4 space-y-3" onSubmit={saveEdit}>
+              {editMsg ? <p className="text-sm text-red-400">{editMsg}</p> : null}
+              <div>
+                <label className="mb-1 block text-xs text-slate-400" htmlFor="org-edit-name">
+                  Название организации
+                </label>
+                <input
+                  id="org-edit-name"
+                  required
+                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-slate-400" htmlFor="org-edit-display">
+                  Имя для отображения (опционально)
+                </label>
+                <input
+                  id="org-edit-display"
+                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                  placeholder="Краткое имя в шапке панели"
+                  value={editOrgDisplayName}
+                  onChange={(e) => setEditOrgDisplayName(e.target.value)}
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={editSaving}
+                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  {editSaving ? "Сохранение…" : "Сохранить"}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-600 px-3 py-1.5 text-sm text-slate-300"
+                  onClick={closeEdit}
+                >
+                  Отмена
+                </button>
+              </div>
+            </form>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

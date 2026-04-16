@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "../api/client.js";
+import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
 import { ChatBotsMonitoring } from "../components/bots/ChatBotsMonitoring.jsx";
 import { CallAnalysisTab } from "../components/trainer/CallAnalysisTab.jsx";
 import { PAGE_INNER, PAGE_TEXT, TAB_ROW, tabBtn } from "../styles/pageLayout.js";
@@ -228,7 +229,9 @@ export function QAPage() {
               <th className={thClass}>Рекомендации</th>
               <th className={thClass}>Аудио</th>
               <th className={thClass}>Фрагмент</th>
-              <th className={thClass}>Удалить</th>
+              <th className={thClass}>
+                <span className="sr-only">Удалить запись</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -309,15 +312,11 @@ export function QAPage() {
                             >
                               ⬇
                             </a>
-                            <button
-                              type="button"
+                            <IconDeleteButton
                               title="Удалить только файл записи"
-                              aria-label="Удалить файл записи"
-                              className="text-amber-400 hover:text-amber-300"
+                              className="border-amber-900/50 text-amber-400 hover:bg-amber-950/30"
                               onClick={(e) => onDeleteRecording(e, id)}
-                            >
-                              ✕ файл
-                            </button>
+                            />
                           </div>
                         </div>
                       ) : (
@@ -328,14 +327,10 @@ export function QAPage() {
                       {snippet(rec.transcript_text, 120)}
                     </td>
                     <td className={tdClass} onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
+                      <IconDeleteButton
                         title="Удалить диалог целиком"
-                        className="rounded border border-red-900/50 bg-red-950/30 px-2 py-1 text-red-300 hover:bg-red-950/50"
                         onClick={(e) => onDeleteCall(e, id)}
-                      >
-                        🗑
-                      </button>
+                      />
                     </td>
                   </tr>
                 );

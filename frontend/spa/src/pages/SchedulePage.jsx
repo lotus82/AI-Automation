@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../api/client.js";
+import { IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
 
 function formatDetail(detail) {
   if (detail == null) return "";
@@ -505,15 +506,20 @@ export function SchedulePage() {
               <th className="px-3 py-2 font-medium">Активно</th>
               <th className="px-3 py-2 font-medium">Последний запуск</th>
               <th className="px-3 py-2 font-medium">Запуск / пауза</th>
-              <th className="px-3 py-2 font-medium">Редактировать</th>
-              <th className="px-3 py-2 font-medium">Данные / удалить</th>
+              <th className="px-3 py-2 w-12 font-medium">
+                <span className="sr-only">Редактировать</span>
+              </th>
+              <th className="px-3 py-2 font-medium">Данные</th>
+              <th className="px-3 py-2 w-12 font-medium">
+                <span className="sr-only">Удалить</span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {listLoading ? (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="px-3 py-6 text-center text-slate-500"
                 >
                   Загрузка…
@@ -522,7 +528,7 @@ export function SchedulePage() {
             ) : listError ? (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="px-3 py-6 text-center text-slate-500"
                 >
                   Не удалось загрузить список.
@@ -531,7 +537,7 @@ export function SchedulePage() {
             ) : rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="px-3 py-6 text-center text-slate-500"
                 >
                   Нет расписаний. Создайте выше.
@@ -568,32 +574,19 @@ export function SchedulePage() {
                       </button>
                     </td>
                     <td className="px-3 py-2 align-top">
+                      <IconEditButton title="Редактировать расписание" onClick={() => openEditModal(r)} />
+                    </td>
+                    <td className="px-3 py-2 align-top">
                       <button
                         type="button"
                         className={btnSecondary}
-                        onClick={() => openEditModal(r)}
+                        onClick={() => triggerUpload(id)}
                       >
-                        ✏ Редактировать
+                        ⬆ Загрузить данные
                       </button>
                     </td>
                     <td className="px-3 py-2 align-top">
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          className={btnSecondary}
-                          onClick={() => triggerUpload(id)}
-                        >
-                          ⬆ Загрузить данные
-                        </button>
-                        <button
-                          type="button"
-                          className={btnSecondary}
-                          title="Удалить"
-                          onClick={() => onDelete(id)}
-                        >
-                          🗑
-                        </button>
-                      </div>
+                      <IconDeleteButton title="Удалить расписание" onClick={() => onDelete(id)} />
                     </td>
                   </tr>
                 );
@@ -631,7 +624,7 @@ export function SchedulePage() {
                 id="sch-edit-title"
                 className="text-lg font-semibold text-white"
               >
-                ✏ Редактировать расписание
+                Редактировать расписание
               </h2>
               <button
                 type="button"

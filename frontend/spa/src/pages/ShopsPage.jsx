@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { Pencil, Plus, Store, Trash2 } from "lucide-react";
+import { Plus, Store } from "lucide-react";
+import { IconDeleteButton, IconEditLink } from "../components/ui/IconActionButtons.jsx";
 import api from "../api/client.js";
 
 function formatApiDetail(err) {
@@ -157,23 +157,14 @@ export function ShopsPage() {
                   </td>
                   <td className="px-4 py-3 text-slate-400">{formatDate(s.updated_at)}</td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-2">
-                      <Link
-                        to={`/shops/${s.id}/edit`}
-                        className={`inline-flex items-center gap-1 rounded border border-slate-600 px-2 py-1 text-xs text-slate-200 ${pressableSub}`}
-                      >
-                        <Pencil className="h-3.5 w-3.5" aria-hidden />
-                        Редактировать
-                      </Link>
-                      <button
-                        type="button"
+                    <div className="flex flex-wrap items-center gap-1">
+                      <IconEditLink to={`/shops/${s.id}/edit`} className={pressableSub} />
+                      <IconDeleteButton
                         disabled={busy}
+                        title="Удалить магазин"
+                        className={pressableSub}
                         onClick={() => onDelete(s.id, s.name)}
-                        className={`inline-flex items-center gap-1 rounded border border-red-900/60 px-2 py-1 text-xs text-red-300 disabled:opacity-50 ${pressableSub}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                        Удалить
-                      </button>
+                      />
                     </div>
                   </td>
                 </tr>

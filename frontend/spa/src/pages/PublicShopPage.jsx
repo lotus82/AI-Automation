@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { ShoppingCart } from "lucide-react";
+import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
 
 const MESSENGERS = [
   { id: "max", label: "MAX" },
@@ -453,13 +454,11 @@ export function PublicShopPage() {
                       >
                         +
                       </button>
-                      <button
-                        type="button"
-                        className="ml-1 text-xs text-red-400 underline"
+                      <IconDeleteButton
+                        title="Удалить из корзины"
+                        className="ml-1 border-[color-mix(in_srgb,var(--shop-muted)_35%,transparent)] text-red-400 hover:bg-red-950/25"
                         onClick={() => removeLine(l.id)}
-                      >
-                        Удалить
-                      </button>
+                      />
                     </div>
                   </li>
                 ))

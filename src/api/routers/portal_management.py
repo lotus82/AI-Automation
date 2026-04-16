@@ -15,6 +15,7 @@ from src.api.dependencies import AsyncSessionDep
 from src.api.dependencies_portal import OrgManagerDep, PortalUserDep, SuperAdminDep
 from src.api.schemas.portal import (
     OrganizationCreate,
+    OrganizationPatch,
     OrganizationPublic,
     PortalUserCreate,
     PortalUserPatch,
@@ -66,6 +67,17 @@ def _user_to_public(u: PortalUserModel) -> PortalUserPublic:
     )
 
 
+def _org_to_public(org: OrganizationModel) -> OrganizationPublic:
+    return OrganizationPublic(
+        id=org.id,
+        name=org.name,
+        display_name=(org.display_name or "").strip() or None,
+        slug=org.slug,
+        is_active=org.is_active,
+        created_at=org.created_at,
+    )
+
+
 @router.get("/organizations", response_model=list[OrganizationPublic])
 async def list_organizations(
     _: SuperAdminDep,
@@ -73,17 +85,7 @@ async def list_organizations(
 ) -> list[OrganizationPublic]:
     r = await session.execute(select(OrganizationModel).order_by(OrganizationModel.created_at.desc()))
     rows = r.scalars().all()
-    return [
-        OrganizationPublic(
-            id=x.id,
-            name=x.name,
-            display_name=(x.display_name or "").strip() or None,
-            slug=x.slug,
-            is_active=x.is_active,
-            created_at=x.created_at,
-        )
-        for x in rows
-    ]
+    return [_org_to_public(x) for x in rows]
 
 
 @router.post("/organizations", response_model=OrganizationPublic, status_code=status.HTTP_201_CREATED)
@@ -126,14 +128,34 @@ async def create_organization(
     session.add(admin)
     await session.commit()
     await session.refresh(org)
-    return OrganizationPublic(
-        id=org.id,
-        name=org.name,
-        display_name=(org.display_name or "").strip() or None,
-        slug=org.slug,
-        is_active=org.is_active,
-        created_at=org.created_at,
-    )
+    return _org_to_public(org)
+
+
+@router.patch("/organizations/{org_id}", response_model=OrganizationPublic)
+async def patch_organization(
+    org_id: UUID,
+    body: OrganizationPatch,
+    _: SuperAdminDep,
+    session: AsyncSessionDep,
+) -> OrganizationPublic:
+    if body.name is None and body.organization_display_name is None and body.is_active is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Укажите хотя бы одно поле: name, organization_display_name или is_active",
+        )
+    org = await session.get(OrganizationModel, org_id)
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Организация не найдена")
+    if body.name is not None:
+        org.name = body.name.strip()
+    if body.organization_display_name is not None:
+        org.display_name = (body.organization_display_name or "").strip() or None
+    if body.is_active is not None:
+        org.is_active = body.is_active
+    session.add(org)
+    await session.commit()
+    await session.refresh(org)
+    return _org_to_public(org)
 
 
 @router.get("/users", response_model=list[PortalUserPublic])

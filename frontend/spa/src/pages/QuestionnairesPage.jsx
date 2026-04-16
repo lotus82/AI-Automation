@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ClipboardList } from "lucide-react";
+import { IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
 import { createPortal } from "react-dom";
 import api from "../api/client.js";
 import { SurveyTakeExperience } from "../components/questionnaires/SurveyTakeExperience.jsx";
@@ -396,7 +397,7 @@ export function QuestionnairesPage() {
                   <td className="px-4 py-3 text-slate-400">{formatDate(r.created_at)}</td>
                   <td className="px-4 py-3 text-slate-400">{formatDate(r.updated_at)}</td>
                   <td className="px-4 py-3 text-right">
-                    <div className="flex flex-wrap justify-end gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-1">
                       <button
                         type="button"
                         className="rounded-md bg-slate-700 px-2.5 py-1 text-xs text-white hover:bg-slate-600"
@@ -404,20 +405,8 @@ export function QuestionnairesPage() {
                       >
                         Пройти
                       </button>
-                      <button
-                        type="button"
-                        className="rounded-md border border-slate-600 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800"
-                        onClick={() => openEdit(r.id)}
-                      >
-                        Редактировать
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-md border border-red-900/50 px-2.5 py-1 text-xs text-red-300 hover:bg-red-950/40"
-                        onClick={() => setDeleteId(r.id)}
-                      >
-                        Удалить
-                      </button>
+                      <IconEditButton title="Редактировать опросник" onClick={() => openEdit(r.id)} />
+                      <IconDeleteButton title="Удалить опросник" onClick={() => setDeleteId(r.id)} />
                     </div>
                   </td>
                 </tr>
@@ -495,13 +484,11 @@ export function QuestionnairesPage() {
                         <option value="multiple">Несколько вариантов</option>
                         <option value="text">Свободный текст</option>
                       </select>
-                      <button
-                        type="button"
-                        className="ml-auto text-xs text-red-400 hover:text-red-300"
+                      <IconDeleteButton
+                        title="Удалить вопрос"
+                        className="ml-auto h-7 w-7"
                         onClick={() => removeQuestion(qi)}
-                      >
-                        Удалить вопрос
-                      </button>
+                      />
                     </div>
                     <input
                       className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
@@ -612,15 +599,14 @@ export function QuestionnairesPage() {
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-md rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
             <p className="text-sm text-slate-200">Удалить этот опросник? Действие необратимо.</p>
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
+            <div className="mt-4 flex items-center gap-2">
+              <IconDeleteButton
+                title="Удалить опросник"
                 disabled={deleting}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-500 disabled:opacity-50"
+                busy={deleting}
+                className="h-10 w-10"
                 onClick={confirmDelete}
-              >
-                {deleting ? "Удаление…" : "Удалить"}
-              </button>
+              />
               <button
                 type="button"
                 className="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"

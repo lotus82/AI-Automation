@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
-import { Trash2 } from "lucide-react";
+import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
 import { useStorefrontCart } from "../store/storefrontCartStore.js";
 
 function formatApiDetail(err) {
@@ -181,23 +181,18 @@ export function StoreCartPage() {
                   >
                     +
                   </button>
-                  <button
-                    type="button"
-                    className="ml-auto rounded-lg p-2 text-red-400 hover:bg-red-950/40"
+                  <IconDeleteButton
+                    title="Удалить из корзины"
+                    className="ml-auto"
                     onClick={() => removeLine(s, pid)}
-                    aria-label="Удалить"
-                  >
-                    <Trash2 className="h-4 w-4" aria-hidden />
-                  </button>
+                  />
                 </div>
               ) : (
-                <button
-                  type="button"
-                  className="mt-2 text-xs text-red-400 underline"
+                <IconDeleteButton
+                  title="Удалить из корзины"
+                  className="mt-2"
                   onClick={() => removeLine(s, pid)}
-                >
-                  Удалить
-                </button>
+                />
               )}
             </div>
           </li>

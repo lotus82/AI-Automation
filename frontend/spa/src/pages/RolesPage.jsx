@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import api from "../api/client.js";
+import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
 import { SK } from "../constants/systemSettingsKeys.js";
 import { mapFromList } from "../utils/systemSettingsForm.js";
 
@@ -285,9 +286,6 @@ export function RolesPage() {
   const sectionTitleClass =
     "mb-4 flex items-center gap-2 text-lg font-semibold text-slate-100";
 
-  const pressableDanger =
-    "rounded border border-red-900/50 px-2 py-1 text-xs text-red-300 hover:bg-red-950/40";
-
   const roleOptions = roleRows.map((r) => ({
     value: r.roleId,
     label: (r.name || "").trim() || r.roleId.slice(0, 8) + "…",
@@ -394,14 +392,11 @@ export function RolesPage() {
                           />
                         </td>
                         <td className="px-2 py-2 text-right whitespace-nowrap">
-                          <button
-                            type="button"
-                            className={pressableDanger}
+                          <IconDeleteButton
+                            title="Удалить роль"
                             disabled={roleRows.length <= 1}
                             onClick={() => removeRoleRow(row.rowKey)}
-                          >
-                            Удалить
-                          </button>
+                          />
                         </td>
                       </tr>
                     ))
@@ -496,13 +491,10 @@ export function RolesPage() {
                           />
                         </td>
                         <td className="px-2 py-2 text-right whitespace-nowrap">
-                          <button
-                            type="button"
-                            className={pressableDanger}
+                          <IconDeleteButton
+                            title="Удалить строку группы"
                             onClick={() => removeMaxRow(row.rowId)}
-                          >
-                            Удалить
-                          </button>
+                          />
                         </td>
                       </tr>
                     ))

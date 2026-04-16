@@ -67,6 +67,14 @@ class OrganizationPublic(BaseModel):
     created_at: datetime
 
 
+class OrganizationPatch(BaseModel):
+    """Частичное обновление организации (супер-админ)."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    organization_display_name: str | None = Field(default=None, max_length=255)
+    is_active: bool | None = None
+
+
 class PortalUserCreate(BaseModel):
     username: str = Field(min_length=2, max_length=128)
     password: str = Field(min_length=6, max_length=256)

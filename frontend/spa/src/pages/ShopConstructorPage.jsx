@@ -11,8 +11,8 @@ import {
   ScrollText,
   Settings2,
   ShoppingCart,
-  Trash2,
 } from "lucide-react";
+import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
 import api from "../api/client.js";
 
 function formatApiDetail(err) {
@@ -71,13 +71,11 @@ function CategoryTreeRow({ node, depth, onAddChild, onDelete }) {
           >
             Подкатегория
           </button>
-          <button
-            type="button"
+          <IconDeleteButton
+            title="Удалить категорию"
+            className="h-7 w-7"
             onClick={() => onDelete(node)}
-            className="rounded border border-red-900/50 px-2 py-0.5 text-[11px] text-red-300 hover:bg-slate-800"
-          >
-            <Trash2 className="h-3 w-3" aria-hidden />
-          </button>
+          />
         </div>
       </div>
       {node.children?.length
@@ -704,13 +702,7 @@ export function ShopConstructorPage() {
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <button
-                        type="button"
-                        className="text-xs text-red-400 hover:underline"
-                        onClick={() => deleteProduct(p.id)}
-                      >
-                        Удалить
-                      </button>
+                      <IconDeleteButton title="Удалить товар" onClick={() => deleteProduct(p.id)} />
                     </td>
                   </tr>
                 ))}
@@ -896,13 +888,7 @@ export function ShopConstructorPage() {
                 <span>
                   {d.name} — {d.percentage}% ({d.start_date} — {d.end_date})
                 </span>
-                <button
-                  type="button"
-                  className="text-xs text-red-400"
-                  onClick={() => deleteDiscount(d.id)}
-                >
-                  Удалить
-                </button>
+                <IconDeleteButton title="Удалить скидку" onClick={() => deleteDiscount(d.id)} />
               </li>
             ))}
           </ul>

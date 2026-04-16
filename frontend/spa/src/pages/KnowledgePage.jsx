@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../api/client.js";
+import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
 
 function formatDate(iso) {
   if (!iso) return "—";
@@ -124,9 +125,6 @@ export function KnowledgePage() {
     "inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:opacity-50";
   const btnSecondary =
     "inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-600 bg-slate-800 px-4 py-2.5 text-sm text-slate-200 hover:bg-slate-700";
-  const btnDanger =
-    "inline-flex items-center justify-center rounded-lg border border-red-900/60 bg-red-950/40 px-2 py-1.5 text-sm text-red-200 hover:bg-red-900/50";
-
   const uploadMsgClass =
     uploadMsgKind === "err"
       ? "text-red-400"
@@ -275,14 +273,7 @@ export function KnowledgePage() {
                       {formatDate(r.created_at)}
                     </td>
                     <td className="px-2 py-2 align-top">
-                      <button
-                        type="button"
-                        className={btnDanger}
-                        title="Удалить"
-                        onClick={() => onDelete(id)}
-                      >
-                        🗑
-                      </button>
+                      <IconDeleteButton title="Удалить фрагмент" onClick={() => onDelete(id)} />
                     </td>
                   </tr>
                 );

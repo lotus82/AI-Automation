@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileText, GripVertical, Trash2 } from "lucide-react";
+import { FileText, GripVertical } from "lucide-react";
+import { IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
 import api from "../api/client.js";
 
 /** Визуальный отклик: нажатие, фокус, плавные переходы */
@@ -602,13 +603,11 @@ export function FormsPage() {
                             />
                             Обязательное
                           </label>
-                          <button
-                            type="button"
-                            className={`ml-auto rounded px-2 py-0.5 text-xs text-red-400 border border-transparent ${pressableDanger}`}
+                          <IconDeleteButton
+                            title="Удалить поле"
+                            className={`ml-auto h-7 w-7 ${pressableDanger}`}
                             onClick={() => removeField(idx)}
-                          >
-                            Удалить
-                          </button>
+                          />
                         </div>
                         <input
                           className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-sm text-white"
@@ -669,21 +668,17 @@ export function FormsPage() {
                     <div className="font-medium text-white">{t.name}</div>
                     <div className="text-xs text-slate-500">{(t.fields ?? []).length} полей</div>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      className={`rounded px-2 py-1 text-xs text-sky-400 border border-sky-800/40 ${pressableSubtle}`}
+                  <div className="flex items-center gap-1">
+                    <IconEditButton
+                      title="Изменить шаблон"
+                      className={pressableSubtle}
                       onClick={() => startEditTemplate(t)}
-                    >
-                      Изменить
-                    </button>
-                    <button
-                      type="button"
-                      className={`rounded px-2 py-1 text-xs text-red-400 border border-red-900/40 ${pressableDanger}`}
+                    />
+                    <IconDeleteButton
+                      title="Удалить шаблон"
+                      className={pressableDanger}
                       onClick={() => deleteTemplate(t.id)}
-                    >
-                      Удалить
-                    </button>
+                    />
                   </div>
                 </li>
               ))}
@@ -1029,14 +1024,13 @@ export function FormsPage() {
                       {eventBusy === "close" ? "…" : "Завершить регистрацию"}
                     </button>
                   )}
-                  <button
-                    type="button"
+                  <IconDeleteButton
+                    title="Удалить мероприятие"
                     disabled={!!eventBusy}
-                    className={`rounded border border-red-800 px-3 py-1.5 text-xs text-red-300 ${pressableDanger} disabled:opacity-50`}
+                    busy={eventBusy === "delete"}
+                    className={`${pressableDanger} disabled:opacity-50`}
                     onClick={() => deleteEvent(selectedEvent.id)}
-                  >
-                    {eventBusy === "delete" ? "…" : "Удалить мероприятие"}
-                  </button>
+                  />
                 </div>
                 <div className="flex flex-wrap items-end gap-2">
                   <div>
@@ -1122,16 +1116,12 @@ export function FormsPage() {
                               );
                             })}
                             <td className="px-1 py-1 align-top text-right">
-                              <button
-                                type="button"
+                              <IconDeleteButton
                                 title="Удалить заявку"
-                                aria-label="Удалить заявку"
                                 disabled={!!eventBusy || deletingSubmissionId !== null}
-                                className={`inline-flex rounded border border-red-900/50 p-1 text-red-400 ${pressableDanger} disabled:opacity-40 disabled:pointer-events-none`}
+                                className={`h-7 w-7 ${pressableDanger}`}
                                 onClick={() => deleteSubmission(s.id)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
-                              </button>
+                              />
                             </td>
                           </tr>
                         ))}
