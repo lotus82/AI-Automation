@@ -65,6 +65,37 @@ def _redis_key(chat_id: int) -> str:
     return f"{_REDIS_PREFIX}{chat_id}"
 
 
+def _normalize_max_update_type(raw: str) -> str:
+    s = (raw or "").strip().lower()
+    for ch in (" ", "-"):
+        s = s.replace(ch, "_")
+    return s
+
+
+def _reg_payload_from_message_struct(msg: dict[str, Any]) -> str | None:
+    """Параметр диплинка из JSON MAX (не только ``/start`` в ``body.text``)."""
+
+    def _as_reg(v: Any) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip()
+        if _REG_DEEP.match(s):
+            return s
+        return None
+
+    for key in ("start_param", "startParam", "startapp", "startApp", "payload"):
+        hit = _as_reg(msg.get(key))
+        if hit:
+            return hit
+    b = msg.get("body")
+    if isinstance(b, dict):
+        for key in ("start_param", "startParam", "startapp", "startApp", "payload"):
+            hit = _as_reg(b.get(key))
+            if hit:
+                return hit
+    return None
+
+
 def _parse_birth_date(text: str) -> tuple[date | None, bool]:
     """(значение или None при пропуске, успех_разбора)."""
     s = (text or "").strip().lower()
@@ -331,6 +362,142 @@ async def _process_wizard_reply(
     return True
 
 
+async def _mis_run_start_registration(
+    *,
+    session: AsyncSession,
+    redis: Any,
+    settings: Settings,
+    query_organization_id: UUID | None,
+    body_for_org_resolve: dict[str, Any],
+    org_id: UUID,
+    doc_id: UUID,
+    chat_id: int,
+    max_uid: str | None,
+) -> dict[str, Any]:
+    """Общая логика: уже есть карта → ссылки; иначе мастер регистрации."""
+    org_scope = await resolve_max_webhook_organization_id(
+        session,
+        body_for_org_resolve,
+        query_organization_id=query_organization_id,
+    )
+    if org_scope is not None and org_scope != org_id:
+        logger.warning(
+            "MAX МИС регистрация: organization_id из deep link %s не совпадает с организацией бота %s",
+            org_id,
+            org_scope,
+        )
+
+    repo = PostgresSettingsRepository(session, redis, organization_id=org_id)
+    token = (await repo.get_value(sk.MAX_BOT_TOKEN) or "").strip()
+    if not token:
+        logger.warning("MAX МИС регистрация: нет MAX_BOT_TOKEN для organization_id=%s", org_id)
+        return {"ok": True, "skipped": True, "reason": "no_max_bot_token"}
+
+    max_client = MaxMessengerClient(
+        settings_repository=repo,
+        api_base_url=settings.max_api_base,
+        platform_api_base_url=settings.max_platform_api_base,
+        env_fallback_max_bot_token=settings.max_bot_token,
+    )
+
+    existing = await _find_patient_for_max_identity(session, org_id, chat_id, max_uid)
+    if existing is not None:
+        try:
+            if existing.max_chat_id != str(chat_id) or (max_uid and existing.max_user_id != max_uid):
+                if existing.max_chat_id != str(chat_id):
+                    existing.max_chat_id = str(chat_id)
+                if max_uid and not (existing.max_user_id or "").strip():
+                    existing.max_user_id = max_uid
+                await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            logger.exception("MAX МИС: не удалось обновить привязку чата для patient_id=%s", existing.id)
+
+        out = _registered_patient_message(settings, org_id, existing.id)
+        try:
+            await max_client.send_message(chat_id, out)
+        except Exception:
+            logger.exception("MAX МИС: ошибка отправки (уже зарег.), chat_id=%s", chat_id)
+            return {"ok": True, "mis_patient_start": False, "send_error": True}
+        return {"ok": True, "mis_patient_registration": "existing"}
+
+    doc = await session.get(MedicalDoctorModel, doc_id)
+    if doc is None or doc.organization_id != org_id or not doc.is_active:
+        try:
+            await max_client.send_message(
+                chat_id,
+                "Врач из приглашения не найден или недоступен. Попросите у клиники новую ссылку.",
+            )
+        except Exception:
+            logger.exception("MAX МИС: ошибка отправки (врач недоступен), chat_id=%s", chat_id)
+        return {"ok": True, "mis_patient_registration": "doctor_missing"}
+
+    await _clear_state(redis, chat_id)
+    state = {
+        "org_id": str(org_id),
+        "doc_id": str(doc_id),
+        "step": _STEP_FULL_NAME,
+    }
+    await _save_state(redis, chat_id, state)
+
+    try:
+        await max_client.send_message(chat_id, _prompt_for_step(_STEP_FULL_NAME))
+    except Exception:
+        logger.exception("MAX МИС: ошибка отправки (начало мастера), chat_id=%s", chat_id)
+        await _clear_state(redis, chat_id)
+        return {"ok": True, "mis_patient_start": False, "send_error": True}
+
+    return {"ok": True, "mis_patient_registration": "wizard_started"}
+
+
+async def _mis_handle_bot_started(
+    body: dict[str, Any],
+    *,
+    session: AsyncSession,
+    redis: Any,
+    settings: Settings,
+    query_organization_id: UUID | None,
+) -> dict[str, Any] | None:
+    """Событие ``bot_started``: диплинк ``?start=reg_org_…_doc_…`` приходит в ``payload`` (см. dev.max.ru)."""
+    payload_raw = body.get("payload")
+    if payload_raw is None:
+        return None
+    arg = str(payload_raw).strip()
+    m_reg = _REG_DEEP.match(arg)
+    if not m_reg:
+        return None
+
+    chat_raw = body.get("chat_id")
+    if chat_raw is None:
+        chat_raw = body.get("chatId")
+    if chat_raw is None:
+        return None
+    try:
+        chat_id = int(chat_raw)
+    except (TypeError, ValueError):
+        return None
+    if chat_id < 0:
+        return None
+
+    user = body.get("user")
+    max_uid = _max_sender_user_id_str(user if isinstance(user, dict) else None)
+
+    org_id = UUID(m_reg.group(1))
+    doc_id = UUID(m_reg.group(2))
+
+    return await _mis_run_start_registration(
+        session=session,
+        redis=redis,
+        settings=settings,
+        query_organization_id=query_organization_id,
+        body_for_org_resolve=body,
+        org_id=org_id,
+        doc_id=doc_id,
+        chat_id=chat_id,
+        max_uid=max_uid,
+    )
+
+
 async def try_max_bot_mis_patient_registration_flow(
     body: dict[str, Any],
     *,
@@ -339,8 +506,19 @@ async def try_max_bot_mis_patient_registration_flow(
     settings: Settings,
     query_organization_id: UUID | None,
 ) -> dict[str, Any] | None:
-    """Обрабатывает /start с reg_org… и пошаговую регистрацию в личном чате с ботом."""
-    if (body.get("update_type") or "").strip() != "message_created":
+    """Обрабатывает ``bot_started``, ``/start`` с reg_org… и пошаговый диалог в личном чате."""
+    ut = _normalize_max_update_type(str(body.get("update_type") or ""))
+    if ut == "bot_started":
+        started = await _mis_handle_bot_started(
+            body,
+            session=session,
+            redis=redis,
+            settings=settings,
+            query_organization_id=query_organization_id,
+        )
+        return started
+
+    if ut != "message_created":
         return None
     msg = body.get("message")
     if not isinstance(msg, dict):
@@ -368,9 +546,13 @@ async def try_max_bot_mis_patient_registration_flow(
         return None
 
     b = msg.get("body")
-    if not isinstance(b, dict):
-        return None
-    text = (b.get("text") or "").strip()
+    text = (b.get("text") or "").strip() if isinstance(b, dict) else ""
+    embedded_reg = _reg_payload_from_message_struct(msg)
+    if embedded_reg:
+        m_start = _START_CMD.match(text)
+        payload_from_text = (m_start.group("payload") or "").strip() if m_start else ""
+        if not _REG_DEEP.match(payload_from_text):
+            text = f"/start {embedded_reg}"
     if not text:
         return None
 
@@ -381,7 +563,6 @@ async def try_max_bot_mis_patient_registration_flow(
     m_reg = _REG_DEEP.match(payload_arg)
     is_our_start = bool(m_start and m_reg)
 
-    # --- /start reg_org_*_doc_* (приоритет: новое приглашение сбрасывает незавершённый мастер)
     if not is_our_start:
         pending = await _load_state(redis, chat_id)
         if pending:
@@ -415,76 +596,14 @@ async def try_max_bot_mis_patient_registration_flow(
     org_id = UUID(m_reg.group(1))
     doc_id = UUID(m_reg.group(2))
 
-    org_scope = await resolve_max_webhook_organization_id(
-        session,
-        body,
+    return await _mis_run_start_registration(
+        session=session,
+        redis=redis,
+        settings=settings,
         query_organization_id=query_organization_id,
+        body_for_org_resolve=body,
+        org_id=org_id,
+        doc_id=doc_id,
+        chat_id=chat_id,
+        max_uid=max_uid,
     )
-    if org_scope is not None and org_scope != org_id:
-        logger.warning(
-            "MAX /start МИС: organization_id из deep link %s не совпадает с организацией бота %s",
-            org_id,
-            org_scope,
-        )
-
-    repo = PostgresSettingsRepository(session, redis, organization_id=org_id)
-    token = (await repo.get_value(sk.MAX_BOT_TOKEN) or "").strip()
-    if not token:
-        logger.warning("MAX /start МИС: нет MAX_BOT_TOKEN для organization_id=%s", org_id)
-        return {"ok": True, "skipped": True, "reason": "no_max_bot_token"}
-
-    max_client = MaxMessengerClient(
-        settings_repository=repo,
-        api_base_url=settings.max_api_base,
-        platform_api_base_url=settings.max_platform_api_base,
-        env_fallback_max_bot_token=settings.max_bot_token,
-    )
-
-    existing = await _find_patient_for_max_identity(session, org_id, chat_id, max_uid)
-    if existing is not None:
-        try:
-            if existing.max_chat_id != str(chat_id) or (max_uid and existing.max_user_id != max_uid):
-                if existing.max_chat_id != str(chat_id):
-                    existing.max_chat_id = str(chat_id)
-                if max_uid and not (existing.max_user_id or "").strip():
-                    existing.max_user_id = max_uid
-                await session.commit()
-        except IntegrityError:
-            await session.rollback()
-            logger.exception("MAX МИС: не удалось обновить привязку чата для patient_id=%s", existing.id)
-
-        out = _registered_patient_message(settings, org_id, existing.id)
-        try:
-            await max_client.send_message(chat_id, out)
-        except Exception:
-            logger.exception("MAX /start МИС: ошибка отправки (уже зарег.), chat_id=%s", chat_id)
-            return {"ok": True, "mis_patient_start": False, "send_error": True}
-        return {"ok": True, "mis_patient_registration": "existing"}
-
-    doc = await session.get(MedicalDoctorModel, doc_id)
-    if doc is None or doc.organization_id != org_id or not doc.is_active:
-        try:
-            await max_client.send_message(
-                chat_id,
-                "Врач из приглашения не найден или недоступен. Попросите у клиники новую ссылку.",
-            )
-        except Exception:
-            logger.exception("MAX /start МИС: ошибка отправки (врач недоступен), chat_id=%s", chat_id)
-        return {"ok": True, "mis_patient_registration": "doctor_missing"}
-
-    await _clear_state(redis, chat_id)
-    state = {
-        "org_id": str(org_id),
-        "doc_id": str(doc_id),
-        "step": _STEP_FULL_NAME,
-    }
-    await _save_state(redis, chat_id, state)
-
-    try:
-        await max_client.send_message(chat_id, _prompt_for_step(_STEP_FULL_NAME))
-    except Exception:
-        logger.exception("MAX /start МИС: ошибка отправки (начало мастера), chat_id=%s", chat_id)
-        await _clear_state(redis, chat_id)
-        return {"ok": True, "mis_patient_start": False, "send_error": True}
-
-    return {"ok": True, "mis_patient_registration": "wizard_started"}

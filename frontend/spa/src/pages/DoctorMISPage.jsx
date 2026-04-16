@@ -9,6 +9,7 @@ import {
   Send,
   Sparkles,
   Stethoscope,
+  Trash2,
   X,
 } from "lucide-react";
 import QRCode from "react-qr-code";
@@ -98,6 +99,7 @@ export function DoctorMISPage() {
   const [weight, setWeight] = useState("");
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const [aiBusy, setAiBusy] = useState(false);
   const [aiText, setAiText] = useState("");
@@ -288,6 +290,31 @@ export function DoctorMISPage() {
       setSaveMsg(formatApiDetail(e));
     } finally {
       setSaveBusy(false);
+    }
+  };
+
+  const deletePatient = async () => {
+    if (!patientId) return;
+    const name = detail?.patient?.full_name || "пациента";
+    if (
+      !window.confirm(
+        `Удалить карту «${name}» и все связанные записи (обследования, опросники)? Действие необратимо.`,
+      )
+    ) {
+      return;
+    }
+    setDeleteBusy(true);
+    setDetailErr("");
+    try {
+      const delUrl = isMisAdmin
+        ? `/mis/admin/patients/${patientId}`
+        : `/mis/doctor/patients/${patientId}`;
+      await api.delete(delUrl);
+      navigate("/mis");
+    } catch (e) {
+      setDetailErr(formatApiDetail(e));
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -825,6 +852,17 @@ export function DoctorMISPage() {
                   ) : null}
                 </div>
               ) : null}
+              <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-4">
+                <button
+                  type="button"
+                  disabled={deleteBusy}
+                  onClick={deletePatient}
+                  className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800 shadow-sm hover:bg-red-100 disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
+                  {deleteBusy ? "Удаление…" : "Удалить карту пациента"}
+                </button>
+              </div>
             </header>
 
             <section className={card}>

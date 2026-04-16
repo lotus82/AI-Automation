@@ -40,6 +40,8 @@ _POLL_LONG_TIMEOUT_SEC = 30
 _POLL_TYPES = (
     "message_created",
     "message_callback",
+    "bot_started",
+    "BOT_STARTED",
     "voice_call_incoming",
     "VOICE_CALL_INCOMING",
     "call_incoming",

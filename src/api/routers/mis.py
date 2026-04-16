@@ -399,6 +399,27 @@ async def mis_admin_patch_patient(
     return _patient_out(p)
 
 
+@router.delete("/admin/patients/{patient_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def mis_admin_delete_patient(
+    patient_id: UUID,
+    user: MisAdminDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(None, description="Для super_admin: организация"),
+) -> None:
+    """Удаление карты пациента и всех связанных записей (обследования, опросники, дневник)."""
+    scope = resolve_organization_scope(user, organization_id)
+    if scope is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Укажите organization_id или войдите в контекст организации",
+        )
+    p = await session.get(MedicalPatientModel, patient_id)
+    if p is None or p.organization_id != scope:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Пациент не найден")
+    await session.delete(p)
+    await session.commit()
+
+
 @router.post("/admin/ai-consult", response_model=MisAiConsultResponse)
 async def mis_admin_ai_consult(
     body: MisAiConsultRequest,
@@ -650,6 +671,20 @@ async def mis_doctor_update_patient(
     await session.commit()
     await session.refresh(p)
     return _patient_out(p)
+
+
+@router.delete("/doctor/patients/{patient_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def mis_doctor_delete_patient(
+    patient_id: UUID,
+    doctor: MisDoctorDep,
+    session: AsyncSessionDep,
+) -> None:
+    """Удаление карты пациента и всех связанных записей."""
+    p = await session.get(MedicalPatientModel, patient_id)
+    if p is None or p.doctor_id != doctor.id or p.organization_id != doctor.organization_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Пациент не найден")
+    await session.delete(p)
+    await session.commit()
 
 
 @router.post("/doctor/patients/{patient_id}/entries", response_model=MedicalEntryOut, status_code=status.HTTP_201_CREATED)
