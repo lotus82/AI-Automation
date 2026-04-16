@@ -352,6 +352,7 @@ async def update_settings(
                     )
                 role_id: str | None = None
                 add = ""
+                desc: str | None = None
                 if isinstance(v_raw, str):
                     add = v_raw.strip()
                 elif isinstance(v_raw, dict):
@@ -373,6 +374,15 @@ async def update_settings(
                         role_id = cand
                     ap = v_raw.get("additional_prompt")
                     add = ap.strip() if isinstance(ap, str) else ""
+                    if "description" in v_raw:
+                        dp = v_raw.get("description")
+                        dstr = dp.strip() if isinstance(dp, str) else ""
+                        if len(dstr) > 4000:
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"MAX_GROUP_CHAT_PROMPTS: description для {ks[:16]}… слишком длинный",
+                            )
+                        desc = dstr or None
                 else:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
@@ -383,7 +393,10 @@ async def update_settings(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"MAX_GROUP_CHAT_PROMPTS: additional_prompt для {ks[:16]}… слишком длинный",
                     )
-                out[ks] = {"role_id": role_id, "additional_prompt": add}
+                piece: dict[str, str | None] = {"role_id": role_id, "additional_prompt": add}
+                if desc:
+                    piece["description"] = desc
+                out[ks] = piece
             normalized[sk.MAX_GROUP_CHAT_PROMPTS] = json.dumps(out, ensure_ascii=False)
 
     if sk.MAX_CALL_ANSWER_DELAY in normalized:

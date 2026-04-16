@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -10,6 +10,7 @@ import {
   Stethoscope,
 } from "lucide-react";
 import api from "../api/client.js";
+import { IconCopyButton } from "../components/ui/IconActionButtons.jsx";
 import { useAuthStore } from "../store/authStore.js";
 
 function formatApiDetail(err) {
@@ -86,6 +87,11 @@ export function DoctorMISPage() {
   /** Записи medical_doctors (поле id — для doctor_id при создании пациента админом). */
   const [misDoctors, setMisDoctors] = useState([]);
   const [npDoctorId, setNpDoctorId] = useState("");
+
+  const [patientUrlCopied, setPatientUrlCopied] = useState(false);
+  const [phoneCopied, setPhoneCopied] = useState(false);
+  const patientUrlCopyTimer = useRef(null);
+  const phoneCopyTimer = useRef(null);
 
   const loadList = useCallback(async () => {
     setListErr("");
@@ -232,11 +238,48 @@ export function DoctorMISPage() {
     }
   };
 
-  const copyPhone = () => {
+  const copyPatientPublicUrl = useCallback(() => {
+    if (!patientId) return;
+    const url =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/public/mis/patient/${patientId}`
+        : "";
+    if (!url) return;
+    navigator.clipboard
+      ?.writeText(url)
+      .then(() => {
+        if (patientUrlCopyTimer.current) clearTimeout(patientUrlCopyTimer.current);
+        setPatientUrlCopied(true);
+        patientUrlCopyTimer.current = setTimeout(() => {
+          setPatientUrlCopied(false);
+          patientUrlCopyTimer.current = null;
+        }, 2000);
+      })
+      .catch(() => {});
+  }, [patientId]);
+
+  const copyPhone = useCallback(() => {
     const phone = detail?.patient?.phone;
     if (!phone) return;
-    navigator.clipboard?.writeText(phone).catch(() => {});
-  };
+    navigator.clipboard
+      ?.writeText(phone)
+      .then(() => {
+        if (phoneCopyTimer.current) clearTimeout(phoneCopyTimer.current);
+        setPhoneCopied(true);
+        phoneCopyTimer.current = setTimeout(() => {
+          setPhoneCopied(false);
+          phoneCopyTimer.current = null;
+        }, 2000);
+      })
+      .catch(() => {});
+  }, [detail?.patient?.phone]);
+
+  useEffect(() => {
+    return () => {
+      if (patientUrlCopyTimer.current) clearTimeout(patientUrlCopyTimer.current);
+      if (phoneCopyTimer.current) clearTimeout(phoneCopyTimer.current);
+    };
+  }, []);
 
   const createPatient = async (e) => {
     e.preventDefault();
@@ -454,19 +497,13 @@ export function DoctorMISPage() {
                     ? `${window.location.origin}/public/mis/patient/${patientId}`
                     : `/public/mis/patient/${patientId}`}
                 </span>
-                <button
-                  type="button"
-                  className="shrink-0 rounded-lg bg-teal-600 px-2 py-1 text-xs font-medium text-white hover:bg-teal-500"
-                  onClick={() => {
-                    const url =
-                      typeof window !== "undefined"
-                        ? `${window.location.origin}/public/mis/patient/${patientId}`
-                        : "";
-                    if (url) navigator.clipboard?.writeText(url).catch(() => {});
-                  }}
-                >
-                  Копировать ссылку пациенту
-                </button>
+                <IconCopyButton
+                  variant="light"
+                  title="Копировать ссылку пациенту"
+                  copied={patientUrlCopied}
+                  className="focus-visible:ring-teal-500/50"
+                  onClick={copyPatientPublicUrl}
+                />
               </div>
             </header>
 
@@ -607,13 +644,14 @@ export function DoctorMISPage() {
                 ). Нужен настроенный <strong>MAX_BOT_TOKEN</strong> и числовой <strong>chat_id</strong> получателя.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
+                <IconCopyButton
+                  variant="light"
+                  title="Скопировать телефон пациента"
+                  copied={phoneCopied}
+                  disabled={!detail?.patient?.phone}
+                  className="focus-visible:ring-teal-500/50"
                   onClick={copyPhone}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700"
-                >
-                  Скопировать телефон пациента
-                </button>
+                />
                 <a
                   href="https://web.max.ru/"
                   target="_blank"

@@ -26,6 +26,7 @@ export function OrganizationsPage() {
   const [editingOrg, setEditingOrg] = useState(null);
   const [editName, setEditName] = useState("");
   const [editOrgDisplayName, setEditOrgDisplayName] = useState("");
+  const [editOrgAdminDisplayName, setEditOrgAdminDisplayName] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editMsg, setEditMsg] = useState("");
   const [toggleBusyId, setToggleBusyId] = useState(null);
@@ -85,6 +86,7 @@ export function OrganizationsPage() {
     setEditingOrg(o);
     setEditName(o.name || "");
     setEditOrgDisplayName(o.display_name || "");
+    setEditOrgAdminDisplayName(o.org_admin_display_name || "");
     setEditMsg("");
   };
 
@@ -107,6 +109,7 @@ export function OrganizationsPage() {
       await api.patch(`/portal/organizations/${editingOrg.id}`, {
         name: n,
         organization_display_name: editOrgDisplayName.trim() || null,
+        org_admin_display_name: editOrgAdminDisplayName.trim() || null,
       });
       closeEdit();
       await load();
@@ -302,7 +305,7 @@ export function OrganizationsPage() {
             onClick={closeEdit}
           />
           <div
-            className="fixed left-1/2 top-1/2 z-50 w-[min(100%-2rem,24rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-600 bg-slate-900 p-5 shadow-xl"
+            className="fixed left-1/2 top-1/2 z-50 w-[min(100%-2rem,28rem)] max-h-[90vh] overflow-y-auto -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-600 bg-slate-900 p-5 shadow-xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="org-edit-title"
@@ -334,6 +337,18 @@ export function OrganizationsPage() {
                   placeholder="Краткое имя в шапке панели"
                   value={editOrgDisplayName}
                   onChange={(e) => setEditOrgDisplayName(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-slate-400" htmlFor="org-edit-admin-dn">
+                  Отображаемое имя администратора организации (опционально)
+                </label>
+                <input
+                  id="org-edit-admin-dn"
+                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                  placeholder="Как показывать админа в панели"
+                  value={editOrgAdminDisplayName}
+                  onChange={(e) => setEditOrgAdminDisplayName(e.target.value)}
                 />
               </div>
               <div className="flex gap-2 pt-2">

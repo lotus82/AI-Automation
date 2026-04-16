@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from loguru import logger
 from starlette.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from src.api.dependencies import AsyncSessionDep, QuestionnaireLLMServiceDep, SettingsDep
+from src.api.dependencies_portal import PortalUserDep
+from src.api.org_scope import resolve_organization_scope
+from src.domain.portal_roles import ROLE_SUPER_ADMIN
 from src.api.schemas.questionnaires import (
     AssessRequest,
     AssessResponse,
@@ -74,11 +77,46 @@ async def _get_questionnaire_or_404(
     return row
 
 
+async def _get_questionnaire_for_manage(
+    session: AsyncSessionDep,
+    questionnaire_id: UUID,
+    user: PortalUserDep,
+    organization_id: UUID | None,
+) -> QuestionnaireModel:
+    row = await session.scalar(_stmt_by_id(questionnaire_id))
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Опросник не найден")
+    scope = resolve_organization_scope(user, organization_id)
+    if user.role == ROLE_SUPER_ADMIN:
+        if scope is None:
+            if row.organization_id is not None:
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    detail="Опросник относится к организации — выберите контекст организации в панели",
+                )
+        elif row.organization_id != scope:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Нет доступа к этому опроснику")
+    elif row.organization_id != scope:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Нет доступа к этому опроснику")
+    return row
+
+
 @router.get("/questionnaires", response_model=list[QuestionnaireListItem])
-async def list_questionnaires(session: AsyncSessionDep) -> list[QuestionnaireListItem]:
-    r = await session.execute(
-        select(QuestionnaireModel).order_by(QuestionnaireModel.updated_at.desc())
-    )
+async def list_questionnaires(
+    session: AsyncSessionDep,
+    user: PortalUserDep,
+    organization_id: UUID | None = Query(default=None, description="Только super_admin: фильтр по организации"),
+) -> list[QuestionnaireListItem]:
+    scope = resolve_organization_scope(user, organization_id)
+    stmt = select(QuestionnaireModel).order_by(QuestionnaireModel.updated_at.desc())
+    if user.role == ROLE_SUPER_ADMIN:
+        if scope is None:
+            stmt = stmt.where(QuestionnaireModel.organization_id.is_(None))
+        else:
+            stmt = stmt.where(QuestionnaireModel.organization_id == scope)
+    else:
+        stmt = stmt.where(QuestionnaireModel.organization_id == scope)
+    r = await session.execute(stmt)
     rows = r.scalars().all()
     return [QuestionnaireListItem.model_validate(x) for x in rows]
 
@@ -87,10 +125,19 @@ async def list_questionnaires(session: AsyncSessionDep) -> list[QuestionnaireLis
 async def create_questionnaire(
     body: QuestionnaireCreate,
     session: AsyncSessionDep,
+    user: PortalUserDep,
+    organization_id: UUID | None = Query(default=None, description="Только super_admin: организация-владелец"),
 ) -> QuestionnairePublic:
+    scope = resolve_organization_scope(user, organization_id)
+    org_fk: UUID | None
+    if user.role == ROLE_SUPER_ADMIN:
+        org_fk = None if scope is None else scope
+    else:
+        org_fk = scope
     q_row = QuestionnaireModel(
         title=body.title.strip(),
         llm_criteria=(body.llm_criteria or "").strip(),
+        organization_id=org_fk,
     )
     session.add(q_row)
     await session.flush()
@@ -163,8 +210,10 @@ async def update_questionnaire(
     questionnaire_id: UUID,
     body: QuestionnaireUpdate,
     session: AsyncSessionDep,
+    user: PortalUserDep,
+    organization_id: UUID | None = Query(default=None, description="Только super_admin: контекст организации"),
 ) -> QuestionnairePublic:
-    row = await _get_questionnaire_or_404(session, questionnaire_id)
+    row = await _get_questionnaire_for_manage(session, questionnaire_id, user, organization_id)
     row.title = body.title.strip()
     row.llm_criteria = (body.llm_criteria or "").strip()
     for qq in list(row.questions):
@@ -199,10 +248,10 @@ async def update_questionnaire(
 async def delete_questionnaire(
     questionnaire_id: UUID,
     session: AsyncSessionDep,
+    user: PortalUserDep,
+    organization_id: UUID | None = Query(default=None, description="Только super_admin: контекст организации"),
 ) -> Response:
-    row = await session.get(QuestionnaireModel, questionnaire_id)
-    if row is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Опросник не найден")
+    row = await _get_questionnaire_for_manage(session, questionnaire_id, user, organization_id)
     await session.delete(row)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

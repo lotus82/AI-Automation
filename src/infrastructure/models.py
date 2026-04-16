@@ -228,6 +228,12 @@ class QuestionnaireModel(Base):
         primary_key=True,
         server_default=sql_text("gen_random_uuid()"),
     )
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     llm_criteria: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
     created_at: Mapped[datetime] = mapped_column(

@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { ClipboardList } from "lucide-react";
-import { IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
+import {
+  IconCopyButton,
+  IconDeleteButton,
+  IconEditButton,
+  IconOpenUrlButton,
+} from "../components/ui/IconActionButtons.jsx";
 import { createPortal } from "react-dom";
 import api from "../api/client.js";
+import { useAuthStore } from "../store/authStore.js";
 import { SurveyTakeExperience } from "../components/questionnaires/SurveyTakeExperience.jsx";
 
 function formatDate(iso) {
@@ -140,6 +146,9 @@ function toPayload(form) {
 }
 
 export function QuestionnairesPage() {
+  const user = useAuthStore((s) => s.user);
+  const settingsOrganizationId = useAuthStore((s) => s.settingsOrganizationId);
+
   const [rows, setRows] = useState([]);
   const [listLoading, setListLoading] = useState(true);
   const [listErr, setListErr] = useState("");
@@ -172,7 +181,7 @@ export function QuestionnairesPage() {
     } finally {
       setListLoading(false);
     }
-  }, []);
+  }, [settingsOrganizationId]);
 
   useEffect(() => {
     loadList();
@@ -321,6 +330,9 @@ export function QuestionnairesPage() {
           <p className="mt-1 text-sm text-slate-400">
             Конструктор, прохождение и ИИ-оценка по вашим критериям. Публичную ссылку можно вставить в MAX,
             Битрикс24 и другие системы.
+            {user?.role === "super_admin"
+              ? " Список опросников для супер-админа соответствует контексту организации в боковом меню (без выбора — только глобальные)."
+              : ""}
           </p>
         </div>
         <button
@@ -375,10 +387,10 @@ export function QuestionnairesPage() {
                       >
                         {pubUrl}
                       </a>
-                      <div className="flex flex-wrap gap-1.5">
-                        <button
-                          type="button"
-                          className="rounded border border-slate-600 px-2 py-0.5 text-[11px] text-slate-300 hover:bg-slate-800"
+                      <div className="flex flex-wrap items-center gap-1">
+                        <IconCopyButton
+                          title="Копировать ссылку"
+                          copied={copiedRowId === r.id}
                           onClick={async () => {
                             try {
                               await navigator.clipboard.writeText(pubUrl);
@@ -388,9 +400,8 @@ export function QuestionnairesPage() {
                               window.prompt("Скопируйте ссылку:", pubUrl);
                             }
                           }}
-                        >
-                          {copiedRowId === r.id ? "Скопировано" : "Копировать"}
-                        </button>
+                        />
+                        <IconOpenUrlButton href={pubUrl} title="Открыть опросник" />
                       </div>
                     </div>
                   </td>

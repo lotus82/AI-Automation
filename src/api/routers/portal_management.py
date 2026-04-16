@@ -67,7 +67,11 @@ def _user_to_public(u: PortalUserModel) -> PortalUserPublic:
     )
 
 
-def _org_to_public(org: OrganizationModel) -> OrganizationPublic:
+def _org_to_public(
+    org: OrganizationModel,
+    *,
+    org_admin_display_name: str | None = None,
+) -> OrganizationPublic:
     return OrganizationPublic(
         id=org.id,
         name=org.name,
@@ -75,7 +79,26 @@ def _org_to_public(org: OrganizationModel) -> OrganizationPublic:
         slug=org.slug,
         is_active=org.is_active,
         created_at=org.created_at,
+        org_admin_display_name=org_admin_display_name,
     )
+
+
+async def _org_admin_display_map(session: AsyncSessionDep, org_ids: list[UUID]) -> dict[UUID, str | None]:
+    if not org_ids:
+        return {}
+    r = await session.execute(
+        select(PortalUserModel.organization_id, PortalUserModel.display_name, PortalUserModel.created_at)
+        .where(
+            PortalUserModel.organization_id.in_(org_ids),
+            PortalUserModel.role == ROLE_ORG_ADMIN,
+        )
+        .order_by(PortalUserModel.organization_id, PortalUserModel.created_at)
+    )
+    first: dict[UUID, str | None] = {}
+    for oid, dn, _ in r.all():
+        if oid not in first:
+            first[oid] = (dn or "").strip() or None
+    return first
 
 
 @router.get("/organizations", response_model=list[OrganizationPublic])
@@ -85,7 +108,9 @@ async def list_organizations(
 ) -> list[OrganizationPublic]:
     r = await session.execute(select(OrganizationModel).order_by(OrganizationModel.created_at.desc()))
     rows = r.scalars().all()
-    return [_org_to_public(x) for x in rows]
+    ids = [x.id for x in rows]
+    displays = await _org_admin_display_map(session, ids)
+    return [_org_to_public(x, org_admin_display_name=displays.get(x.id)) for x in rows]
 
 
 @router.post("/organizations", response_model=OrganizationPublic, status_code=status.HTTP_201_CREATED)
@@ -128,7 +153,8 @@ async def create_organization(
     session.add(admin)
     await session.commit()
     await session.refresh(org)
-    return _org_to_public(org)
+    adm_dn = (admin.display_name or "").strip() or None
+    return _org_to_public(org, org_admin_display_name=adm_dn)
 
 
 @router.patch("/organizations/{org_id}", response_model=OrganizationPublic)
@@ -138,10 +164,15 @@ async def patch_organization(
     _: SuperAdminDep,
     session: AsyncSessionDep,
 ) -> OrganizationPublic:
-    if body.name is None and body.organization_display_name is None and body.is_active is None:
+    if (
+        body.name is None
+        and body.organization_display_name is None
+        and body.is_active is None
+        and body.org_admin_display_name is None
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Укажите хотя бы одно поле: name, organization_display_name или is_active",
+            detail="Укажите хотя бы одно поле для обновления",
         )
     org = await session.get(OrganizationModel, org_id)
     if org is None:
@@ -152,10 +183,30 @@ async def patch_organization(
         org.display_name = (body.organization_display_name or "").strip() or None
     if body.is_active is not None:
         org.is_active = body.is_active
+    if body.org_admin_display_name is not None:
+        admin_row = (
+            await session.execute(
+                select(PortalUserModel)
+                .where(
+                    PortalUserModel.organization_id == org.id,
+                    PortalUserModel.role == ROLE_ORG_ADMIN,
+                )
+                .order_by(PortalUserModel.created_at.asc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if admin_row is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Администратор организации не найден",
+            )
+        admin_row.display_name = (body.org_admin_display_name or "").strip() or None
+        session.add(admin_row)
     session.add(org)
     await session.commit()
     await session.refresh(org)
-    return _org_to_public(org)
+    disp = await _org_admin_display_map(session, [org.id])
+    return _org_to_public(org, org_admin_display_name=disp.get(org.id))
 
 
 @router.get("/users", response_model=list[PortalUserPublic])

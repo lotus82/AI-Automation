@@ -65,6 +65,10 @@ class OrganizationPublic(BaseModel):
     slug: str
     is_active: bool
     created_at: datetime
+    org_admin_display_name: str | None = Field(
+        default=None,
+        description="Отображаемое имя первого администратора организации (org_admin)",
+    )
 
 
 class OrganizationPatch(BaseModel):
@@ -72,6 +76,11 @@ class OrganizationPatch(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
     organization_display_name: str | None = Field(default=None, max_length=255)
+    org_admin_display_name: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Имя для отображения у администратора организации",
+    )
     is_active: bool | None = None
 
 

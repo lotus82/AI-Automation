@@ -225,11 +225,10 @@ export function RolesPage() {
     for (const r of maxGroupRows) {
       const cid = (r.chatId || "").trim();
       if (!cid) continue;
-      const desc = (r.description || "").trim();
       groupMap[cid] = {
         role_id: (r.roleId || "").trim() || null,
         additional_prompt: r.additionalPrompt ?? "",
-        ...(desc ? { description: desc } : {}),
+        description: (r.description || "").trim(),
       };
     }
     return {

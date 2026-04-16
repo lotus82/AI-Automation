@@ -90,6 +90,7 @@ class QuestionnaireListItem(BaseModel):
 
     id: UUID
     title: str
+    organization_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
 

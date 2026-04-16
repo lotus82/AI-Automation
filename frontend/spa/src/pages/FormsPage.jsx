@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileText, GripVertical } from "lucide-react";
-import { IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
+import { IconCopyButton, IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
 import api from "../api/client.js";
 
 /** Визуальный отклик: нажатие, фокус, плавные переходы */
@@ -947,21 +947,17 @@ export function FormsPage() {
                       className="min-w-0 flex-1 rounded border border-slate-600 bg-slate-950 px-2 py-1 text-xs text-slate-300"
                       value={publicUrl(selectedEvent.id)}
                     />
-                    <button
-                      type="button"
+                    <IconCopyButton
+                      title="Копировать публичную ссылку"
                       disabled={eventBusy === "copy"}
-                      className={`rounded border px-2 py-1 text-xs transition-colors ${
-                        copyUrlFlash
-                          ? "border-emerald-500 bg-emerald-950/50 text-emerald-300"
-                          : "border-slate-600 text-slate-200"
-                      } ${pressableSubtle} disabled:opacity-60`}
+                      busy={eventBusy === "copy"}
+                      copied={copyUrlFlash}
+                      className={pressableSubtle}
                       onClick={() => {
                         setEventBusy("copy");
                         copyPublicUrl().finally(() => setEventBusy(null));
                       }}
-                    >
-                      {copyUrlFlash ? "Скопировано!" : eventBusy === "copy" ? "…" : "Копировать"}
-                    </button>
+                    />
                   </div>
                 </div>
                 <div className="rounded-lg border border-slate-700/80 bg-slate-950/40 p-3 space-y-2">
