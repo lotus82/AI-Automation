@@ -8,6 +8,7 @@ from uuid import UUID
 
 import bcrypt
 import jwt
+from jwt.exceptions import InvalidTokenError as JWTInvalidTokenError
 
 # Ограничение bcrypt на длину пароля в байтах
 _BCRYPT_MAX_PASSWORD_BYTES = 72
@@ -72,3 +73,34 @@ def create_mis_patient_access_token(
 
 def decode_portal_token(token: str, secret: str) -> dict[str, Any]:
     return jwt.decode(token, secret, algorithms=["HS256"])
+
+
+MIS_QUESTIONNAIRE_INVITE_TYP = "mis_q_invite"
+
+
+def create_mis_questionnaire_invite_token(
+    *,
+    patient_id: UUID,
+    questionnaire_id: UUID,
+    organization_id: UUID,
+    secret: str,
+    expire_days: int = 90,
+) -> str:
+    """Одноразовая по смыслу ссылка на опрос для карты МИС (подпись HS256, тот же секрет, что у портала)."""
+    now = datetime.now(UTC)
+    payload: dict[str, Any] = {
+        "typ": MIS_QUESTIONNAIRE_INVITE_TYP,
+        "pid": str(patient_id),
+        "qid": str(questionnaire_id),
+        "oid": str(organization_id),
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(days=expire_days)).timestamp()),
+    }
+    return jwt.encode(payload, secret, algorithm="HS256")
+
+
+def decode_mis_questionnaire_invite_token(token: str, secret: str) -> dict[str, Any]:
+    data = jwt.decode(token, secret, algorithms=["HS256"])
+    if data.get("typ") != MIS_QUESTIONNAIRE_INVITE_TYP:
+        raise JWTInvalidTokenError("Неверный тип приглашения")
+    return data

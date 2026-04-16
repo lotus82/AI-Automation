@@ -20,6 +20,7 @@ import { OrgUsersPage } from "./pages/OrgUsersPage.jsx";
 import { DoctorMISPage } from "./pages/DoctorMISPage.jsx";
 import { PatientMISPage } from "./pages/PatientMISPage.jsx";
 import { PublicRegistrationPage } from "./pages/PublicRegistrationPage.jsx";
+import { PublicMisQuestionnairePage } from "./pages/PublicMisQuestionnairePage.jsx";
 import { PublicSurveyPage } from "./pages/PublicSurveyPage.jsx";
 import { QuestionnairesPage } from "./pages/QuestionnairesPage.jsx";
 import { QAPage } from "./pages/QAPage.jsx";
@@ -53,6 +54,7 @@ export default function App() {
         <Route index element={<StoreFrontPage />} />
         <Route path="cart" element={<StoreCartPage />} />
       </Route>
+      <Route path="/public/mis/questionnaire" element={<PublicMisQuestionnairePage />} />
       <Route path="/public/mis/patient" element={<MisPublicLayout />}>
         <Route index element={<PatientMISPage />} />
         <Route path=":id" element={<PatientMISPage />} />

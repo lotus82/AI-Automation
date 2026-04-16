@@ -10,7 +10,7 @@ import {
   Stethoscope,
   X,
 } from "lucide-react";
-import { QRCodeSVG } from "react-qr-code";
+import QRCode from "react-qr-code";
 import api from "../api/client.js";
 import { IconCopyButton, IconQrButton } from "../components/ui/IconActionButtons.jsx";
 import { useAuthStore } from "../store/authStore.js";
@@ -95,6 +95,12 @@ export function DoctorMISPage() {
   const [maxChatId, setMaxChatId] = useState("");
   const [maxBusy, setMaxBusy] = useState(false);
   const [maxMsg, setMaxMsg] = useState("");
+
+  const [qnrList, setQnrList] = useState([]);
+  const [qnrListLoading, setQnrListLoading] = useState(false);
+  const [qnrSelectedId, setQnrSelectedId] = useState("");
+  const [qnrBusy, setQnrBusy] = useState(false);
+  const [qnrMsg, setQnrMsg] = useState("");
 
   const [npName, setNpName] = useState("");
   const [npPhone, setNpPhone] = useState("");
@@ -184,9 +190,42 @@ export function DoctorMISPage() {
       loadDetail();
       setAiText("");
       setMaxMsg("");
+      setQnrMsg("");
       setQrModalOpen(false);
     }
   }, [patientId, loadDetail]);
+
+  useEffect(() => {
+    if (!patientId) {
+      setQnrList([]);
+      setQnrSelectedId("");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setQnrListLoading(true);
+      try {
+        const { data } = await api.get("/questionnaires");
+        const arr = Array.isArray(data) ? data : [];
+        if (!cancelled) {
+          setQnrList(arr);
+          setQnrSelectedId((prev) =>
+            prev && arr.some((x) => String(x.id) === prev) ? prev : "",
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setQnrList([]);
+          setQnrSelectedId("");
+        }
+      } finally {
+        if (!cancelled) setQnrListLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [patientId]);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -259,6 +298,35 @@ export function DoctorMISPage() {
     }
   };
 
+  const sendQuestionnaireLink = async () => {
+    if (!patientId) return;
+    if (!qnrSelectedId) {
+      setQnrMsg("Выберите опросник организации.");
+      return;
+    }
+    const id = parseInt(String(maxChatId).trim(), 10);
+    if (!Number.isFinite(id)) {
+      setQnrMsg("Укажите числовой MAX chat_id в поле выше.");
+      return;
+    }
+    setQnrBusy(true);
+    setQnrMsg("");
+    try {
+      const sendUrl = isMisAdmin
+        ? `/mis/admin/patients/${patientId}/send-questionnaire`
+        : `/mis/doctor/patients/${patientId}/send-questionnaire`;
+      await api.post(sendUrl, {
+        questionnaire_id: qnrSelectedId,
+        max_chat_id: id,
+      });
+      setQnrMsg("Ссылка на опросник отправлена в MAX.");
+    } catch (e) {
+      setQnrMsg(formatApiDetail(e));
+    } finally {
+      setQnrBusy(false);
+    }
+  };
+
   const copyPatientPublicUrl = useCallback(() => {
     if (!patientId) return;
     const url =
@@ -279,11 +347,32 @@ export function DoctorMISPage() {
       .catch(() => {});
   }, [patientId]);
 
+  /** Для списка МИС (админ): врач из выбора или единственный в организации. */
+  const adminListDoctorId = useMemo(() => {
+    if (!isMisAdmin) return "";
+    if (npDoctorId) return npDoctorId;
+    if (misDoctors.length === 1) return String(misDoctors[0].id);
+    return "";
+  }, [isMisAdmin, npDoctorId, misDoctors]);
+
   const misMaxStartCommand = useMemo(() => {
-    const { org, doc } = misDeepLinkIds(detail?.patient, user, isMisAdmin, settingsOrganizationId);
+    const patient = patientId ? detail?.patient : null;
+    const { org: o0, doc: d0 } = misDeepLinkIds(patient, user, isMisAdmin, settingsOrganizationId);
+    let org = o0;
+    let doc = d0;
+    if (!doc && isMisAdmin && !patientId && adminListDoctorId) {
+      doc = adminListDoctorId;
+    }
     if (!org || !doc) return "";
     return `/start reg_org_${String(org).toLowerCase()}_doc_${String(doc).toLowerCase()}`;
-  }, [detail?.patient, user, isMisAdmin, settingsOrganizationId]);
+  }, [
+    patientId,
+    detail?.patient,
+    user,
+    isMisAdmin,
+    settingsOrganizationId,
+    adminListDoctorId,
+  ]);
 
   const copyMisMaxStart = useCallback(() => {
     if (!misMaxStartCommand) return;
@@ -371,9 +460,12 @@ export function DoctorMISPage() {
     }
   };
 
-  if (!patientId) {
-    return (
-      <div className={shell}>
+  const p = detail?.patient;
+  const entries = detail?.entries ?? [];
+
+  return (
+    <div className={shell}>
+      {!patientId ? (
         <div className="mx-auto max-w-5xl px-4 pt-6">
           <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
             <div>
@@ -388,6 +480,39 @@ export function DoctorMISPage() {
               </p>
             </div>
           </div>
+
+          {misMaxStartCommand ? (
+            <section className={`${card} mb-4`}>
+              <h2 className="text-base font-semibold text-slate-900">Регистрация пациентов через MAX</h2>
+              <p className="mt-1 text-xs text-slate-600">
+                Команда для бота (привязка к этому врачу). Скопируйте или покажите QR — без открытой карты пациента.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-violet-100 bg-violet-50/60 px-3 py-2 text-xs text-slate-700">
+                <span className="min-w-0 flex-1 break-all font-mono text-[11px] sm:text-xs">{misMaxStartCommand}</span>
+                <IconCopyButton
+                  variant="light"
+                  title="Скопировать команду"
+                  copied={misStartCopied}
+                  className="focus-visible:ring-violet-500/50"
+                  onClick={copyMisMaxStart}
+                />
+                <IconQrButton
+                  variant="light"
+                  title="Показать QR-код"
+                  className="focus-visible:ring-violet-500/50"
+                  onClick={() => setQrModalOpen(true)}
+                />
+              </div>
+            </section>
+          ) : isMisAdmin && misDoctors.length > 1 && !npDoctorId ? (
+            <section className={`${card} mb-4 border-violet-100 bg-violet-50/40`}>
+              <p className="text-xs text-slate-700">
+                Чтобы показать команду{" "}
+                <code className="rounded bg-white px-1 font-mono text-[11px]">/start reg_org_…_doc_…</code>, выберите
+                врача МИС в блоке «Новый пациент».
+              </p>
+            </section>
+          ) : null}
 
           {listErr ? (
             <div className={`${card} mb-4 border-amber-200 bg-amber-50 text-amber-900`}>{listErr}</div>
@@ -503,15 +628,7 @@ export function DoctorMISPage() {
             <p className="py-12 text-center text-sm text-slate-500">Пациенты не найдены.</p>
           ) : null}
         </div>
-      </div>
-    );
-  }
-
-  const p = detail?.patient;
-  const entries = detail?.entries ?? [];
-
-  return (
-    <div className={shell}>
+      ) : (
       <div className="mx-auto max-w-4xl px-4 pt-6">
         <button
           type="button"
@@ -757,10 +874,49 @@ export function DoctorMISPage() {
                 </button>
               </div>
               {maxMsg ? <p className="mt-2 text-sm text-slate-700">{maxMsg}</p> : null}
+
+              <div className="mt-6 border-t border-slate-100 pt-5">
+                <h3 className="text-sm font-semibold text-slate-900">Опросник по ссылке</h3>
+                <p className="mt-1 text-xs text-slate-600">
+                  Выберите опросник организации — пациенту в MAX уйдёт ссылка с защищённым приглашением. Ответы и заключение
+                  ИИ сохранятся в этой карте. Используйте тот же <strong>chat_id</strong>, что и для сводки.
+                </p>
+                <div className="mt-3 flex flex-wrap items-end gap-2">
+                  <label className="min-w-[12rem] text-xs font-medium text-slate-600">
+                    Опросник
+                    <select
+                      className="mt-1 w-full max-w-md rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 disabled:opacity-60"
+                      value={qnrSelectedId}
+                      disabled={qnrListLoading || qnrList.length === 0}
+                      onChange={(e) => setQnrSelectedId(e.target.value)}
+                    >
+                      <option value="">
+                        {qnrListLoading ? "Загрузка…" : qnrList.length === 0 ? "Нет опросников в организации" : "— выберите —"}
+                      </option>
+                      {qnrList.map((q) => (
+                        <option key={q.id} value={q.id}>
+                          {q.title || "Без названия"}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    disabled={qnrBusy || qnrListLoading || !qnrSelectedId}
+                    onClick={sendQuestionnaireLink}
+                    className="inline-flex items-center gap-2 rounded-xl border border-teal-600 bg-white px-4 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-50 disabled:opacity-50"
+                  >
+                    {qnrBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    Отправить ссылку на опросник
+                  </button>
+                </div>
+                {qnrMsg ? <p className="mt-2 text-sm text-slate-700">{qnrMsg}</p> : null}
+              </div>
             </section>
           </div>
         ) : null}
       </div>
+      )}
 
       {qrModalOpen && misMaxStartCommand ? (
         <div
@@ -789,7 +945,7 @@ export function DoctorMISPage() {
             </h2>
             <p className="mt-1 text-xs text-slate-600">Отсканируйте в приложении MAX — в буфер попадёт текст команды.</p>
             <div className="mt-4 flex justify-center rounded-xl bg-white p-3 ring-1 ring-slate-100">
-              <QRCodeSVG value={misMaxStartCommand} size={220} level="M" />
+              <QRCode value={misMaxStartCommand} size={220} level="M" />
             </div>
             <p className="mt-4 break-all font-mono text-[11px] leading-snug text-slate-700">{misMaxStartCommand}</p>
           </div>

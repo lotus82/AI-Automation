@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { BookOpen, ClipboardList, HeartPulse, Loader2, LogOut } from "lucide-react";
+import { BookOpen, ClipboardList, HeartPulse, ListChecks, Loader2, LogOut } from "lucide-react";
 import patientMisClient from "../api/patientMisClient.js";
 import { PatientAuthGuard } from "../components/mis/PatientAuthGuard.jsx";
 import {
@@ -163,6 +163,19 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
     return entries.filter((e) => e.type === "exam").slice(0, 8);
   }, [data?.entries]);
 
+  const doctorQuestionnaires = useMemo(() => {
+    const entries = data?.entries ?? [];
+    return entries
+      .filter((e) => e.type === "survey" && e.data?.source === "mis_questionnaire_invite")
+      .slice()
+      .sort((a, b) => {
+        const da = new Date(a.entry_date || 0).getTime();
+        const db = new Date(b.entry_date || 0).getTime();
+        return db - da;
+      })
+      .slice(0, 12);
+  }, [data?.entries]);
+
   const submitDiary = async (e) => {
     e.preventDefault();
     if (!patientId) return;
@@ -267,6 +280,39 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
                     {JSON.stringify(e.data, null, 2)}
                   </pre>
                 ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className={card}>
+        <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
+          <ListChecks className="h-5 w-5 shrink-0 text-teal-600" strokeWidth={1.75} aria-hidden />
+          Опросники от врача
+        </h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Здесь отображаются опросы, на которые вас направил лечащий врач через личные сообщения.
+        </p>
+        {doctorQuestionnaires.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-500">Пока нет завершённых опросов по приглашению врача.</p>
+        ) : (
+          <ul className="mt-3 space-y-3">
+            {doctorQuestionnaires.map((e) => (
+              <li key={e.id} className="rounded-xl border border-teal-100 bg-teal-50/50 p-3 text-sm">
+                <div className="flex flex-wrap justify-between gap-2 text-slate-800">
+                  <span className="font-medium">
+                    {(e.data?.questionnaire_title && String(e.data.questionnaire_title).trim()) || "Опросник"}
+                  </span>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-teal-800 ring-1 ring-teal-100">
+                    {formatDate(e.entry_date)}
+                  </span>
+                </div>
+                {(e.conclusion || "").trim() ? (
+                  <p className="mt-2 whitespace-pre-wrap text-slate-700">{e.conclusion}</p>
+                ) : (
+                  <p className="mt-2 text-slate-500">Заключение пока не добавлено.</p>
+                )}
               </li>
             ))}
           </ul>

@@ -3,14 +3,27 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from typing import Annotated
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from jwt.exceptions import PyJWTError
+from loguru import logger
+from redis.asyncio import Redis
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.api.dependencies import AsyncSessionDep, LLMServiceDep, MaxMessengerClientDep
+from src.api.dependencies import (
+    AsyncSessionDep,
+    LLMServiceDep,
+    QuestionnaireLLMServiceDep,
+    RedisDep,
+    SettingsDep,
+)
+from src.core.config import Settings
 from src.api.dependencies_portal import PortalUserDep
 from src.api.org_scope import resolve_organization_scope
 from src.api.schemas.mis import (
@@ -25,9 +38,22 @@ from src.api.schemas.mis import (
     MisAiConsultRequest,
     MisAiConsultResponse,
     MisMaxSendRequest,
+    MisQuestionnaireInviteInfo,
+    MisQuestionnaireInviteSubmitBody,
+    MisQuestionnaireInviteSubmitResponse,
+    MisSendQuestionnaireRequest,
     PublicHealthDiaryCreate,
     PublicPatientCardResponse,
 )
+from src.api.schemas.questionnaires import AssessRequest
+from src.api.routers.questionnaires import (
+    _build_answers_for_llm,
+    _output_format_supplement_for_questionnaire,
+    _stmt_by_id,
+    questionnaire_to_public,
+)
+from src.infrastructure.repositories import PostgresSettingsRepository
+from src.infrastructure.services.max_messenger import MaxMessengerClient
 from src.infrastructure.services.shop_order_notify import send_max_order_message
 from src.domain.portal_roles import ROLE_ORG_ADMIN, ROLE_SUPER_ADMIN
 from src.infrastructure.models import (
@@ -36,9 +62,52 @@ from src.infrastructure.models import (
     MedicalEntryType,
     MedicalPatientModel,
     PortalUserModel,
+    QuestionnaireModel,
+)
+from src.infrastructure.portal_security import (
+    create_mis_questionnaire_invite_token,
+    decode_mis_questionnaire_invite_token,
 )
 router = APIRouter(prefix="/mis", tags=["mis"])
 public_router = APIRouter(prefix="/public/mis", tags=["mis-public"])
+
+
+def _mis_max_client_for_organization(
+    session: AsyncSession,
+    redis: Redis,
+    settings: Settings,
+    organization_id: UUID,
+) -> MaxMessengerClient:
+    """MAX Bot API с токеном из ``organization_settings`` этой организации.
+
+    Без fallback на глобальный ``MAX_BOT_TOKEN`` из .env: иначе в мультитенанте сообщение
+    уходит от бота другой (первой попавшейся) организации.
+    """
+    repo = PostgresSettingsRepository(session, redis, organization_id=organization_id)
+    return MaxMessengerClient(
+        settings_repository=repo,
+        api_base_url=settings.max_api_base,
+        platform_api_base_url=settings.max_platform_api_base,
+        env_fallback_max_bot_token=None,
+    )
+
+
+def _mis_patient_short_label(full_name: str) -> str:
+    parts = (full_name or "").strip().split()
+    if not parts:
+        return "Пациент"
+    if len(parts) == 1:
+        return parts[0]
+    return f"{parts[0]} {parts[1][0]}."
+
+
+def _assert_questionnaire_for_patient_org(qn: QuestionnaireModel, patient_org_id: UUID) -> None:
+    if qn.organization_id is None or qn.organization_id != patient_org_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Опросник не относится к организации этой карты пациента",
+        )
+
 
 _MIS_AI_SYSTEM = (
     "Ты — ассистент врача в медицинской информационной системе. "
@@ -387,7 +456,8 @@ async def mis_admin_send_max_summary(
     request: Request,
     user: MisAdminDep,
     session: AsyncSessionDep,
-    max_client: MaxMessengerClientDep,
+    redis: RedisDep,
+    settings: SettingsDep,
     organization_id: UUID | None = Query(None, description="Для super_admin: организация"),
 ) -> dict[str, bool]:
     scope = resolve_organization_scope(user, organization_id)
@@ -396,14 +466,15 @@ async def mis_admin_send_max_summary(
             status.HTTP_400_BAD_REQUEST,
             detail="Укажите organization_id или войдите в контекст организации",
         )
-    if not (await max_client.resolve_bot_token()).strip():
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Бот MAX не настроен (MAX_BOT_TOKEN)",
-        )
     p = await session.get(MedicalPatientModel, patient_id)
     if p is None or p.organization_id != scope:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Пациент не найден")
+    max_client = _mis_max_client_for_organization(session, redis, settings, p.organization_id)
+    if not (await max_client.resolve_bot_token()).strip():
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Бот MAX не настроен для этой организации: укажите MAX_BOT_TOKEN в интеграциях/настройках организации",
+        )
     base = str(request.base_url).rstrip("/")
     public_card = f"{base}/public/mis/patient/{p.id}"
     text = (
@@ -413,6 +484,60 @@ async def mis_admin_send_max_summary(
         f"Диагноз: {(p.current_diagnosis or '').strip() or '—'}\n"
         f"Лечение: {(p.treatment_plan or '').strip() or '—'}\n"
         f"Карта (ссылка для пациента): {public_card}"
+    )
+    try:
+        await send_max_order_message(max_client, body.max_chat_id, text)
+    except Exception as e:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            detail=f"Не удалось отправить сообщение в MAX: {e!s}",
+        ) from e
+    return {"ok": True}
+
+
+@router.post("/admin/patients/{patient_id}/send-questionnaire")
+async def mis_admin_send_questionnaire_link(
+    patient_id: UUID,
+    body: MisSendQuestionnaireRequest,
+    request: Request,
+    user: MisAdminDep,
+    session: AsyncSessionDep,
+    redis: RedisDep,
+    settings: SettingsDep,
+    organization_id: UUID | None = Query(None, description="Для super_admin: организация"),
+) -> dict[str, bool]:
+    scope = resolve_organization_scope(user, organization_id)
+    if scope is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Укажите organization_id или войдите в контекст организации",
+        )
+    p = await session.get(MedicalPatientModel, patient_id)
+    if p is None or p.organization_id != scope:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Пациент не найден")
+    qn = await session.scalar(_stmt_by_id(body.questionnaire_id))
+    if qn is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Опросник не найден")
+    _assert_questionnaire_for_patient_org(qn, p.organization_id)
+
+    max_client = _mis_max_client_for_organization(session, redis, settings, p.organization_id)
+    if not (await max_client.resolve_bot_token()).strip():
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Бот MAX не настроен для этой организации: укажите MAX_BOT_TOKEN в интеграциях/настройках организации",
+        )
+    token = create_mis_questionnaire_invite_token(
+        patient_id=p.id,
+        questionnaire_id=qn.id,
+        organization_id=p.organization_id,
+        secret=settings.portal_jwt_secret,
+    )
+    base = str(request.base_url).rstrip("/")
+    link = f"{base}/public/mis/questionnaire?t={quote(token, safe='')}"
+    text = (
+        f"Здравствуйте! Вам назначен опросник «{qn.title}».\n"
+        f"Пройдите по ссылке, чтобы ответить на вопросы — результат будет доступен вашему врачу.\n"
+        f"{link}"
     )
     try:
         await send_max_order_message(max_client, body.max_chat_id, text)
@@ -603,6 +728,97 @@ async def mis_public_health_diary(
     return _entry_out(row)
 
 
+@public_router.get("/questionnaire-invite", response_model=MisQuestionnaireInviteInfo)
+async def mis_public_questionnaire_invite_info(
+    session: AsyncSessionDep,
+    settings: SettingsDep,
+    token: str = Query(..., min_length=32, description="JWT из ссылки в MAX"),
+) -> MisQuestionnaireInviteInfo:
+    try:
+        payload = decode_mis_questionnaire_invite_token(token.strip(), settings.portal_jwt_secret)
+    except PyJWTError:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            detail="Ссылка недействительна или срок её действия истёк",
+        ) from None
+    pid = UUID(payload["pid"])
+    qid = UUID(payload["qid"])
+    oid = UUID(payload["oid"])
+    p = await session.get(MedicalPatientModel, pid)
+    if p is None or p.organization_id != oid:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Карта не найдена")
+    qn = await session.scalar(_stmt_by_id(qid))
+    if qn is None or qn.organization_id != oid:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Опросник не найден")
+    return MisQuestionnaireInviteInfo(
+        questionnaire=questionnaire_to_public(qn),
+        patient_label=_mis_patient_short_label(p.full_name),
+    )
+
+
+@public_router.post("/questionnaire-invite/submit", response_model=MisQuestionnaireInviteSubmitResponse)
+async def mis_public_questionnaire_invite_submit(
+    body: MisQuestionnaireInviteSubmitBody,
+    session: AsyncSessionDep,
+    redis: RedisDep,
+    settings: SettingsDep,
+    llm: QuestionnaireLLMServiceDep,
+) -> MisQuestionnaireInviteSubmitResponse:
+    try:
+        payload = decode_mis_questionnaire_invite_token(body.token.strip(), settings.portal_jwt_secret)
+    except PyJWTError:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            detail="Ссылка недействительна или срок её действия истёк",
+        ) from None
+    pid = UUID(payload["pid"])
+    qid = UUID(payload["qid"])
+    oid = UUID(payload["oid"])
+    p = await session.get(MedicalPatientModel, pid)
+    if p is None or p.organization_id != oid:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Карта не найдена")
+    qn = await session.scalar(_stmt_by_id(qid))
+    if qn is None or qn.organization_id != oid:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Опросник не найден")
+    assess_body = AssessRequest(answers=body.answers)
+    answers_for_llm = _build_answers_for_llm(qn, assess_body)
+    criteria = (qn.llm_criteria or "").strip()
+    supplement = await _output_format_supplement_for_questionnaire(session, redis, qn)
+    try:
+        analysis = await llm.assess_answers(
+            criteria=criteria,
+            answers_for_llm=answers_for_llm,
+            output_format_supplement=supplement,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
+    except Exception as e:
+        logger.exception("MIS questionnaire invite: ошибка LLM")
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            detail=f"Ошибка ИИ: {e!s}",
+        ) from e
+
+    serialized_answers = [a.model_dump(mode="json") for a in body.answers]
+    row = MedicalEntryModel(
+        patient_id=p.id,
+        type=MedicalEntryType.survey,
+        entry_date=date.today(),
+        data={
+            "source": "mis_questionnaire_invite",
+            "questionnaire_id": str(qid),
+            "questionnaire_title": qn.title,
+            "answers": serialized_answers,
+        },
+        conclusion=analysis,
+        recommendations="",
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return MisQuestionnaireInviteSubmitResponse(analysis=analysis, saved=True)
+
+
 @router.post("/doctor/ai-consult", response_model=MisAiConsultResponse)
 async def mis_doctor_ai_consult(
     body: MisAiConsultRequest,
@@ -655,17 +871,19 @@ async def mis_doctor_send_max_summary(
     request: Request,
     doctor: MisDoctorDep,
     session: AsyncSessionDep,
-    max_client: MaxMessengerClientDep,
+    redis: RedisDep,
+    settings: SettingsDep,
 ) -> dict[str, bool]:
     """Отправка краткой сводки по пациенту в указанный чат MAX (через ``MaxMessengerClient``)."""
-    if not (await max_client.resolve_bot_token()).strip():
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Бот MAX не настроен (MAX_BOT_TOKEN)",
-        )
     p = await session.get(MedicalPatientModel, patient_id)
     if p is None or p.doctor_id != doctor.id or p.organization_id != doctor.organization_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Пациент не найден")
+    max_client = _mis_max_client_for_organization(session, redis, settings, doctor.organization_id)
+    if not (await max_client.resolve_bot_token()).strip():
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Бот MAX не настроен для этой организации: укажите MAX_BOT_TOKEN в интеграциях/настройках организации",
+        )
     base = str(request.base_url).rstrip("/")
     public_card = f"{base}/public/mis/patient/{p.id}"
     text = (
@@ -675,6 +893,53 @@ async def mis_doctor_send_max_summary(
         f"Диагноз: {(p.current_diagnosis or '').strip() or '—'}\n"
         f"Лечение: {(p.treatment_plan or '').strip() or '—'}\n"
         f"Карта (ссылка для пациента): {public_card}"
+    )
+    try:
+        await send_max_order_message(max_client, body.max_chat_id, text)
+    except Exception as e:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            detail=f"Не удалось отправить сообщение в MAX: {e!s}",
+        ) from e
+    return {"ok": True}
+
+
+@router.post("/doctor/patients/{patient_id}/send-questionnaire")
+async def mis_doctor_send_questionnaire_link(
+    patient_id: UUID,
+    body: MisSendQuestionnaireRequest,
+    request: Request,
+    doctor: MisDoctorDep,
+    session: AsyncSessionDep,
+    redis: RedisDep,
+    settings: SettingsDep,
+) -> dict[str, bool]:
+    p = await session.get(MedicalPatientModel, patient_id)
+    if p is None or p.doctor_id != doctor.id or p.organization_id != doctor.organization_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Пациент не найден")
+    qn = await session.scalar(_stmt_by_id(body.questionnaire_id))
+    if qn is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Опросник не найден")
+    _assert_questionnaire_for_patient_org(qn, p.organization_id)
+
+    max_client = _mis_max_client_for_organization(session, redis, settings, doctor.organization_id)
+    if not (await max_client.resolve_bot_token()).strip():
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Бот MAX не настроен для этой организации: укажите MAX_BOT_TOKEN в интеграциях/настройках организации",
+        )
+    token = create_mis_questionnaire_invite_token(
+        patient_id=p.id,
+        questionnaire_id=qn.id,
+        organization_id=p.organization_id,
+        secret=settings.portal_jwt_secret,
+    )
+    base = str(request.base_url).rstrip("/")
+    link = f"{base}/public/mis/questionnaire?t={quote(token, safe='')}"
+    text = (
+        f"Здравствуйте! Вам назначен опросник «{qn.title}».\n"
+        f"Пройдите по ссылке, чтобы ответить на вопросы — результат будет доступен вашему врачу.\n"
+        f"{link}"
     )
     try:
         await send_max_order_message(max_client, body.max_chat_id, text)

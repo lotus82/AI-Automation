@@ -143,13 +143,17 @@ async function postAssessStream(questionnaireId, payload, { onDelta, onDone, onE
 }
 
 /**
- * Загрузка опросника, форма ответов, SSE assess-stream, вывод вердикта ИИ.
- * @param {{ questionnaireId: string, onClose?: () => void, variant?: 'panel' | 'public' }} props
+ * Загрузка опросника, форма ответов, SSE assess-stream (или разовый submit по приглашению МИС), вывод вердикта ИИ.
+ * @param {{ questionnaireId?: string, inviteToken?: string, onClose?: () => void, variant?: 'panel' | 'public' }} props
  */
-export function SurveyTakeExperience({ questionnaireId, onClose, variant = "panel" }) {
+export function SurveyTakeExperience({ questionnaireId, inviteToken, onClose, variant = "panel" }) {
+  const trimmedInvite = (inviteToken || "").trim();
+  const isInviteMode = Boolean(trimmedInvite);
+
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [qn, setQn] = useState(null);
+  const [patientLabel, setPatientLabel] = useState("");
   /** @type {Record<string, { optionIds: string[], text: string }>} */
   const [values, setValues] = useState({});
   const [phase, setPhase] = useState("form");
@@ -157,12 +161,12 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
   const [streamActive, setStreamActive] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [inviteSaved, setInviteSaved] = useState(false);
 
   const ordered = useMemo(() => sortQuestions(qn?.questions), [qn]);
   const isPublic = variant === "public";
 
   const load = useCallback(async () => {
-    if (!questionnaireId) return;
     setLoading(true);
     setLoadError("");
     setPhase("form");
@@ -170,8 +174,10 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
     setStreamActive(false);
     setSubmitError("");
     setValues({});
-    try {
-      const { data } = await api.get(`/questionnaires/${questionnaireId}`);
+    setPatientLabel("");
+    setInviteSaved(false);
+
+    const applyQuestionnaire = (data) => {
       setQn(data);
       const init = {};
       for (const q of sortQuestions(data?.questions)) {
@@ -179,6 +185,23 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
           q.type === "text" ? { optionIds: [], text: "" } : { optionIds: [], text: "" };
       }
       setValues(init);
+    };
+
+    try {
+      if (isInviteMode) {
+        const { data } = await api.get("/public/mis/questionnaire-invite", {
+          params: { token: trimmedInvite },
+        });
+        setPatientLabel(typeof data?.patient_label === "string" ? data.patient_label : "");
+        applyQuestionnaire(data?.questionnaire);
+      } else {
+        if (!questionnaireId) {
+          setLoading(false);
+          return;
+        }
+        const { data } = await api.get(`/questionnaires/${questionnaireId}`);
+        applyQuestionnaire(data);
+      }
     } catch (e) {
       console.error(e);
       setLoadError(formatApiDetail(e) || "Не удалось загрузить опросник");
@@ -186,7 +209,7 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
     } finally {
       setLoading(false);
     }
-  }, [questionnaireId]);
+  }, [questionnaireId, trimmedInvite, isInviteMode]);
 
   useEffect(() => {
     load();
@@ -270,6 +293,25 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
     }
     setPhase("result");
     setAnalysis("");
+    setInviteSaved(false);
+
+    if (isInviteMode) {
+      setStreamActive(false);
+      try {
+        const { data } = await api.post("/public/mis/questionnaire-invite/submit", {
+          token: trimmedInvite,
+          answers: buildPayload().answers,
+        });
+        setAnalysis((data?.analysis && String(data.analysis)) || "");
+        setInviteSaved(data?.saved !== false);
+      } catch (e) {
+        console.error(e);
+        setSubmitError(formatApiDetail(e) || "Ошибка оценки");
+        setPhase("form");
+      }
+      return;
+    }
+
     setStreamActive(true);
     try {
       await postAssessStream(questionnaireId, buildPayload(), {
@@ -347,6 +389,11 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h2 className={titleClass}>{qn?.title}</h2>
+          {isInviteMode && patientLabel ? (
+            <p className={isPublic ? "mt-1 text-xs text-slate-500" : "mt-1 text-xs text-slate-400"}>
+              Опрос для: {patientLabel}
+            </p>
+          ) : null}
         </div>
         {onClose ? (
           <button type="button" className={closeBtnClass} onClick={onClose} aria-label="Закрыть">
@@ -376,6 +423,17 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
               </span>
             ) : null}
           </div>
+          {isInviteMode && inviteSaved ? (
+            <p
+              className={
+                isPublic
+                  ? "rounded-lg border border-teal-200 bg-teal-50/80 px-3 py-2 text-xs text-teal-900"
+                  : "rounded-lg border border-emerald-500/30 bg-emerald-950/40 px-3 py-2 text-xs text-emerald-200"
+              }
+            >
+              Результат сохранён в карте у лечащего врача; вы можете просмотреть его в личном кабинете пациента.
+            </p>
+          ) : null}
           <div className={verdictBoxClass}>
             {analysis.trim() ? (
               <ReactMarkdown components={mdComponents}>{analysis}</ReactMarkdown>
@@ -408,56 +466,58 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
             >
               Пройти снова
             </button>
-            <button
-              type="button"
-              disabled={pdfBusy || !analysis.trim() || streamActive}
-              className={secondaryBtnClass}
-              onClick={async () => {
-                setPdfBusy(true);
-                try {
-                  const res = await api.post(
-                    "/questionnaires/verdict-pdf",
-                    { title: (qn?.title || "").trim(), analysis },
-                    { responseType: "blob" },
-                  );
-                  const blob = new Blob([res.data], { type: "application/pdf" });
-                  const url = URL.createObjectURL(blob);
-                  const cd = res.headers["content-disposition"] || res.headers["Content-Disposition"];
-                  let fname = "verdikt-ii.pdf";
-                  if (typeof cd === "string") {
-                    const m = cd.match(/filename="([^"]+)"/i) || cd.match(/filename=([^;]+)/i);
-                    if (m) fname = m[1].trim();
-                  }
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = fname;
-                  a.rel = "noopener";
-                  document.body.appendChild(a);
-                  a.click();
-                  a.remove();
-                  URL.revokeObjectURL(url);
-                } catch (e) {
-                  console.error(e);
-                  let msg = "";
-                  if (e?.response?.data instanceof Blob) {
-                    try {
-                      const t = await e.response.data.text();
-                      const j = JSON.parse(t);
-                      msg = typeof j?.detail === "string" ? j.detail : t;
-                    } catch {
-                      msg = "Ошибка сервера при формировании PDF";
+            {!isInviteMode ? (
+              <button
+                type="button"
+                disabled={pdfBusy || !analysis.trim() || streamActive}
+                className={secondaryBtnClass}
+                onClick={async () => {
+                  setPdfBusy(true);
+                  try {
+                    const res = await api.post(
+                      "/questionnaires/verdict-pdf",
+                      { title: (qn?.title || "").trim(), analysis },
+                      { responseType: "blob" },
+                    );
+                    const blob = new Blob([res.data], { type: "application/pdf" });
+                    const url = URL.createObjectURL(blob);
+                    const cd = res.headers["content-disposition"] || res.headers["Content-Disposition"];
+                    let fname = "verdikt-ii.pdf";
+                    if (typeof cd === "string") {
+                      const m = cd.match(/filename="([^"]+)"/i) || cd.match(/filename=([^;]+)/i);
+                      if (m) fname = m[1].trim();
                     }
-                  } else {
-                    msg = formatApiDetail(e);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = fname;
+                    a.rel = "noopener";
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                  } catch (e) {
+                    console.error(e);
+                    let msg = "";
+                    if (e?.response?.data instanceof Blob) {
+                      try {
+                        const t = await e.response.data.text();
+                        const j = JSON.parse(t);
+                        msg = typeof j?.detail === "string" ? j.detail : t;
+                      } catch {
+                        msg = "Ошибка сервера при формировании PDF";
+                      }
+                    } else {
+                      msg = formatApiDetail(e);
+                    }
+                    window.alert(msg || "Не удалось скачать PDF.");
+                  } finally {
+                    setPdfBusy(false);
                   }
-                  window.alert(msg || "Не удалось скачать PDF.");
-                } finally {
-                  setPdfBusy(false);
-                }
-              }}
-            >
-              {pdfBusy ? "PDF…" : "Скачать PDF"}
-            </button>
+                }}
+              >
+                {pdfBusy ? "PDF…" : "Скачать PDF"}
+              </button>
+            ) : null}
             {onClose ? (
               <button type="button" className={secondaryBtnClass} onClick={onClose}>
                 Закрыть

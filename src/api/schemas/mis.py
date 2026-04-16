@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from src.api.schemas.questionnaires import AssessAnswerItem, QuestionnairePublic
+
 
 class MedicalDoctorCreate(BaseModel):
     portal_user_id: UUID
@@ -114,3 +116,27 @@ class MisMaxSendRequest(BaseModel):
     """Отправка текстовой сводки по пациенту в чат MAX (тот же транспорт, что у уведомлений магазина)."""
 
     max_chat_id: int = Field(..., description="Числовой chat_id в MAX")
+
+
+class MisSendQuestionnaireRequest(BaseModel):
+    """Ссылка на опросник для пациента через бота MAX организации."""
+
+    questionnaire_id: UUID
+    max_chat_id: int = Field(..., description="Числовой chat_id в MAX")
+
+
+class MisQuestionnaireInviteInfo(BaseModel):
+    """Публичные данные для прохождения опроса по приглашению врача."""
+
+    questionnaire: QuestionnairePublic
+    patient_label: str = Field(description="Краткая подпись без раскрытия лишних данных")
+
+
+class MisQuestionnaireInviteSubmitBody(BaseModel):
+    token: str = Field(..., min_length=32)
+    answers: list[AssessAnswerItem]
+
+
+class MisQuestionnaireInviteSubmitResponse(BaseModel):
+    analysis: str
+    saved: bool = True
