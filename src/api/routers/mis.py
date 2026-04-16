@@ -9,6 +9,7 @@ from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from starlette.responses import Response
 from jwt.exceptions import PyJWTError
 from loguru import logger
 from redis.asyncio import Redis
@@ -399,13 +400,17 @@ async def mis_admin_patch_patient(
     return _patient_out(p)
 
 
-@router.delete("/admin/patients/{patient_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/admin/patients/{patient_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def mis_admin_delete_patient(
     patient_id: UUID,
     user: MisAdminDep,
     session: AsyncSessionDep,
     organization_id: UUID | None = Query(None, description="Для super_admin: организация"),
-) -> None:
+) -> Response:
     """Удаление карты пациента и всех связанных записей (обследования, опросники, дневник)."""
     scope = resolve_organization_scope(user, organization_id)
     if scope is None:
@@ -418,6 +423,7 @@ async def mis_admin_delete_patient(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Пациент не найден")
     await session.delete(p)
     await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/admin/ai-consult", response_model=MisAiConsultResponse)
@@ -673,18 +679,23 @@ async def mis_doctor_update_patient(
     return _patient_out(p)
 
 
-@router.delete("/doctor/patients/{patient_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/doctor/patients/{patient_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def mis_doctor_delete_patient(
     patient_id: UUID,
     doctor: MisDoctorDep,
     session: AsyncSessionDep,
-) -> None:
+) -> Response:
     """Удаление карты пациента и всех связанных записей."""
     p = await session.get(MedicalPatientModel, patient_id)
     if p is None or p.doctor_id != doctor.id or p.organization_id != doctor.organization_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Пациент не найден")
     await session.delete(p)
     await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/doctor/patients/{patient_id}/entries", response_model=MedicalEntryOut, status_code=status.HTTP_201_CREATED)
