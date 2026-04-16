@@ -84,8 +84,11 @@ export function Layout() {
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm sm:justify-end">
               <span className="max-w-full truncate text-slate-500">
                 {user?.display_name || user?.username}
-                {user?.organization_name ? (
-                  <span className="text-slate-600"> · {user.organization_name}</span>
+                {user?.organization_name || user?.organization_display_name ? (
+                  <span className="text-slate-600">
+                    {" "}
+                    · {user.organization_display_name || user.organization_name}
+                  </span>
                 ) : null}
               </span>
               <button

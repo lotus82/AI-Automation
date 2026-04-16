@@ -126,6 +126,9 @@ class DynamicLLMService(ILLMService):
         system = (system_prompt or "").strip() or db_system or (
             "You are a helpful B2B sales assistant. Reply in the user's language when possible."
         )
+        supplement = (await self._repo.get_value(sk.TEXT_BOT_SYSTEM_SUPPLEMENT) or "").strip()
+        if supplement:
+            system = f"{system}\n\n---\n\n{supplement}"
         messages: list[dict[str, str]] = [{"role": "system", "content": system}]
         if history:
             messages.extend(memory_history_to_openai_messages(history))

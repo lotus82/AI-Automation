@@ -77,6 +77,7 @@ async def list_organizations(
         OrganizationPublic(
             id=x.id,
             name=x.name,
+            display_name=(x.display_name or "").strip() or None,
             slug=x.slug,
             is_active=x.is_active,
             created_at=x.created_at,
@@ -99,7 +100,13 @@ async def create_organization(
     if taken is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Логин администратора уже занят")
 
-    org = OrganizationModel(name=body.name.strip(), slug=slug, is_active=True)
+    org_dn = (body.organization_display_name or "").strip() or None
+    org = OrganizationModel(
+        name=body.name.strip(),
+        display_name=org_dn,
+        slug=slug,
+        is_active=True,
+    )
     session.add(org)
     await session.flush()
 
@@ -122,6 +129,7 @@ async def create_organization(
     return OrganizationPublic(
         id=org.id,
         name=org.name,
+        display_name=(org.display_name or "").strip() or None,
         slug=org.slug,
         is_active=org.is_active,
         created_at=org.created_at,

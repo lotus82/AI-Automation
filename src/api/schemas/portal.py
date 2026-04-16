@@ -29,6 +29,10 @@ class PortalUserMe(BaseModel):
     display_name: str | None
     organization_id: UUID | None
     organization_name: str | None
+    organization_display_name: str | None = Field(
+        default=None,
+        description="Краткое имя организации для шапки; если пусто — смотреть organization_name",
+    )
     permissions: dict[str, Any]
     sections: list[str] = Field(
         default_factory=list,
@@ -43,6 +47,11 @@ class PortalPasswordChangeRequest(BaseModel):
 
 class OrganizationCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
+    organization_display_name: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Краткое имя для панели (шапка); полное юридическое — в name",
+    )
     slug: str | None = Field(default=None, max_length=128)
     admin_username: str = Field(min_length=2, max_length=128)
     admin_password: str = Field(min_length=6, max_length=256)
@@ -52,6 +61,7 @@ class OrganizationCreate(BaseModel):
 class OrganizationPublic(BaseModel):
     id: UUID
     name: str
+    display_name: str | None = None
     slug: str
     is_active: bool
     created_at: datetime

@@ -73,8 +73,12 @@ async def portal_login(
 @router.get("/me", response_model=PortalUserMe)
 async def portal_me(user: PortalUserDep) -> PortalUserMe:
     org_name = None
+    org_display = None
     if user.organization_id and user.organization:
-        org_name = user.organization.name
+        org = user.organization
+        org_name = org.name
+        od = (org.display_name or "").strip()
+        org_display = od or None
     return PortalUserMe(
         id=user.id,
         username=user.username,
@@ -82,6 +86,7 @@ async def portal_me(user: PortalUserDep) -> PortalUserMe:
         display_name=user.display_name,
         organization_id=user.organization_id,
         organization_name=org_name,
+        organization_display_name=org_display,
         permissions=user.permissions or {},
         sections=effective_sections(user),
     )

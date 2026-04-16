@@ -167,6 +167,7 @@ async def run_voice_pipeline_session(
                     reply = await use_case.execute(
                         text,
                         session_id,
+                        append_text_messenger_system_supplement=True,
                         on_intermediate_message=send_intermediate,
                         intermediate_search_message="Минутку, сейчас уточню в интернете",
                         user_name=voice_user_name,

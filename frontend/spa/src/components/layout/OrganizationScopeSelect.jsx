@@ -48,7 +48,7 @@ export function OrganizationScopeSelect() {
         <option value="">Глобально (экземпляр)</option>
         {orgs.map((o) => (
           <option key={o.id} value={o.id}>
-            {o.name || o.slug || o.id}
+            {o.display_name || o.name || o.slug || o.id}
           </option>
         ))}
       </select>

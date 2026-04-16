@@ -55,7 +55,11 @@ async def chat_text(
                 detail="Для запросов с organization_id нужна авторизация портала (Authorization: Bearer …)",
             )
         use_case = get_process_text_message_use_case(session, redis, settings)
-    reply = await use_case.execute(body.message, str(session_id))
+    reply = await use_case.execute(
+        body.message,
+        str(session_id),
+        append_text_messenger_system_supplement=True,
+    )
     return ChatTextResponse(reply=reply, session_id=session_id)
 
 

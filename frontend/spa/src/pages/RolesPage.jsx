@@ -72,9 +72,12 @@ function parseMaxGroupRowsFromMap(map) {
               additionalPrompt = typeof val.additional_prompt === "string" ? val.additional_prompt : "";
               roleId = val.role_id != null && String(val.role_id).trim() ? String(val.role_id) : "";
             }
+            const description =
+              val && typeof val === "object" && typeof val.description === "string" ? val.description : "";
             return {
               rowId: newRowId(),
               chatId: String(chatId),
+              description,
               roleId,
               additionalPrompt,
             };
@@ -90,7 +93,15 @@ function parseMaxGroupRowsFromMap(map) {
   const legacyPrompt =
     map[SK.MAX_GROUP_ADDITIONAL_PROMPT]?.value != null ? String(map[SK.MAX_GROUP_ADDITIONAL_PROMPT].value) : "";
   if (legacyId) {
-    return [{ rowId: newRowId(), chatId: legacyId, roleId: "", additionalPrompt: legacyPrompt }];
+    return [
+      {
+        rowId: newRowId(),
+        chatId: legacyId,
+        description: "",
+        roleId: "",
+        additionalPrompt: legacyPrompt,
+      },
+    ];
   }
   return [];
 }
@@ -165,9 +176,7 @@ export function RolesPage() {
     if (analystRoleId === victim.roleId) {
       setAnalystRoleId(next[0].roleId);
     }
-    setMaxGroupRows((gr) =>
-      gr.map((g) => (g.roleId === victim.roleId ? { ...g, roleId: "" } : g)),
-    );
+    setMaxGroupRows((gr) => gr.map((g) => (g.roleId === victim.roleId ? { ...g, roleId: "" } : g)));
   };
 
   const addRoleRow = () => {
@@ -188,7 +197,10 @@ export function RolesPage() {
   };
 
   const addMaxRow = () => {
-    setMaxGroupRows((rows) => [...rows, { rowId: newRowId(), chatId: "", roleId: "", additionalPrompt: "" }]);
+    setMaxGroupRows((rows) => [
+      ...rows,
+      { rowId: newRowId(), chatId: "", description: "", roleId: "", additionalPrompt: "" },
+    ]);
   };
 
   const collectPayload = () => {
@@ -212,9 +224,11 @@ export function RolesPage() {
     for (const r of maxGroupRows) {
       const cid = (r.chatId || "").trim();
       if (!cid) continue;
+      const desc = (r.description || "").trim();
       groupMap[cid] = {
         role_id: (r.roleId || "").trim() || null,
         additional_prompt: r.additionalPrompt ?? "",
+        ...(desc ? { description: desc } : {}),
       };
     }
     return {
@@ -288,7 +302,7 @@ export function RolesPage() {
         Роли и промпты
       </h1>
       <p className="mb-4 text-sm leading-relaxed text-slate-300">
-        Роли с системными промптами, привязка групп MAX к роли и доп. тексту, общее дополнение для мессенджеров. Хранится
+        Роли с системными промптами, привязка групп MAX к роли и доп. тексту, общее дополнение для текстовых чатов. Хранится
         в <code className="rounded bg-slate-800 px-1 text-xs">system_settings</code>.
       </p>
 
@@ -415,10 +429,11 @@ export function RolesPage() {
               <code className="text-xs text-slate-300">chat_id</code>.
             </p>
             <div className="overflow-x-auto rounded-lg border border-slate-700/80">
-              <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+              <table className="w-full min-w-[880px] border-collapse text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-700 bg-slate-900/60 text-xs uppercase text-slate-400">
                     <th className="px-3 py-2 font-medium w-[11rem]">ID группы</th>
+                    <th className="px-3 py-2 font-medium min-w-[10rem]">Описание</th>
                     <th className="px-3 py-2 font-medium w-[12rem]">Роль</th>
                     <th className="px-3 py-2 font-medium">Доп. промпт для группы</th>
                     <th className="px-2 py-2 w-24 text-right"> </th>
@@ -427,7 +442,7 @@ export function RolesPage() {
                 <tbody>
                   {maxGroupRows.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-3 py-4 text-slate-500">
+                      <td colSpan={5} className="px-3 py-4 text-slate-500">
                         Нет записей. Нажмите «Добавить группу».
                       </td>
                     </tr>
@@ -443,6 +458,17 @@ export function RolesPage() {
                             value={row.chatId}
                             onChange={(e) => updateMaxRow(row.rowId, { chatId: e.target.value })}
                             aria-label="ID группы MAX"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="text"
+                            className={inputClass}
+                            placeholder="Например: чат отдела продаж"
+                            autoComplete="off"
+                            value={row.description ?? ""}
+                            onChange={(e) => updateMaxRow(row.rowId, { description: e.target.value })}
+                            aria-label="Описание группового чата"
                           />
                         </td>
                         <td className="px-3 py-2">
@@ -495,15 +521,17 @@ export function RolesPage() {
 
           <section className={sectionClass} aria-labelledby="messenger-supplement-title">
             <h2 id="messenger-supplement-title" className={sectionTitleClass}>
-              <span aria-hidden>📱</span> Мессенджеры
+              <span aria-hidden>📱</span> Мессенджеры и текстовые чаты
             </h2>
             <div className="mb-0">
               <label className={labelClass} htmlFor="text-bot-supplement">
-                Дополнение для текстовых ботов MAX и Telegram (TEXT_BOT_SYSTEM_SUPPLEMENT)
+                Дополнение к системному промпту (TEXT_BOT_SYSTEM_SUPPLEMENT)
               </label>
               <p className={helpClass}>
-                Добавляется <strong>после</strong> промпта роли, CRM и доп. текста группы. Для правил формата ответа в
-                чате.
+                Добавляется <strong>после</strong> промпта роли, CRM и доп. текста группы MAX. Используется во{" "}
+                <strong>всех текстовых чатах</strong> с моделью: мессенджеры (MAX и др.), встроенный чат панели, чат
+                врача с ИИ в МИС, проактивные сообщения по расписанию и аналогичные сценарии — для единых правил формата
+                ответа (тон, длина, обращение).
               </p>
               <textarea
                 id="text-bot-supplement"

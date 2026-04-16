@@ -542,6 +542,7 @@ class OrganizationModel(Base):
         server_default=sql_text("gen_random_uuid()"),
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     slug: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=sql_text("true"))
     created_at: Mapped[datetime] = mapped_column(

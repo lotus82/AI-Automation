@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { Building2 } from "lucide-react";
 import { Navigate } from "react-router-dom";
 import api from "../api/client.js";
 import { useAuthStore } from "../store/authStore.js";
@@ -13,6 +12,7 @@ export function OrganizationsPage() {
   const [msg, setMsg] = useState("");
 
   const [name, setName] = useState("");
+  const [orgDisplayName, setOrgDisplayName] = useState("");
   const [slug, setSlug] = useState("");
   const [adminUser, setAdminUser] = useState("");
   const [adminPass, setAdminPass] = useState("");
@@ -48,12 +48,14 @@ export function OrganizationsPage() {
     try {
       await api.post("/portal/organizations", {
         name: name.trim(),
+        organization_display_name: orgDisplayName.trim() || null,
         slug: slug.trim() || null,
         admin_username: adminUser.trim(),
         admin_password: adminPass,
         admin_display_name: adminName.trim() || null,
       });
       setName("");
+      setOrgDisplayName("");
       setSlug("");
       setAdminUser("");
       setAdminPass("");
@@ -102,6 +104,21 @@ export function OrganizationsPage() {
             />
           </div>
           <div>
+            <label className="mb-1 block text-xs text-slate-400" htmlFor="org-display-name">
+              Имя для отображения (опционально)
+            </label>
+            <input
+              id="org-display-name"
+              className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+              placeholder="Краткое имя в шапке панели"
+              value={orgDisplayName}
+              onChange={(e) => setOrgDisplayName(e.target.value)}
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Если задано, в шапке и в списке контекста показывается оно; иначе — полное название организации.
+            </p>
+          </div>
+          <div>
             <label className="mb-1 block text-xs text-slate-400" htmlFor="org-slug">
               Код (slug), опционально
             </label>
@@ -144,7 +161,7 @@ export function OrganizationsPage() {
           </div>
           <div>
             <label className="mb-1 block text-xs text-slate-400" htmlFor="org-admin-dn">
-              Имя для отображения (опционально)
+              Отображаемое имя администратора (опционально)
             </label>
             <input
               id="org-admin-dn"
@@ -177,6 +194,7 @@ export function OrganizationsPage() {
               <thead>
                 <tr className="border-b border-slate-600 bg-slate-900/60">
                   <th className="px-3 py-2 text-xs font-medium uppercase text-slate-400">Название</th>
+                  <th className="px-3 py-2 text-xs font-medium uppercase text-slate-400">В панели</th>
                   <th className="px-3 py-2 text-xs font-medium uppercase text-slate-400">Slug</th>
                   <th className="px-3 py-2 text-xs font-medium uppercase text-slate-400">Активна</th>
                   <th className="px-3 py-2 text-xs font-medium uppercase text-slate-400">Создана</th>
@@ -186,6 +204,7 @@ export function OrganizationsPage() {
                 {rows.map((o) => (
                   <tr key={o.id} className="border-b border-slate-800">
                     <td className="px-3 py-2 text-slate-200">{o.name}</td>
+                    <td className="px-3 py-2 text-slate-400">{o.display_name || "—"}</td>
                     <td className="px-3 py-2 font-mono text-xs text-slate-400">{o.slug}</td>
                     <td className="px-3 py-2">{o.is_active ? "да" : "нет"}</td>
                     <td className="px-3 py-2 text-slate-500">
