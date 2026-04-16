@@ -73,6 +73,18 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     command:
       - uvicorn
       - src.api.main:app
@@ -144,7 +156,8 @@ services:
       # FRONTEND_BIND: 127.0.0.1 — только локальный Nginx+Certbot; 0.0.0.0 — публикация порта на все интерфейсы
       - "${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_HTTP_PORT:-8080}:80"
     depends_on:
-      - web
+      web:
+        condition: service_healthy
 
 volumes:
   postgres_data:

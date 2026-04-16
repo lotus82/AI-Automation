@@ -51,10 +51,25 @@ const AI_ANALYSIS_QUESTION =
   "(обобщение данных, на что обратить внимание, идеи для дифференциальной диагностики). " +
   "Не ставь окончательный диагноз и не заменяй очный осмотр. Ответ на русском.";
 
+/** UUID организации/врача для deep link MAX: snake_case или camelCase с бэкенда. */
+function misDeepLinkIds(patient, user, isMisAdmin, settingsOrganizationId) {
+  const p = patient;
+  let org = p?.organization_id ?? p?.organizationId ?? null;
+  let doc = p?.doctor_id ?? p?.doctorId ?? null;
+  if (!org) {
+    org = user?.organization_id ?? user?.organizationId ?? settingsOrganizationId ?? null;
+  }
+  if (!doc && !isMisAdmin) {
+    doc = user?.medical_doctor_id ?? user?.medicalDoctorId ?? null;
+  }
+  return { org, doc };
+}
+
 export function DoctorMISPage() {
   const { patientId } = useParams();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
+  const settingsOrganizationId = useAuthStore((s) => s.settingsOrganizationId);
   /** Админ организации / супер-админ: МИС без личного профиля врача (отдельные API /mis/admin/...). */
   const isMisAdmin = user?.role === "org_admin" || user?.role === "super_admin";
 
@@ -265,11 +280,10 @@ export function DoctorMISPage() {
   }, [patientId]);
 
   const misMaxStartCommand = useMemo(() => {
-    const org = detail?.patient?.organization_id;
-    const doc = detail?.patient?.doctor_id;
+    const { org, doc } = misDeepLinkIds(detail?.patient, user, isMisAdmin, settingsOrganizationId);
     if (!org || !doc) return "";
     return `/start reg_org_${String(org).toLowerCase()}_doc_${String(doc).toLowerCase()}`;
-  }, [detail?.patient?.organization_id, detail?.patient?.doctor_id]);
+  }, [detail?.patient, user, isMisAdmin, settingsOrganizationId]);
 
   const copyMisMaxStart = useCallback(() => {
     if (!misMaxStartCommand) return;

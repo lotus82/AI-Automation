@@ -15,7 +15,7 @@ from src.api.schemas.portal import (
     PortalPasswordChangeRequest,
     PortalUserMe,
 )
-from src.infrastructure.models import OrganizationModel, PortalUserModel
+from src.infrastructure.models import MedicalDoctorModel, OrganizationModel, PortalUserModel
 from src.infrastructure.portal_access import effective_sections
 from src.infrastructure.portal_security import (
     create_portal_access_token,
@@ -71,7 +71,7 @@ async def portal_login(
 
 
 @router.get("/me", response_model=PortalUserMe)
-async def portal_me(user: PortalUserDep) -> PortalUserMe:
+async def portal_me(user: PortalUserDep, session: AsyncSessionDep) -> PortalUserMe:
     org_name = None
     org_display = None
     if user.organization_id and user.organization:
@@ -79,6 +79,15 @@ async def portal_me(user: PortalUserDep) -> PortalUserMe:
         org_name = org.name
         od = (org.display_name or "").strip()
         org_display = od or None
+    doc_stmt = (
+        select(MedicalDoctorModel.id)
+        .where(
+            MedicalDoctorModel.portal_user_id == user.id,
+            MedicalDoctorModel.is_active.is_(True),
+        )
+        .limit(1)
+    )
+    medical_doctor_id = (await session.execute(doc_stmt)).scalar_one_or_none()
     return PortalUserMe(
         id=user.id,
         username=user.username,
@@ -89,6 +98,7 @@ async def portal_me(user: PortalUserDep) -> PortalUserMe:
         organization_display_name=org_display,
         permissions=user.permissions or {},
         sections=effective_sections(user),
+        medical_doctor_id=medical_doctor_id,
     )
 
 

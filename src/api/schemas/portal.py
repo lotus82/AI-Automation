@@ -38,6 +38,10 @@ class PortalUserMe(BaseModel):
         default_factory=list,
         description="Разрешённые разделы панели для сотрудника; для ролей выше сотрудника — полный набор логики на фронте",
     )
+    medical_doctor_id: UUID | None = Field(
+        default=None,
+        description="Запись medical_doctors.id, если пользователь назначен врачом МИС",
+    )
 
 
 class PortalPasswordChangeRequest(BaseModel):
