@@ -29,7 +29,10 @@ from src.api.dependencies import (
 from src.infrastructure.max_bot_identity import resolve_max_webhook_organization_id
 from src.infrastructure.repositories import PostgresSettingsRepository
 from src.infrastructure.services.max_incoming_group import apply_max_group_mention_rules
-from src.infrastructure.mis_max_bot_patient_reg_flow import try_max_bot_mis_patient_registration_flow
+from src.infrastructure.mis_max_bot_patient_reg_flow import (
+    try_max_bot_mis_patient_registration_flow,
+    unwrap_max_update_body,
+)
 from src.infrastructure.services.max_messenger import (
     MaxMessengerClient,
     parse_max_voice_call_incoming,
@@ -52,6 +55,7 @@ async def max_messenger_webhook(
     ),
 ) -> dict[str, Any]:
     """Принимает JSON от MAX; ``chat_id`` → ``session_id`` в Redis; ответ уходит через ``MaxMessengerClient``."""
+    body = unwrap_max_update_body(body)
     parsed_call = parse_max_voice_call_incoming(body)
     if parsed_call is not None:
         call_id, user_label = parsed_call

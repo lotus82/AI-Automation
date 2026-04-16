@@ -48,6 +48,20 @@ _POLL_TYPES = (
     "CALL_INCOMING",
 )
 
+
+def _max_poll_types_query_value() -> str:
+    """Один параметр ``types=…`` через запятую — как в [GET /updates](https://dev.max.ru/docs-api/methods/GET/updates)."""
+    seen: set[str] = set()
+    parts: list[str] = []
+    for raw in _POLL_TYPES:
+        k = (raw or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if not k or k in seen:
+            continue
+        seen.add(k)
+        parts.append(k)
+    return ",".join(parts)
+
+
 # Лимит текста в POST /messages: платформа MAX считает **байты UTF-8** (часто ≤4096), не «символы».
 # Обрезка [:4000] по символам для кириллицы даёт >8000 байт → 400 Bad Request.
 _MAX_OUTGOING_MESSAGE_UTF8_BYTES = 3800
@@ -214,7 +228,8 @@ def _max_parse_skip_reason(raw: dict[str, Any]) -> str | None:
             return "message_callback: нет callback"
         if not (cb.get("payload") or "").strip():
             return "message_callback: пустой callback.payload"
-        if msg.get("recipient", {}).get("chat_id") is None:
+        r = msg.get("recipient") or {}
+        if r.get("chat_id") is None and r.get("chatId") is None:
             return "message_callback: нет chat_id"
         return "message_callback: другое (см. parse_max_webhook_incoming)"
 
@@ -229,7 +244,8 @@ def _max_parse_skip_reason(raw: dict[str, Any]) -> str | None:
         return "message_created: is_bot=true"
     if not isinstance(msg.get("recipient"), dict):
         return "message_created: нет recipient"
-    if msg.get("recipient", {}).get("chat_id") is None:
+    r = msg.get("recipient") or {}
+    if r.get("chat_id") is None and r.get("chatId") is None:
         return "message_created: нет chat_id"
     body = msg.get("body")
     if not isinstance(body, dict):
@@ -262,6 +278,8 @@ def parse_max_webhook_incoming(
             return None
         chat_id = recipient.get("chat_id")
         if chat_id is None:
+            chat_id = recipient.get("chatId")
+        if chat_id is None:
             return None
         body = msg.get("body")
         if not isinstance(body, dict):
@@ -286,6 +304,8 @@ def parse_max_webhook_incoming(
         if not isinstance(recipient, dict):
             return None
         chat_id = recipient.get("chat_id")
+        if chat_id is None:
+            chat_id = recipient.get("chatId")
         callback = payload.get("callback")
         if not isinstance(callback, dict):
             return None
@@ -531,9 +551,8 @@ class MaxMessengerClient:
                 params: list[tuple[str, str]] = [
                     ("limit", str(_POLL_LIMIT)),
                     ("timeout", str(_POLL_LONG_TIMEOUT_SEC)),
+                    ("types", _max_poll_types_query_value()),
                 ]
-                for t in _POLL_TYPES:
-                    params.append(("types", t))
                 if marker is not None:
                     params.append(("marker", str(marker)))
 
@@ -623,11 +642,17 @@ class MaxMessengerClient:
 
             accepted_by_parser = 0
             replies_sent = 0
+            from src.infrastructure.mis_max_bot_patient_reg_flow import (
+                try_max_bot_mis_patient_registration_flow,
+                unwrap_max_update_body,
+            )
+
             for raw_update in updates_list:
                 if stop_event.is_set():
                     break
                 if not isinstance(raw_update, dict):
                     continue
+                raw_update = unwrap_max_update_body(raw_update)
                 parsed_call = parse_max_voice_call_incoming(raw_update)
                 if parsed_call is not None:
                     call_id_v, user_label_v = parsed_call
@@ -657,10 +682,6 @@ class MaxMessengerClient:
                     )
                     continue
                 try:
-                    from src.infrastructure.mis_max_bot_patient_reg_flow import (
-                        try_max_bot_mis_patient_registration_flow,
-                    )
-
                     mis_reg = await try_max_bot_mis_patient_registration_flow(
                         raw_update,
                         session=session,

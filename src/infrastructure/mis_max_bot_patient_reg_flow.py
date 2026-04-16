@@ -7,6 +7,7 @@ import logging
 import re
 from datetime import date, datetime
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 from uuid import UUID
 
 from sqlalchemy import select
@@ -72,27 +73,116 @@ def _normalize_max_update_type(raw: str) -> str:
     return s
 
 
+def _as_reg_payload_string(v: Any) -> str | None:
+    if v is None:
+        return None
+    s = str(v).strip()
+    if _REG_DEEP.match(s):
+        return s
+    return None
+
+
+def unwrap_max_update_body(raw: dict[str, Any]) -> dict[str, Any]:
+    """MAX шлёт объект Update корнем POST; иногда обёртка ``update`` / ``data`` (прокси, старые клиенты)."""
+    if not isinstance(raw, dict):
+        return {}
+    if raw.get("update_type") is not None or raw.get("updateType") is not None:
+        return raw
+    inner = raw.get("update")
+    if isinstance(inner, dict) and (
+        inner.get("update_type") is not None
+        or inner.get("updateType") is not None
+        or inner.get("message") is not None
+        or inner.get("payload") is not None
+    ):
+        return inner
+    data = raw.get("data")
+    if isinstance(data, dict) and (
+        data.get("update_type") is not None
+        or data.get("updateType") is not None
+        or data.get("message") is not None
+    ):
+        return data
+    return raw
+
+
+def _max_update_type_from_body(body: dict[str, Any]) -> str:
+    raw = body.get("update_type")
+    if raw is None:
+        raw = body.get("updateType")
+    return _normalize_max_update_type(str(raw or ""))
+
+
+def _reg_payload_from_bot_started_body(body: dict[str, Any]) -> str | None:
+    """Поля ``payload`` / ``start`` / camelCase — см. [диплинки MAX](https://dev.max.ru/docs/chatbots/bots-coding/prepare)."""
+    for key in (
+        "payload",
+        "start",
+        "start_param",
+        "startParam",
+        "startapp",
+        "startApp",
+        "args",
+    ):
+        hit = _as_reg_payload_string(body.get(key))
+        if hit:
+            return hit
+    return None
+
+
+def _chat_id_from_bot_started_body(body: dict[str, Any]) -> int | None:
+    for key in ("chat_id", "chatId"):
+        if key not in body:
+            continue
+        try:
+            cid = int(body[key])
+        except (TypeError, ValueError):
+            continue
+        if cid >= 0:
+            return cid
+    chat = body.get("chat")
+    if isinstance(chat, dict):
+        for key in ("id", "chat_id", "chatId"):
+            if key not in chat:
+                continue
+            try:
+                cid = int(chat[key])
+            except (TypeError, ValueError):
+                continue
+            if cid >= 0:
+                return cid
+    return None
+
+
 def _reg_payload_from_message_struct(msg: dict[str, Any]) -> str | None:
     """Параметр диплинка из JSON MAX (не только ``/start`` в ``body.text``)."""
 
-    def _as_reg(v: Any) -> str | None:
-        if v is None:
-            return None
-        s = str(v).strip()
-        if _REG_DEEP.match(s):
-            return s
-        return None
-
-    for key in ("start_param", "startParam", "startapp", "startApp", "payload"):
-        hit = _as_reg(msg.get(key))
+    for key in ("start_param", "startParam", "startapp", "startApp", "payload", "start"):
+        hit = _as_reg_payload_string(msg.get(key))
         if hit:
             return hit
     b = msg.get("body")
     if isinstance(b, dict):
-        for key in ("start_param", "startParam", "startapp", "startApp", "payload"):
-            hit = _as_reg(b.get(key))
+        for key in ("start_param", "startParam", "startapp", "startApp", "payload", "start"):
+            hit = _as_reg_payload_string(b.get(key))
             if hit:
                 return hit
+    link = msg.get("link")
+    if isinstance(link, dict):
+        for key in ("payload", "start_param", "startParam", "start", "startApp"):
+            hit = _as_reg_payload_string(link.get(key))
+            if hit:
+                return hit
+        url = link.get("url") or link.get("href") or ""
+        if isinstance(url, str) and url.strip():
+            try:
+                q = parse_qs(urlparse(url.strip()).query)
+                for v in q.get("start", []) or []:
+                    hit = _as_reg_payload_string(v)
+                    if hit:
+                        return hit
+            except Exception:
+                pass
     return None
 
 
@@ -458,25 +548,21 @@ async def _mis_handle_bot_started(
     settings: Settings,
     query_organization_id: UUID | None,
 ) -> dict[str, Any] | None:
-    """Событие ``bot_started``: диплинк ``?start=reg_org_…_doc_…`` приходит в ``payload`` (см. dev.max.ru)."""
-    payload_raw = body.get("payload")
-    if payload_raw is None:
+    """Событие ``bot_started``: диплинк ``?start=…`` — поле ``payload`` (см. [документацию MAX](https://dev.max.ru/docs/chatbots/bots-coding/prepare))."""
+    arg = _reg_payload_from_bot_started_body(body)
+    if not arg:
+        logger.info(
+            "MAX МИС: bot_started без reg_org_*_doc_* payload (нужен диплинк врача и ``bot_started`` в update_types подписки)",
+        )
         return None
-    arg = str(payload_raw).strip()
+
     m_reg = _REG_DEEP.match(arg)
     if not m_reg:
         return None
 
-    chat_raw = body.get("chat_id")
-    if chat_raw is None:
-        chat_raw = body.get("chatId")
-    if chat_raw is None:
-        return None
-    try:
-        chat_id = int(chat_raw)
-    except (TypeError, ValueError):
-        return None
-    if chat_id < 0:
+    chat_id = _chat_id_from_bot_started_body(body)
+    if chat_id is None:
+        logger.warning("MAX МИС: bot_started без chat_id в известных полях")
         return None
 
     user = body.get("user")
@@ -507,7 +593,8 @@ async def try_max_bot_mis_patient_registration_flow(
     query_organization_id: UUID | None,
 ) -> dict[str, Any] | None:
     """Обрабатывает ``bot_started``, ``/start`` с reg_org… и пошаговый диалог в личном чате."""
-    ut = _normalize_max_update_type(str(body.get("update_type") or ""))
+    body = unwrap_max_update_body(body)
+    ut = _max_update_type_from_body(body)
     if ut == "bot_started":
         started = await _mis_handle_bot_started(
             body,
@@ -524,12 +611,13 @@ async def try_max_bot_mis_patient_registration_flow(
     if not isinstance(msg, dict):
         return None
     sender = msg.get("sender")
-    if isinstance(sender, dict) and sender.get("is_bot") is True:
-        return None
+    is_bot_sender = isinstance(sender, dict) and sender.get("is_bot") is True
     recipient = msg.get("recipient")
     if not isinstance(recipient, dict):
         return None
     chat_id_raw = recipient.get("chat_id")
+    if chat_id_raw is None:
+        chat_id_raw = recipient.get("chatId")
     if chat_id_raw is None:
         return None
     try:
@@ -548,6 +636,8 @@ async def try_max_bot_mis_patient_registration_flow(
     b = msg.get("body")
     text = (b.get("text") or "").strip() if isinstance(b, dict) else ""
     embedded_reg = _reg_payload_from_message_struct(msg)
+    if is_bot_sender and not embedded_reg:
+        return None
     if embedded_reg:
         m_start = _START_CMD.match(text)
         payload_from_text = (m_start.group("payload") or "").strip() if m_start else ""
