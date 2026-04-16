@@ -26,6 +26,16 @@ function sortOptionsByScore(options) {
   return [...(options || [])].sort((a, b) => a.score - b.score || String(a.id).localeCompare(String(b.id)));
 }
 
+/** Круговой зелёный спиннер (тусклое кольцо + яркая дуга сверху при вращении). */
+function GreenRingSpinner({ sizeClass = "h-9 w-9", isPublic = false }) {
+  const ring = isPublic
+    ? "border-2 border-solid border-emerald-200 border-t-emerald-600"
+    : "border-2 border-solid border-emerald-500/30 border-t-emerald-400";
+  return (
+    <div className={`${sizeClass} shrink-0 animate-spin rounded-full ${ring}`} aria-hidden />
+  );
+}
+
 const verdictMdComponents = {
   p: ({ children }) => <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>,
   strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
@@ -352,12 +362,17 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
               Заключение
             </h3>
             {streamActive ? (
-              <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
-                <span
-                  className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-teal-500"
-                  aria-hidden
-                />
-                формируется…
+              <span
+                className={`inline-flex items-center gap-2.5 rounded-full py-1 pl-1 pr-3 text-xs font-medium ${
+                  isPublic
+                    ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200/80"
+                    : "bg-emerald-950/50 text-emerald-300 ring-1 ring-emerald-500/25"
+                }`}
+                role="status"
+                aria-live="polite"
+              >
+                <GreenRingSpinner sizeClass="h-7 w-7" isPublic={isPublic} />
+                Формирование ответа
               </span>
             ) : null}
           </div>
@@ -365,7 +380,16 @@ export function SurveyTakeExperience({ questionnaireId, onClose, variant = "pane
             {analysis.trim() ? (
               <ReactMarkdown components={mdComponents}>{analysis}</ReactMarkdown>
             ) : streamActive ? (
-              <p className={isPublic ? "text-slate-500" : "text-slate-400"}>Подключение к модели…</p>
+              <div
+                className={`flex flex-col items-center justify-center gap-4 py-10 ${
+                  isPublic ? "text-emerald-800" : "text-emerald-300"
+                }`}
+                role="status"
+                aria-live="polite"
+              >
+                <GreenRingSpinner sizeClass="h-12 w-12" isPublic={isPublic} />
+                <p className="text-sm font-medium">Формирование ответа</p>
+              </div>
             ) : (
               <p className={isPublic ? "text-slate-500" : "text-slate-400"}>Пустой ответ модели.</p>
             )}
