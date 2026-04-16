@@ -8,9 +8,11 @@ import {
   Send,
   Sparkles,
   Stethoscope,
+  X,
 } from "lucide-react";
+import { QRCodeSVG } from "react-qr-code";
 import api from "../api/client.js";
-import { IconCopyButton } from "../components/ui/IconActionButtons.jsx";
+import { IconCopyButton, IconQrButton } from "../components/ui/IconActionButtons.jsx";
 import { useAuthStore } from "../store/authStore.js";
 
 function formatApiDetail(err) {
@@ -89,8 +91,11 @@ export function DoctorMISPage() {
   const [npDoctorId, setNpDoctorId] = useState("");
 
   const [patientUrlCopied, setPatientUrlCopied] = useState(false);
+  const [misStartCopied, setMisStartCopied] = useState(false);
   const [phoneCopied, setPhoneCopied] = useState(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
   const patientUrlCopyTimer = useRef(null);
+  const misStartCopyTimer = useRef(null);
   const phoneCopyTimer = useRef(null);
 
   const loadList = useCallback(async () => {
@@ -164,6 +169,7 @@ export function DoctorMISPage() {
       loadDetail();
       setAiText("");
       setMaxMsg("");
+      setQrModalOpen(false);
     }
   }, [patientId, loadDetail]);
 
@@ -258,6 +264,28 @@ export function DoctorMISPage() {
       .catch(() => {});
   }, [patientId]);
 
+  const misMaxStartCommand = useMemo(() => {
+    const org = detail?.patient?.organization_id;
+    const doc = detail?.patient?.doctor_id;
+    if (!org || !doc) return "";
+    return `/start reg_org_${String(org).toLowerCase()}_doc_${String(doc).toLowerCase()}`;
+  }, [detail?.patient?.organization_id, detail?.patient?.doctor_id]);
+
+  const copyMisMaxStart = useCallback(() => {
+    if (!misMaxStartCommand) return;
+    navigator.clipboard
+      ?.writeText(misMaxStartCommand)
+      .then(() => {
+        if (misStartCopyTimer.current) clearTimeout(misStartCopyTimer.current);
+        setMisStartCopied(true);
+        misStartCopyTimer.current = setTimeout(() => {
+          setMisStartCopied(false);
+          misStartCopyTimer.current = null;
+        }, 2000);
+      })
+      .catch(() => {});
+  }, [misMaxStartCommand]);
+
   const copyPhone = useCallback(() => {
     const phone = detail?.patient?.phone;
     if (!phone) return;
@@ -277,9 +305,19 @@ export function DoctorMISPage() {
   useEffect(() => {
     return () => {
       if (patientUrlCopyTimer.current) clearTimeout(patientUrlCopyTimer.current);
+      if (misStartCopyTimer.current) clearTimeout(misStartCopyTimer.current);
       if (phoneCopyTimer.current) clearTimeout(phoneCopyTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!qrModalOpen) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setQrModalOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [qrModalOpen]);
 
   const createPatient = async (e) => {
     e.preventDefault();
@@ -505,6 +543,29 @@ export function DoctorMISPage() {
                   onClick={copyPatientPublicUrl}
                 />
               </div>
+              {misMaxStartCommand ? (
+                <div className="mt-3">
+                  <p className="text-xs font-medium text-slate-600">Команда для бота MAX (регистрация по врачу)</p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2 rounded-xl border border-violet-100 bg-violet-50/60 px-3 py-2 text-xs text-slate-700">
+                    <span className="min-w-0 flex-1 break-all font-mono text-[11px] sm:text-xs">
+                      {misMaxStartCommand}
+                    </span>
+                    <IconCopyButton
+                      variant="light"
+                      title="Скопировать команду"
+                      copied={misStartCopied}
+                      className="focus-visible:ring-violet-500/50"
+                      onClick={copyMisMaxStart}
+                    />
+                    <IconQrButton
+                      variant="light"
+                      title="Показать QR-код"
+                      className="focus-visible:ring-violet-500/50"
+                      onClick={() => setQrModalOpen(true)}
+                    />
+                  </div>
+                </div>
+              ) : null}
             </header>
 
             <section className={card}>
@@ -686,6 +747,40 @@ export function DoctorMISPage() {
           </div>
         ) : null}
       </div>
+
+      {qrModalOpen && misMaxStartCommand ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]"
+          role="presentation"
+          onClick={() => setQrModalOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mis-qr-title"
+            className="relative max-h-[90vh] w-full max-w-sm overflow-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="absolute right-3 top-3 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+              title="Закрыть"
+              aria-label="Закрыть"
+              onClick={() => setQrModalOpen(false)}
+            >
+              <X className="h-5 w-5" aria-hidden />
+            </button>
+            <h2 id="mis-qr-title" className="pr-10 text-base font-semibold text-slate-900">
+              QR для команды MAX
+            </h2>
+            <p className="mt-1 text-xs text-slate-600">Отсканируйте в приложении MAX — в буфер попадёт текст команды.</p>
+            <div className="mt-4 flex justify-center rounded-xl bg-white p-3 ring-1 ring-slate-100">
+              <QRCodeSVG value={misMaxStartCommand} size={220} level="M" />
+            </div>
+            <p className="mt-4 break-all font-mono text-[11px] leading-snug text-slate-700">{misMaxStartCommand}</p>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Check, Copy, ExternalLink, Loader2, Pencil, Power, Trash2 } from "lucide-react";
+import { Check, Copy, ExternalLink, Loader2, Pencil, Power, QrCode, Trash2 } from "lucide-react";
 
 const base =
   "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors " +
@@ -87,6 +87,25 @@ export function IconCopyButton({
       ) : (
         <Copy className="h-4 w-4" strokeWidth={2} aria-hidden />
       )}
+    </button>
+  );
+}
+
+/** QR-код (только иконка), например открытие модалки. */
+export function IconQrButton({ title = "QR-код", variant = "dark", className = "", ...rest }) {
+  const tone =
+    variant === "light"
+      ? "border-slate-300 bg-white/90 text-slate-600 hover:bg-slate-100"
+      : "border-slate-600 text-slate-200 hover:bg-slate-800";
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      className={`${base} ${tone} ${className}`}
+      {...rest}
+    >
+      <QrCode className="h-4 w-4" strokeWidth={2} aria-hidden />
     </button>
   );
 }
