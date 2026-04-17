@@ -1333,7 +1333,13 @@ class SiteModel(Base):
         nullable=False,
     )
 
-    organization: Mapped["OrganizationModel"] = relationship("OrganizationModel")
+    # Явно указываем foreign_keys: у OrganizationModel теперь два FK к/от sites
+    # (organizations.active_site_id -> sites.id и sites.organization_id -> organizations.id),
+    # поэтому SQLAlchemy иначе не может однозначно вывести join-условие.
+    organization: Mapped["OrganizationModel"] = relationship(
+        "OrganizationModel",
+        foreign_keys=[organization_id],
+    )
     pages: Mapped[list["SitePageModel"]] = relationship(
         "SitePageModel",
         back_populates="site",
