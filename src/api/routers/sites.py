@@ -1,0 +1,507 @@
+"""Конструктор сайтов Mini App: CRUD сайтов и их страниц + публичный GET.
+
+Особенности:
+- Админские операции изолируются по организации через ``resolve_organization_scope``.
+- Публичный эндпоинт ``GET /api/public/sites/{site_id}`` возвращает опубликованные страницы,
+  отсортированные по ``order_index``; используется в клиентском Mini App и потому открыт.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from datetime import datetime
+from uuid import UUID
+
+from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from starlette.responses import Response
+
+from src.api.dependencies import AsyncSessionDep
+from src.api.dependencies_portal import PortalUserDep
+from src.api.org_scope import resolve_organization_scope
+from src.domain.portal_roles import ROLE_SUPER_ADMIN
+from src.infrastructure.models import OrganizationModel, SiteModel, SitePageModel
+
+logger = logging.getLogger(__name__)
+
+# Админский роутер (префикс /api/sites) — под Portal JWT middleware.
+router = APIRouter(prefix="/sites", tags=["sites"])
+
+# Публичный роутер (префикс /api/public/sites) — путь помечен public в middleware.
+public_router = APIRouter(prefix="/public/sites", tags=["sites-public"])
+
+
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{0,126}[a-z0-9]$|^[a-z0-9]$")
+
+
+# --- Схемы ---------------------------------------------------------------
+
+
+class SiteContacts(BaseModel):
+    """Контакты сайта (произвольный, но типизированный набор полей).
+
+    Хранится целиком в JSONB: добавление новых полей не требует миграции.
+    """
+
+    phone: str | None = Field(default=None, max_length=64)
+    email: str | None = Field(default=None, max_length=255)
+    address: str | None = Field(default=None, max_length=512)
+    website: str | None = Field(default=None, max_length=512)
+    telegram: str | None = Field(default=None, max_length=255)
+    vk: str | None = Field(default=None, max_length=255)
+    max: str | None = Field(default=None, max_length=255)
+    whatsapp: str | None = Field(default=None, max_length=255)
+    instagram: str | None = Field(default=None, max_length=255)
+
+
+class SiteListItem(BaseModel):
+    id: UUID
+    organization_id: UUID
+    name: str
+    title: str
+    subtitle: str
+    theme_color: str
+    logo_url: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SiteDetail(SiteListItem):
+    contacts: SiteContacts
+
+
+class SiteCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+
+
+class SiteUpdateRequest(BaseModel):
+    """Частичное обновление настроек сайта. Пустые строки считаются сбросом полей."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    title: str | None = Field(default=None, max_length=255)
+    subtitle: str | None = Field(default=None, max_length=512)
+    logo_url: str | None = Field(default=None, max_length=1024)
+    theme_color: str | None = Field(default=None, max_length=16)
+    contacts: SiteContacts | None = None
+
+    @field_validator("theme_color")
+    @classmethod
+    def _color(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        s = v.strip()
+        if not s:
+            return "#000000"
+        if not re.fullmatch(r"#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?", s):
+            raise ValueError("theme_color должен быть HEX вида #RGB или #RRGGBB")
+        return s
+
+
+class SitePageItem(BaseModel):
+    id: UUID
+    site_id: UUID
+    title: str
+    slug: str
+    content: str
+    order_index: int
+    is_published: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class SitePageCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    slug: str = Field(min_length=1, max_length=128)
+    content: str = Field(default="", max_length=500_000)
+    order_index: int = Field(default=0, ge=0, le=10_000)
+    is_published: bool = True
+
+    @field_validator("slug")
+    @classmethod
+    def _slug(cls, v: str) -> str:
+        s = (v or "").strip().lower()
+        if not _SLUG_RE.fullmatch(s):
+            raise ValueError(
+                "slug должен состоять из латиницы/цифр/дефисов, без пробелов и спецсимволов",
+            )
+        return s
+
+
+class SitePageUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    slug: str | None = Field(default=None, min_length=1, max_length=128)
+    content: str | None = Field(default=None, max_length=500_000)
+    order_index: int | None = Field(default=None, ge=0, le=10_000)
+    is_published: bool | None = None
+
+    @field_validator("slug")
+    @classmethod
+    def _slug(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        s = (v or "").strip().lower()
+        if not _SLUG_RE.fullmatch(s):
+            raise ValueError(
+                "slug должен состоять из латиницы/цифр/дефисов, без пробелов и спецсимволов",
+            )
+        return s
+
+
+class PublicSitePage(BaseModel):
+    """Страница для публичного Mini App (без служебных полей и без черновиков)."""
+
+    id: UUID
+    title: str
+    slug: str
+    content: str
+    order_index: int
+
+
+class PublicSiteResponse(BaseModel):
+    id: UUID
+    name: str
+    title: str
+    subtitle: str
+    logo_url: str | None = None
+    theme_color: str
+    contacts: SiteContacts
+    pages: list[PublicSitePage]
+
+
+# --- Helpers -------------------------------------------------------------
+
+
+def _site_to_detail(row: SiteModel) -> SiteDetail:
+    return SiteDetail(
+        id=row.id,
+        organization_id=row.organization_id,
+        name=row.name,
+        title=row.title or "",
+        subtitle=row.subtitle or "",
+        theme_color=row.theme_color or "#000000",
+        logo_url=(row.logo_url or "").strip() or None,
+        contacts=SiteContacts.model_validate(row.contacts or {}),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _site_to_list_item(row: SiteModel) -> SiteListItem:
+    return SiteListItem(
+        id=row.id,
+        organization_id=row.organization_id,
+        name=row.name,
+        title=row.title or "",
+        subtitle=row.subtitle or "",
+        theme_color=row.theme_color or "#000000",
+        logo_url=(row.logo_url or "").strip() or None,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _page_to_item(row: SitePageModel) -> SitePageItem:
+    return SitePageItem(
+        id=row.id,
+        site_id=row.site_id,
+        title=row.title,
+        slug=row.slug,
+        content=row.content or "",
+        order_index=int(row.order_index or 0),
+        is_published=bool(row.is_published),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _resolve_site_org_scope(user, organization_id: UUID | None) -> UUID:
+    """Организация, в чьём контексте работаем. Для super_admin без override — 400."""
+    scope = resolve_organization_scope(user, organization_id)
+    if scope is None:
+        if user.role == ROLE_SUPER_ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Для супер-админа нужно указать organization_id",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нет организации",
+        )
+    return scope
+
+
+async def _get_site_for_user(
+    session: AsyncSessionDep,
+    site_id: UUID,
+    org_scope: UUID,
+) -> SiteModel:
+    """Достаёт сайт с проверкой принадлежности организации. 404 если не найден в scope."""
+    row = await session.get(SiteModel, site_id)
+    if row is None or row.organization_id != org_scope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сайт не найден")
+    return row
+
+
+# --- Эндпоинты: сайты ----------------------------------------------------
+
+
+@router.get("", response_model=list[SiteListItem])
+async def list_sites(
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(
+        default=None,
+        description="Супер-админ: id организации (обязателен). Остальные — игнорируется, берётся из JWT.",
+    ),
+) -> list[SiteListItem]:
+    """Список сайтов организации."""
+    scope = _resolve_site_org_scope(user, organization_id)
+    rows = (
+        await session.execute(
+            select(SiteModel)
+            .where(SiteModel.organization_id == scope)
+            .order_by(SiteModel.updated_at.desc())
+        )
+    ).scalars().all()
+    return [_site_to_list_item(r) for r in rows]
+
+
+@router.post("", response_model=SiteDetail, status_code=status.HTTP_201_CREATED)
+async def create_site(
+    body: SiteCreateRequest,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(default=None),
+) -> SiteDetail:
+    """Создание сайта. Настройки заполняются позже через PUT."""
+    scope = _resolve_site_org_scope(user, organization_id)
+    org = await session.get(OrganizationModel, scope)
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Организация не найдена")
+    row = SiteModel(
+        organization_id=scope,
+        name=body.name.strip(),
+        title="",
+        subtitle="",
+        logo_url=None,
+        theme_color="#000000",
+        contacts={},
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return _site_to_detail(row)
+
+
+@router.get("/{site_id}", response_model=SiteDetail)
+async def get_site(
+    site_id: UUID,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(default=None),
+) -> SiteDetail:
+    scope = _resolve_site_org_scope(user, organization_id)
+    row = await _get_site_for_user(session, site_id, scope)
+    return _site_to_detail(row)
+
+
+@router.put("/{site_id}", response_model=SiteDetail)
+async def update_site(
+    site_id: UUID,
+    body: SiteUpdateRequest,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(default=None),
+) -> SiteDetail:
+    """Частичное обновление настроек сайта (название, заголовок, цвет, контакты и т.д.)."""
+    scope = _resolve_site_org_scope(user, organization_id)
+    row = await _get_site_for_user(session, site_id, scope)
+
+    if body.name is not None:
+        row.name = body.name.strip()
+    if body.title is not None:
+        row.title = body.title.strip()
+    if body.subtitle is not None:
+        row.subtitle = body.subtitle.strip()
+    if body.logo_url is not None:
+        row.logo_url = body.logo_url.strip() or None
+    if body.theme_color is not None:
+        row.theme_color = body.theme_color
+    if body.contacts is not None:
+        # model_dump(exclude_none=True) — не храним None-поля, чтобы JSONB не разрастался
+        row.contacts = body.contacts.model_dump(exclude_none=True)
+
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return _site_to_detail(row)
+
+
+@router.delete("/{site_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_site(
+    site_id: UUID,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(default=None),
+) -> Response:
+    scope = _resolve_site_org_scope(user, organization_id)
+    row = await _get_site_for_user(session, site_id, scope)
+    await session.delete(row)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- Эндпоинты: страницы сайта ------------------------------------------
+
+
+@router.get("/{site_id}/pages", response_model=list[SitePageItem])
+async def list_site_pages(
+    site_id: UUID,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(default=None),
+) -> list[SitePageItem]:
+    """Все страницы сайта (в т.ч. черновики), отсортированные по order_index, затем created_at."""
+    scope = _resolve_site_org_scope(user, organization_id)
+    await _get_site_for_user(session, site_id, scope)
+    rows = (
+        await session.execute(
+            select(SitePageModel)
+            .where(SitePageModel.site_id == site_id)
+            .order_by(SitePageModel.order_index.asc(), SitePageModel.created_at.asc())
+        )
+    ).scalars().all()
+    return [_page_to_item(r) for r in rows]
+
+
+@router.post("/{site_id}/pages", response_model=SitePageItem, status_code=status.HTTP_201_CREATED)
+async def create_site_page(
+    site_id: UUID,
+    body: SitePageCreateRequest,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(default=None),
+) -> SitePageItem:
+    scope = _resolve_site_org_scope(user, organization_id)
+    await _get_site_for_user(session, site_id, scope)
+    row = SitePageModel(
+        site_id=site_id,
+        title=body.title.strip(),
+        slug=body.slug,
+        content=body.content or "",
+        order_index=body.order_index,
+        is_published=body.is_published,
+    )
+    session.add(row)
+    try:
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Страница с таким slug уже существует на этом сайте",
+        ) from e
+    await session.refresh(row)
+    return _page_to_item(row)
+
+
+@router.put("/{site_id}/pages/{page_id}", response_model=SitePageItem)
+async def update_site_page(
+    site_id: UUID,
+    page_id: UUID,
+    body: SitePageUpdateRequest,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(default=None),
+) -> SitePageItem:
+    scope = _resolve_site_org_scope(user, organization_id)
+    await _get_site_for_user(session, site_id, scope)
+    row = await session.get(SitePageModel, page_id)
+    if row is None or row.site_id != site_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Страница не найдена")
+
+    if body.title is not None:
+        row.title = body.title.strip()
+    if body.slug is not None:
+        row.slug = body.slug
+    if body.content is not None:
+        row.content = body.content
+    if body.order_index is not None:
+        row.order_index = int(body.order_index)
+    if body.is_published is not None:
+        row.is_published = bool(body.is_published)
+
+    session.add(row)
+    try:
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Страница с таким slug уже существует на этом сайте",
+        ) from e
+    await session.refresh(row)
+    return _page_to_item(row)
+
+
+@router.delete("/{site_id}/pages/{page_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_site_page(
+    site_id: UUID,
+    page_id: UUID,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = Query(default=None),
+) -> Response:
+    scope = _resolve_site_org_scope(user, organization_id)
+    await _get_site_for_user(session, site_id, scope)
+    row = await session.get(SitePageModel, page_id)
+    if row is None or row.site_id != site_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Страница не найдена")
+    await session.delete(row)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- Публичный эндпоинт (для клиентского Mini App) ----------------------
+
+
+@public_router.get("/{site_id}", response_model=PublicSiteResponse)
+async def get_public_site(site_id: UUID, session: AsyncSessionDep) -> PublicSiteResponse:
+    """Публичная витрина сайта: возвращает только ОПУБЛИКОВАННЫЕ страницы."""
+    site = await session.get(SiteModel, site_id)
+    if site is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сайт не найден")
+
+    pages_rows = (
+        await session.execute(
+            select(SitePageModel)
+            .where(
+                SitePageModel.site_id == site_id,
+                SitePageModel.is_published.is_(True),
+            )
+            .order_by(SitePageModel.order_index.asc(), SitePageModel.created_at.asc())
+        )
+    ).scalars().all()
+
+    return PublicSiteResponse(
+        id=site.id,
+        name=site.name,
+        title=site.title or "",
+        subtitle=site.subtitle or "",
+        logo_url=(site.logo_url or "").strip() or None,
+        theme_color=site.theme_color or "#000000",
+        contacts=SiteContacts.model_validate(site.contacts or {}),
+        pages=[
+            PublicSitePage(
+                id=p.id,
+                title=p.title,
+                slug=p.slug,
+                content=p.content or "",
+                order_index=int(p.order_index or 0),
+            )
+            for p in pages_rows
+        ],
+    )

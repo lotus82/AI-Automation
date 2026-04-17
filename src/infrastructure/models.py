@@ -1272,3 +1272,93 @@ class MiniAppUserModel(Base):
     )
 
     organization: Mapped["OrganizationModel"] = relationship("OrganizationModel")
+
+
+class SiteModel(Base):
+    """Сайт Mini App: контейнер многостраничного контента, изолирован по организации.
+
+    Настройки (title, subtitle, цвет, логотип, контакты) переиспользуются клиентским
+    Mini App для шапки и подвала; контент — в ``SitePageModel``.
+    """
+
+    __tablename__ = "sites"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False, server_default=sql_text("''"))
+    subtitle: Mapped[str] = mapped_column(String(512), nullable=False, server_default=sql_text("''"))
+    logo_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    theme_color: Mapped[str] = mapped_column(String(16), nullable=False, server_default=sql_text("'#000000'"))
+    contacts: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sql_text("'{}'::jsonb"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    organization: Mapped["OrganizationModel"] = relationship("OrganizationModel")
+    pages: Mapped[list["SitePageModel"]] = relationship(
+        "SitePageModel",
+        back_populates="site",
+        cascade="all, delete-orphan",
+        order_by="SitePageModel.order_index.asc()",
+    )
+
+
+class SitePageModel(Base):
+    """Страница сайта Mini App: slug уникален в рамках сайта."""
+
+    __tablename__ = "site_pages"
+    __table_args__ = (
+        UniqueConstraint("site_id", "slug", name="uq_site_pages_site_slug"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    site_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("sites.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(128), nullable=False)
+    content: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    order_index: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=sql_text("0"))
+    is_published: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=sql_text("true"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    site: Mapped["SiteModel"] = relationship("SiteModel", back_populates="pages")

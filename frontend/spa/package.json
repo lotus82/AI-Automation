@@ -13,6 +13,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@maxhub/max-ui": "latest",
     "lucide-react": "^0.468.0",
     "axios": "^1.7.9",
     "protobufjs": "^7.4.0",

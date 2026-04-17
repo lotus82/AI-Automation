@@ -37,6 +37,8 @@ import { StoreFrontPage } from "./pages/StoreFrontPage.jsx";
 import { SettingsPage } from "./pages/SettingsPage.jsx";
 import { ShopConstructorPage } from "./pages/ShopConstructorPage.jsx";
 import { ShopsPage } from "./pages/ShopsPage.jsx";
+import { SiteBuilderPage } from "./pages/sites/SiteBuilderPage.jsx";
+import { SitesListPage } from "./pages/sites/SitesListPage.jsx";
 import { TesterPage } from "./pages/TesterPage.jsx";
 
 export default function App() {
@@ -99,6 +101,8 @@ export default function App() {
           <Route path="mis" element={<DoctorMISPage />} />
           <Route path="mis/patients/:patientId" element={<DoctorMISPage />} />
           <Route path="applications" element={<ApplicationsPage />} />
+          <Route path="sites" element={<SitesListPage />} />
+          <Route path="sites/:id" element={<SiteBuilderPage />} />
           <Route path="portal/organizations" element={<OrganizationsPage />} />
           <Route path="portal/users" element={<OrgUsersPage />} />
         </Route>

@@ -1,5 +1,5 @@
+import { Avatar, Button, Container, Flex, Panel, Typography } from "@maxhub/max-ui";
 import axios from "axios";
-import { AlertTriangle, Loader2, MessageCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useMiniAppAuthStore } from "../../store/miniAppAuthStore.js";
@@ -8,11 +8,9 @@ import { useMiniAppAuthStore } from "../../store/miniAppAuthStore.js";
  * Извлекает строку init_data из параметров запуска Web App мессенджера.
  *
  * Мессенджер MAX может передавать данные:
- *  - в хэше URL (например, `#tgWebAppData=...` или `#initData=...`),
+ *  - в хэше URL (`#initData=...` / `#tgWebAppData=...`),
  *  - в query-параметрах (`?init_data=...`),
- *  - через объект `window.MaxWebApp.initData` (если SDK внедрит его в runtime).
- *
- * Если ничего не нашли — вернём пустую строку, бэкенд отдаст 400 с понятной ошибкой.
+ *  - через `window.MaxWebApp.initData` (если SDK внедрит).
  */
 function extractInitData(searchParams) {
   const winAny = typeof window !== "undefined" ? window : {};
@@ -43,12 +41,9 @@ function extractInitData(searchParams) {
       parsed.get("tgWebAppData") ||
       "";
     if (h) return h;
-    // Fallback: если весь hash — это сырая строка init_data (key=value&...).
     if (/=/.test(hash)) return hash;
   }
 
-  // Dev-режим: позволяем прокидывать chat_id через query для локальных прогонов
-  // (бэкенд пока не проверяет подпись — см. TODO в routers/miniapp.py).
   const devChatId = searchParams.get("chat_id");
   if (devChatId) {
     const name = searchParams.get("name") || "";
@@ -60,42 +55,55 @@ function extractInitData(searchParams) {
   return "";
 }
 
-function Spinner({ label }) {
+/** Центрированный статусный экран (загрузка/ошибка/успех) в стиле MAX UI. */
+function StatusScreen({ children }) {
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-4 px-6 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-600/20">
-        <Loader2 className="h-7 w-7 animate-spin text-emerald-400" strokeWidth={2} aria-hidden />
-      </div>
-      <div className="text-sm text-slate-300">{label}</div>
-    </div>
+    <Panel mode="secondary" style={{ minHeight: "100%" }}>
+      <Container>
+        <Flex
+          direction="column"
+          align="center"
+          justify="center"
+          gap={16}
+          style={{ minHeight: "100dvh", padding: "32px 16px", textAlign: "center" }}
+        >
+          {children}
+        </Flex>
+      </Container>
+    </Panel>
   );
 }
 
-function ErrorPanel({ title, detail, onRetry }) {
+function Spinner({ label }) {
   return (
-    <div className="mx-auto flex h-full w-full max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-600/20">
-        <AlertTriangle className="h-7 w-7 text-red-400" strokeWidth={2} aria-hidden />
-      </div>
-      <div className="text-base font-semibold text-white">{title}</div>
-      {detail ? <div className="text-sm text-slate-300">{detail}</div> : null}
+    <StatusScreen>
+      <Avatar size={64} aria-hidden />
+      <Typography.Title level={3}>Входим в приложение…</Typography.Title>
+      {label ? <Typography.Text>{label}</Typography.Text> : null}
+    </StatusScreen>
+  );
+}
+
+function ErrorScreen({ title, detail, onRetry }) {
+  return (
+    <StatusScreen>
+      <Avatar size={64} aria-hidden />
+      <Typography.Title level={3}>{title}</Typography.Title>
+      {detail ? <Typography.Text>{detail}</Typography.Text> : null}
       {onRetry ? (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-2 rounded-lg border border-slate-700 bg-slate-800/80 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-        >
+        <Button mode="primary" onClick={onRetry}>
           Повторить
-        </button>
+        </Button>
       ) : null}
-    </div>
+    </StatusScreen>
   );
 }
 
 /**
  * Точка входа публичного Mini App: `/inn/:inn`.
  * Авторизует пользователя через `POST /api/miniapp/auth`,
- * сохраняет JWT в `useMiniAppAuthStore` и показывает заглушку приложения.
+ * сохраняет JWT в `useMiniAppAuthStore`. UI собран на компонентах MAX UI,
+ * чтобы визуально быть неотличимым от нативных элементов мессенджера.
  */
 export function MiniAppEntryPage() {
   const { inn } = useParams();
@@ -188,39 +196,55 @@ export function MiniAppEntryPage() {
   }, [authorize]);
 
   if (status === "loading") {
-    return <Spinner label="Входим в приложение…" />;
+    return <Spinner label="Пожалуйста, подождите…" />;
   }
   if (status === "error") {
-    return <ErrorPanel title={errorTitle} detail={errorDetail} onRetry={authorize} />;
+    return <ErrorScreen title={errorTitle} detail={errorDetail} onRetry={authorize} />;
   }
 
   const orgTitle =
     authState.organizationDisplayName || authState.organizationName || "вашу организацию";
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-md flex-col items-center justify-center gap-5 px-6 py-10 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-600/20 text-emerald-300">
-        <MessageCircle className="h-8 w-8" strokeWidth={1.75} aria-hidden />
-      </div>
-      <div>
-        <div className="text-2xl font-semibold text-white">Добро пожаловать в приложение!</div>
-        <div className="mt-1 text-sm text-slate-400">
-          Вы авторизованы в Mini App через {orgTitle}.
-        </div>
-      </div>
-      <div className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 p-4 text-left text-sm">
-        <div className="text-xs uppercase tracking-wide text-slate-500">Ваш Chat ID</div>
-        <div className="mt-1 break-all font-mono text-base text-white">{authState.chatId}</div>
-        {authState.name ? (
-          <>
-            <div className="mt-3 text-xs uppercase tracking-wide text-slate-500">Имя</div>
-            <div className="mt-1 text-base text-slate-100">{authState.name}</div>
-          </>
-        ) : null}
-      </div>
-      <p className="text-xs text-slate-500">
-        Здесь будет интерфейс Mini App: магазин, запись на приём, личный кабинет пациента и т.д.
-      </p>
-    </div>
+    <Panel mode="secondary" style={{ minHeight: "100%" }}>
+      <Container>
+        <Flex
+          direction="column"
+          gap={20}
+          style={{ padding: "24px 16px 40px", minHeight: "100dvh" }}
+        >
+          <Flex direction="column" align="center" gap={12} style={{ textAlign: "center" }}>
+            <Avatar size={72} aria-label={authState.name || "Mini App"} />
+            <Typography.Title level={2}>Добро пожаловать!</Typography.Title>
+            <Typography.Text>
+              Вы авторизованы в Mini App через {orgTitle}.
+            </Typography.Text>
+          </Flex>
+
+          <Panel mode="primary" style={{ padding: 16, borderRadius: 16 }}>
+            <Flex direction="column" gap={12}>
+              <Flex direction="column" gap={2}>
+                <Typography.Caption>Chat ID</Typography.Caption>
+                <Typography.Text style={{ wordBreak: "break-all", fontFamily: "ui-monospace, monospace" }}>
+                  {authState.chatId}
+                </Typography.Text>
+              </Flex>
+              {authState.name ? (
+                <Flex direction="column" gap={2}>
+                  <Typography.Caption>Имя</Typography.Caption>
+                  <Typography.Text>{authState.name}</Typography.Text>
+                </Flex>
+              ) : null}
+            </Flex>
+          </Panel>
+
+          <Flex direction="column" gap={8} style={{ textAlign: "center" }}>
+            <Typography.Footnote>
+              Здесь появится интерфейс Mini App: магазин, запись на приём, личный кабинет и т.д.
+            </Typography.Footnote>
+          </Flex>
+        </Flex>
+      </Container>
+    </Panel>
   );
 }
