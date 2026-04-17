@@ -10,14 +10,7 @@ import { createPortal } from "react-dom";
 import api from "../api/client.js";
 import { useAuthStore } from "../store/authStore.js";
 import { SurveyTakeExperience } from "../components/questionnaires/SurveyTakeExperience.jsx";
-
-function formatDate(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  const pad = (n) => (n < 10 ? `0${n}` : String(n));
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function formatApiDetail(err) {
   const body = err?.response?.data;
@@ -405,8 +398,8 @@ export function QuestionnairesPage() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-slate-400">{formatDate(r.created_at)}</td>
-                  <td className="px-4 py-3 text-slate-400">{formatDate(r.updated_at)}</td>
+                  <td className="px-4 py-3 text-slate-400">{formatDateTimeRu(r.created_at)}</td>
+                  <td className="px-4 py-3 text-slate-400">{formatDateTimeRu(r.updated_at)}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex flex-wrap items-center justify-end gap-1">
                       <button

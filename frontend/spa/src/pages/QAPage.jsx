@@ -5,14 +5,7 @@ import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
 import { ChatBotsMonitoring } from "../components/bots/ChatBotsMonitoring.jsx";
 import { CallAnalysisTab } from "../components/trainer/CallAnalysisTab.jsx";
 import { PAGE_INNER, PAGE_TEXT, TAB_ROW, tabBtn } from "../styles/pageLayout.js";
-
-function formatDate(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  const pad = (n) => (n < 10 ? `0${n}` : String(n));
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function snippet(text, maxLen) {
   if (!text) return "—";
@@ -279,7 +272,7 @@ export function QAPage() {
                     <td className={tdClass}>{rec.status}</td>
                     <td className={tdClass}>{String(rec.duration)}</td>
                     <td className={`${tdClass} whitespace-nowrap text-slate-400`}>
-                      {formatDate(rec.created_at)}
+                      {formatDateTimeRu(rec.created_at)}
                     </td>
                     <td className={tdClass}>{an ? String(an.score) : "—"}</td>
                     <td className={`${tdClass} max-w-[10rem]`}>
@@ -371,7 +364,7 @@ export function QAPage() {
               </button>
             </div>
             <p className="mb-0 border-b border-slate-800 px-4 py-2 text-sm text-slate-400">
-              Сессия: {transcriptRec.session_id || "—"} · {formatDate(transcriptRec.created_at)}
+              Сессия: {transcriptRec.session_id || "—"} · {formatDateTimeRu(transcriptRec.created_at)}
             </p>
             <div className="max-h-[65vh] overflow-y-auto whitespace-pre-wrap break-words p-4 text-sm text-slate-200">
               {(transcriptRec.transcript_text || "").trim()

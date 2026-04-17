@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Plus, Store } from "lucide-react";
 import { IconDeleteButton, IconEditLink } from "../components/ui/IconActionButtons.jsx";
 import api from "../api/client.js";
+import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function formatApiDetail(err) {
   const det = err?.response?.data?.detail;
@@ -9,18 +10,6 @@ function formatApiDetail(err) {
   if (Array.isArray(det)) return det.map((x) => x?.msg ?? x).join("; ");
   if (det != null) return JSON.stringify(det);
   return err?.message ?? String(err);
-}
-
-function formatDate(iso) {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString("ru-RU", {
-      dateStyle: "short",
-      timeStyle: "short",
-    });
-  } catch {
-    return iso;
-  }
 }
 
 const pressable =
@@ -155,7 +144,7 @@ export function ShopsPage() {
                   <td className="px-4 py-3 text-slate-400">
                     <code className="text-xs text-emerald-200/80">/{s.slug}</code>
                   </td>
-                  <td className="px-4 py-3 text-slate-400">{formatDate(s.updated_at)}</td>
+                  <td className="px-4 py-3 text-slate-400">{formatDateTimeRu(s.updated_at)}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-1">
                       <IconEditLink to={`/shops/${s.id}/edit`} className={pressableSub} />

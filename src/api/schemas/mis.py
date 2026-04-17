@@ -77,6 +77,10 @@ class MedicalPatientOut(BaseModel):
     weight: float | None
     current_diagnosis: str
     treatment_plan: str
+    max_chat_id: str | None = Field(
+        default=None,
+        description="Числовой id чата с ботом в MAX (заполняется при регистрации через бота)",
+    )
     created_at: datetime
     updated_at: datetime
 
@@ -132,7 +136,10 @@ class MisSendQuestionnaireRequest(BaseModel):
     """Ссылка на опросник для пациента через бота MAX организации."""
 
     questionnaire_id: UUID
-    max_chat_id: int = Field(..., description="Числовой chat_id в MAX")
+    max_chat_id: int | None = Field(
+        default=None,
+        description="Если не указан — используется max_chat_id из карты пациента (диалог с ботом при регистрации в MAX)",
+    )
 
 
 class MisQuestionnaireInviteInfo(BaseModel):

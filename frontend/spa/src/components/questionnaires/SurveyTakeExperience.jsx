@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import api from "../../api/client.js";
 import { useAuthStore } from "../../store/authStore.js";
+import { getBrowserIanaTimeZone } from "../../utils/clientTimeZone.js";
 
 function formatApiDetail(err) {
   const body = err?.response?.data;
@@ -82,11 +83,13 @@ const verdictMdComponentsDark = {
 
 async function postAssessStream(questionnaireId, payload, { onDelta, onDone, onError }) {
   const token = useAuthStore.getState().token;
+  const tz = getBrowserIanaTimeZone();
   const res = await fetch(`/api/questionnaires/${questionnaireId}/assess-stream`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(tz ? { "X-Client-Timezone": tz } : {}),
     },
     body: JSON.stringify(payload),
   });

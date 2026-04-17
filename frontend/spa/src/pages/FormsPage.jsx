@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileText, GripVertical } from "lucide-react";
 import { IconCopyButton, IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
 import api from "../api/client.js";
+import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 /** Визуальный отклик: нажатие, фокус, плавные переходы */
 const pressable =
@@ -1087,7 +1088,7 @@ export function FormsPage() {
                         {submissions.map((s) => (
                           <tr key={s.id} className="border-t border-slate-800">
                             <td className="px-2 py-1 align-top whitespace-nowrap text-slate-500">
-                              {new Date(s.submitted_at).toLocaleString("ru-RU")}
+                              {formatDateTimeRu(s.submitted_at)}
                             </td>
                             {submissionColumns.map((c) => {
                               let ans = s.answers;

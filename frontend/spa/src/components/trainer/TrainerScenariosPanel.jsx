@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useState } from "react";
 import api from "../../api/client.js";
+import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
 
 /**
  * Сценарии тренажёра: POST/GET `/api/scenarios`.
@@ -195,7 +196,7 @@ export function TrainerScenariosPanel({ onScenariosChanged }) {
                 </p>
                 {it.created_at != null && (
                   <p className="mt-2 text-xs text-slate-600">
-                    Создан: {new Date(it.created_at).toLocaleString("ru-RU")}
+                    Создан: {formatDateTimeRu(it.created_at)}
                   </p>
                 )}
               </article>

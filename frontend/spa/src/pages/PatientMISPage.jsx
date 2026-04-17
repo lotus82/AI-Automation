@@ -16,18 +16,10 @@ import {
   getStoredPatientId,
   setPatientSession,
 } from "../utils/patientMisAuth.js";
+import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 const card =
   "rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm shadow-slate-200/50 sm:p-5";
-
-function formatDate(d) {
-  if (!d) return "—";
-  try {
-    return new Date(d).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
-  } catch {
-    return d;
-  }
-}
 
 function birthDateInputValue(iso) {
   if (!iso) return "";
@@ -417,7 +409,7 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
               <span className="font-medium text-slate-800">{p?.full_name}</span>
             </p>
             <p className="mt-2 text-sm text-slate-600">
-              Дата рождения: {formatDate(p?.birth_date)} · Тел.: {p?.phone || "—"}
+              Дата рождения: {formatDateTimeRu(p?.birth_date)} · Тел.: {p?.phone || "—"}
             </p>
             <p className="mt-2 text-sm text-slate-600">
               Рост: {p?.height != null && p?.height !== "" ? `${p.height} см` : "—"} · Вес:{" "}
@@ -442,7 +434,7 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
             {recentExams.map((e) => (
               <li key={e.id} className="rounded-xl border border-slate-100 bg-slate-50/80 p-3 text-sm">
                 <div className="flex flex-wrap justify-between gap-2 text-slate-700">
-                  <span className="font-medium">{formatDate(e.entry_date)}</span>
+                  <span className="font-medium">{formatDateTimeRu(e.entry_date)}</span>
                   <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-800">
                     Обследование
                   </span>
@@ -496,7 +488,7 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
                         {(e.data?.questionnaire_title && String(e.data.questionnaire_title).trim()) || "Опросник"}
                       </span>
                       <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-teal-800 ring-1 ring-teal-100">
-                        {formatDate(e.entry_date)}
+                        {formatDateTimeRu(e.entry_date)}
                       </span>
                     </div>
                     {(e.conclusion || "").trim() ? (

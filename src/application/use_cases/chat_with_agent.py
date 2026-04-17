@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from src.application.interfaces.providers.llm_provider import ChatMessage, ILLMProvider
+from src.core.config import llm_system_time_prefix
 from src.application.use_cases.execute_action import ExecuteActionUseCase
 from src.application.use_cases.generate_llm_tools import GenerateLLMToolsUseCase
 from src.domain.entities.integration import Integration
@@ -46,6 +47,8 @@ class ChatWithAgentUseCase:
         chat_history: list[ChatMessage],
         user_message: str,
         integration_ids: list[UUID],
+        *,
+        client_timezone_id: str | None = None,
     ) -> list[ChatMessage]:
         """Сообщения после всех раундов tool calls, **без** финального ответа ассистента (его даёт ``stream_response``)."""
         messages, _final = await self._run_until_final_assistant(
@@ -53,6 +56,7 @@ class ChatWithAgentUseCase:
             chat_history,
             user_message,
             integration_ids,
+            client_timezone_id=client_timezone_id,
         )
         return messages
 
@@ -62,6 +66,8 @@ class ChatWithAgentUseCase:
         chat_history: list[ChatMessage],
         user_message: str,
         integration_ids: list[UUID],
+        *,
+        client_timezone_id: str | None = None,
     ) -> str:
         """Текст финального ответа ассистента (один нестриминговый вызов LLM на финале)."""
         _messages, final = await self._run_until_final_assistant(
@@ -69,6 +75,7 @@ class ChatWithAgentUseCase:
             chat_history,
             user_message,
             integration_ids,
+            client_timezone_id=client_timezone_id,
         )
         return final.content or ""
 
@@ -78,11 +85,14 @@ class ChatWithAgentUseCase:
         chat_history: list[ChatMessage],
         user_message: str,
         integration_ids: list[UUID],
+        *,
+        client_timezone_id: str | None = None,
     ) -> tuple[list[ChatMessage], ChatMessage]:
         integrations = await self._load_integrations(integration_ids)
         tools = self._generate_tools.execute(integrations)
+        full_system = llm_system_time_prefix(client_timezone_id) + system_prompt
         messages: list[ChatMessage] = [
-            ChatMessage(role="system", content=system_prompt),
+            ChatMessage(role="system", content=full_system),
             *chat_history,
             ChatMessage(role="user", content=user_message),
         ]

@@ -61,10 +61,12 @@ class ILLMService(ABC):
         *,
         history: list[dict] | None = None,
         system_prompt: str | None = None,
+        client_timezone_id: str | None = None,
     ) -> str:
         """Формирует ответ с учётом RAG-контекста и опциональной истории (role/content).
 
         Если задан system_prompt — подставляется вместо персоны консультанта по умолчанию.
+        ``client_timezone_id`` — IANA TZ с клиента (иначе пояс приложения).
         """
 
     @abstractmethod
@@ -189,6 +191,7 @@ class IChatMonitoringPublisher(ABC):
         role: str,
         content: str,
         user_info: str | None = None,
+        organization_id: UUID | None = None,
     ) -> None:
         """Событие новой реплики; ошибки доставки не должны ломать основной сценарий."""
 
@@ -197,12 +200,29 @@ class IChatSessionQueryRepository(ABC):
     """Порт выборок по сохранённым чатам для панели мониторинга."""
 
     @abstractmethod
-    async def list_session_summaries(self, *, limit: int = 200) -> list[ChatSessionSummary]:
-        """Уникальные ``session_id`` с превью последнего сообщения."""
+    async def list_session_summaries(
+        self,
+        *,
+        organization_id: UUID | None,
+        limit: int = 200,
+    ) -> list[ChatSessionSummary]:
+        """Уникальные ``session_id`` с превью последнего сообщения в области организации.
+
+        ``organization_id`` — только эта организация; ``None`` — только строки без организации (legacy).
+        """
 
     @abstractmethod
-    async def list_messages_chronological(self, session_id: str) -> list[ChatMessage]:
-        """Полная история сессии по времени."""
+    async def list_messages_chronological(
+        self,
+        session_id: str,
+        *,
+        organization_id: UUID | None,
+    ) -> list[ChatMessage]:
+        """Полная история сессии по времени в области организации."""
+
+    @abstractmethod
+    async def count_messages_in_session(self, session_id: str) -> int:
+        """Число всех сохранённых сообщений сессии (любая организация)."""
 
 
 class NullChatMonitoringPublisher(IChatMonitoringPublisher):
@@ -215,6 +235,7 @@ class NullChatMonitoringPublisher(IChatMonitoringPublisher):
         role: str,
         content: str,
         user_info: str | None = None,
+        organization_id: UUID | None = None,
     ) -> None:
         return None
 

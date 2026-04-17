@@ -464,12 +464,41 @@ def get_settings() -> Settings:
     return Settings()
 
 
-def llm_system_time_prefix() -> str:
-    """Префикс в начале system prompt: локальные дата/время и часовой пояс приложения."""
+_LLM_WEEKDAYS_RU = (
+    "понедельник",
+    "вторник",
+    "среда",
+    "четверг",
+    "пятница",
+    "суббота",
+    "воскресенье",
+)
+
+
+def resolve_llm_clock_timezone(client_timezone_id: str | None) -> tuple[ZoneInfo, str]:
+    """Часовой пояс для контекста LLM: IANA из клиента (заголовок), иначе пояс приложения."""
     s = get_settings()
-    tz = s.app_zoneinfo
-    current_time = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S (%A)")
+    if client_timezone_id:
+        raw = str(client_timezone_id).strip()
+        if raw:
+            try:
+                return ZoneInfo(raw), raw
+            except ZoneInfoNotFoundError:
+                pass
+    return s.app_zoneinfo, s.app_timezone
+
+
+def llm_system_time_prefix(client_timezone_id: str | None = None) -> str:
+    """Префикс system prompt: дата, время и день недели в выбранном поясе (клиента или приложения).
+
+    Формат в тексте для модели: ДД.ММ.ГГГГ ЧЧ:ММ:СС (русское название дня недели).
+    """
+    tz, tz_name = resolve_llm_clock_timezone(client_timezone_id)
+    now = datetime.now(tz)
+    wd = _LLM_WEEKDAYS_RU[now.weekday()]
+    dt_str = now.strftime("%d.%m.%Y %H:%M:%S")
     return (
-        f"Системная информация: Текущая дата и время {current_time}. "
-        f"Часовой пояс: {s.app_timezone}. Учитывай это при ответах.\n\n"
+        f"Системная информация: текущие дата и время в часовом поясе клиента ({tz_name}): "
+        f"{dt_str}, день недели: {wd}. Учитывай это при ответах. "
+        "В ответах пользователю выводи дату и время только в формате ДД.ММ.ГГГГ ЧЧ:ММ:СС.\n\n"
     )

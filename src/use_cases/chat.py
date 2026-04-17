@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from uuid import UUID
 
 from redis.asyncio import Redis
 
@@ -130,6 +131,8 @@ class ProcessTextMessageUseCase:
         search_service: ISearchService,
         redis_client: Redis | None = None,
         app_settings: Settings | None = None,
+        *,
+        chat_monitoring_organization_id: UUID | None = None,
     ) -> None:
         self._embeddings = embedding_service
         self._knowledge = knowledge_repository
@@ -138,6 +141,7 @@ class ProcessTextMessageUseCase:
         self._crm = crm_service
         self._settings_repo = settings_repository
         self._monitor = chat_monitoring
+        self._monitor_org_id = chat_monitoring_organization_id
         self._search = search_service
         self._redis = redis_client
         self._app_settings = app_settings
@@ -219,6 +223,7 @@ class ProcessTextMessageUseCase:
         on_intermediate_message: Callable[[str], Awaitable[None]] | None = None,
         intermediate_search_message: str | None = None,
         on_voice_generated: Callable[[bytes], Awaitable[None]] | None = None,
+        client_timezone_id: str | None = None,
     ) -> str:
         """История (лимит из MAX_CONTEXT_LIMIT) → RAG → LLM → запись в Redis и PostgreSQL → мониторинг WS.
 
@@ -277,7 +282,7 @@ class ProcessTextMessageUseCase:
             if supplement:
                 system_text = f"{system_text}\n\n---\n\n{supplement}"
 
-        system_text = llm_system_time_prefix() + system_text
+        system_text = llm_system_time_prefix(client_timezone_id) + system_text
 
         un = (user_name or "").strip()
         if un:
@@ -401,6 +406,7 @@ class ProcessTextMessageUseCase:
             role="user",
             content=user_text,
             user_info=label,
+            organization_id=self._monitor_org_id,
         )
         await self._memory.save_message(session_id, "assistant", final_reply)
         await self._monitor.publish_new_message(
@@ -408,6 +414,7 @@ class ProcessTextMessageUseCase:
             role="assistant",
             content=final_reply,
             user_info=label,
+            organization_id=self._monitor_org_id,
         )
 
         if (

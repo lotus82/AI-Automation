@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import api from "../api/client.js";
 import { useAuthStore } from "../store/authStore.js";
+import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 import {
   IconEditButton,
   IconOrganizationActiveToggle,
@@ -276,7 +277,7 @@ export function OrganizationsPage() {
                     <td className="px-3 py-2 font-mono text-xs text-slate-400">{o.slug}</td>
                     <td className="px-3 py-2">{o.is_active ? "да" : "нет"}</td>
                     <td className="px-3 py-2 text-slate-500">
-                      {o.created_at ? new Date(o.created_at).toLocaleString("ru-RU") : "—"}
+                      {formatDateTimeRu(o.created_at)}
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex flex-nowrap items-center justify-end gap-1">

@@ -1,5 +1,6 @@
 import axios from "axios";
 import { getPatientToken } from "../utils/patientMisAuth.js";
+import { getBrowserIanaTimeZone } from "../utils/clientTimeZone.js";
 
 /** Запросы МИС пациента: без токена портала; Bearer — только JWT ``mis_patient`` для /patient-session. */
 const patientMisClient = axios.create({
@@ -13,6 +14,10 @@ patientMisClient.interceptors.request.use((config) => {
     if (t) {
       config.headers.Authorization = `Bearer ${t}`;
     }
+  }
+  const tz = getBrowserIanaTimeZone();
+  if (tz) {
+    config.headers["X-Client-Timezone"] = tz;
   }
   return config;
 });

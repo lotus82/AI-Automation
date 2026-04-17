@@ -1,27 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../../api/client.js";
 import { useAuthStore } from "../../store/authStore.js";
+import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
 
-function formatDate(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("ru-RU");
-}
-
-/** URL WebSocket мониторинга: JWT в query ``token`` (требование бэкенда). */
-function getMonitoringWebSocketUrl(accessToken) {
-  const tokenQ = accessToken ? `?token=${encodeURIComponent(accessToken)}` : "";
+/** URL WebSocket мониторинга: JWT и опционально ``organization_id`` (изоляция по тенанту). */
+function getMonitoringWebSocketUrl(accessToken, organizationId) {
+  const params = new URLSearchParams();
+  if (accessToken) params.set("token", accessToken);
+  if (organizationId != null && String(organizationId).trim() !== "") {
+    params.set("organization_id", String(organizationId).trim());
+  }
+  const qs = params.toString() ? `?${params.toString()}` : "";
   const raw = import.meta.env.VITE_API_BASE_URL;
   if (raw != null && String(raw).trim() !== "") {
     const base = String(raw).trim().replace(/\/$/, "");
     const httpUrl = base.startsWith("http") ? base : `http://${base}`;
     const u = new URL(httpUrl);
     const wsProto = u.protocol === "https:" ? "wss:" : "ws:";
-    return `${wsProto}//${u.host}/api/ws/monitoring${tokenQ}`;
+    return `${wsProto}//${u.host}/api/ws/monitoring${qs}`;
   }
   const p = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${p}//${window.location.host}/api/ws/monitoring${tokenQ}`;
+  return `${p}//${window.location.host}/api/ws/monitoring${qs}`;
 }
 
 function upsertSessionRow(list, sessionId, preview, atIso, userLabel) {
@@ -47,6 +46,10 @@ function sessionTitleLine(sessionId, mapLookup) {
 /** Мониторинг чат-ботов (вкладка в QA-аналитике; ранее отдельный раздел «Боты»). */
 export function ChatBotsMonitoring() {
   const accessToken = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
+  const settingsOrganizationId = useAuthStore((s) => s.settingsOrganizationId);
+  const monitoringOrgId =
+    user?.organization_id ?? settingsOrganizationId ?? null;
   const [activeTab, setActiveTab] = useState("max");
   const [rows, setRows] = useState([]);
   const [listLoading, setListLoading] = useState(true);
@@ -154,7 +157,9 @@ export function ChatBotsMonitoring() {
       if (stopped) return;
       setWsStatus({ text: "Подключение к мониторингу…", isError: false });
       try {
-        ws = new WebSocket(getMonitoringWebSocketUrl(accessToken));
+        ws = new WebSocket(
+          getMonitoringWebSocketUrl(accessToken, monitoringOrgId)
+        );
       } catch (e) {
         setWsStatus({
           text: "Не удалось открыть WebSocket.",
@@ -190,6 +195,19 @@ export function ChatBotsMonitoring() {
         try {
           const data = JSON.parse(ev.data);
           if (data.type !== "new_message") return;
+          const evOrg =
+            data.organization_id != null && String(data.organization_id).trim() !== ""
+              ? String(data.organization_id).trim()
+              : null;
+          const scope =
+            monitoringOrgId != null && String(monitoringOrgId).trim() !== ""
+              ? String(monitoringOrgId).trim()
+              : null;
+          if (scope != null) {
+            if (evOrg !== scope) return;
+          } else if (evOrg != null) {
+            return;
+          }
           const sid = data.session_id;
           const preview = String(data.content || "").slice(0, 280);
           const now = new Date().toISOString();
@@ -242,7 +260,7 @@ export function ChatBotsMonitoring() {
         }
       }
     };
-  }, [refreshHistoryIfOpen, accessToken]);
+  }, [refreshHistoryIfOpen, accessToken, monitoringOrgId]);
 
   useEffect(() => {
     if (!historyOpen) return;
@@ -396,7 +414,7 @@ export function ChatBotsMonitoring() {
                         {rec.last_preview || "—"}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2 align-top text-slate-400">
-                        {formatDate(rec.last_at)}
+                        {formatDateTimeRu(rec.last_at)}
                       </td>
                     </tr>
                   );
@@ -522,7 +540,7 @@ export function ChatBotsMonitoring() {
                         }`}
                       >
                         <div className="mb-1 text-xs text-slate-400">
-                          {roleRu} · {formatDate(m.created_at)}
+                          {roleRu} · {formatDateTimeRu(m.created_at)}
                         </div>
                         <div className="whitespace-pre-wrap break-words">
                           {m.content || ""}

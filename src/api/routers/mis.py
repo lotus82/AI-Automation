@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.api.client_timezone import ClientTimezoneIdDep
 from src.api.dependencies import (
     AsyncSessionDep,
     LLMServiceDep,
@@ -175,6 +176,7 @@ def _norm_phone(v: str | None) -> str | None:
 
 
 def _patient_out(p: MedicalPatientModel) -> MedicalPatientOut:
+    mc = (p.max_chat_id or "").strip()
     return MedicalPatientOut(
         id=p.id,
         organization_id=p.organization_id,
@@ -187,9 +189,30 @@ def _patient_out(p: MedicalPatientModel) -> MedicalPatientOut:
         weight=p.weight,
         current_diagnosis=p.current_diagnosis or "",
         treatment_plan=p.treatment_plan or "",
+        max_chat_id=mc or None,
         created_at=p.created_at,
         updated_at=p.updated_at,
     )
+
+
+def _resolve_max_chat_id_for_mis_send(p: MedicalPatientModel, override: int | None) -> int:
+    """Числовой chat_id: явный override из запроса или сохранённый в карте (чат с ботом)."""
+    if override is not None:
+        return int(override)
+    raw = (p.max_chat_id or "").strip()
+    if not raw:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="В карте пациента нет MAX chat_id. Пациент должен зарегистрироваться через бота организации в MAX "
+            "(диалог с ботом), после чего идентификатор чата сохранится в карте автоматически.",
+        )
+    try:
+        return int(raw, 10)
+    except ValueError:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="В карте пациента сохранён некорректный MAX chat_id.",
+        ) from None
 
 
 def _entry_out(e: MedicalEntryModel) -> MedicalEntryOut:
@@ -432,6 +455,7 @@ async def mis_admin_ai_consult(
     user: MisAdminDep,
     session: AsyncSessionDep,
     llm: LLMServiceDep,
+    client_tz: ClientTimezoneIdDep,
     organization_id: UUID | None = Query(None, description="Для super_admin: организация"),
 ) -> MisAiConsultResponse:
     scope = resolve_organization_scope(user, organization_id)
@@ -472,6 +496,7 @@ async def mis_admin_ai_consult(
         body.question.strip(),
         context_parts,
         system_prompt=_MIS_AI_SYSTEM,
+        client_timezone_id=client_tz,
     )
     return MisAiConsultResponse(answer=answer)
 
@@ -566,8 +591,9 @@ async def mis_admin_send_questionnaire_link(
         f"Пройдите по ссылке, чтобы ответить на вопросы — результат будет доступен вашему врачу.\n"
         f"{link}"
     )
+    chat_id = _resolve_max_chat_id_for_mis_send(p, body.max_chat_id)
     try:
-        await send_max_order_message(max_client, body.max_chat_id, text)
+        await send_max_order_message(max_client, chat_id, text)
     except Exception as e:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY,
@@ -809,6 +835,7 @@ async def mis_public_questionnaire_invite_submit(
     redis: RedisDep,
     settings: SettingsDep,
     llm: QuestionnaireLLMServiceDep,
+    client_tz: ClientTimezoneIdDep,
 ) -> MisQuestionnaireInviteSubmitResponse:
     try:
         payload = decode_mis_questionnaire_invite_token(body.token.strip(), settings.portal_jwt_secret)
@@ -835,6 +862,7 @@ async def mis_public_questionnaire_invite_submit(
             criteria=criteria,
             answers_for_llm=answers_for_llm,
             output_format_supplement=supplement,
+            client_timezone_id=client_tz,
         )
     except RuntimeError as e:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
@@ -871,6 +899,7 @@ async def mis_doctor_ai_consult(
     doctor: MisDoctorDep,
     session: AsyncSessionDep,
     llm: LLMServiceDep,
+    client_tz: ClientTimezoneIdDep,
 ) -> MisAiConsultResponse:
     """ИИ-анализ с контекстом карты пациента и записей обследований."""
     p = await session.get(MedicalPatientModel, body.patient_id)
@@ -906,6 +935,7 @@ async def mis_doctor_ai_consult(
         body.question.strip(),
         context_parts,
         system_prompt=_MIS_AI_SYSTEM,
+        client_timezone_id=client_tz,
     )
     return MisAiConsultResponse(answer=answer)
 
@@ -987,8 +1017,9 @@ async def mis_doctor_send_questionnaire_link(
         f"Пройдите по ссылке, чтобы ответить на вопросы — результат будет доступен вашему врачу.\n"
         f"{link}"
     )
+    chat_id = _resolve_max_chat_id_for_mis_send(p, body.max_chat_id)
     try:
-        await send_max_order_message(max_client, body.max_chat_id, text)
+        await send_max_order_message(max_client, chat_id, text)
     except Exception as e:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY,

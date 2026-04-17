@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.api.client_timezone import ClientTimezoneIdDep
 from src.api.dependencies import AsyncSessionDep, QuestionnaireLLMServiceDep, RedisDep, SettingsDep
 from src.api.dependencies_portal import PortalUserDep
 from src.api.org_scope import resolve_organization_scope
@@ -405,6 +406,7 @@ async def assess_questionnaire(
     session: AsyncSessionDep,
     redis: RedisDep,
     llm: QuestionnaireLLMServiceDep,
+    client_tz: ClientTimezoneIdDep,
 ) -> AssessResponse:
     qn = await _get_questionnaire_or_404(session, questionnaire_id)
     answers_for_llm = _build_answers_for_llm(qn, body)
@@ -415,6 +417,7 @@ async def assess_questionnaire(
             criteria=criteria,
             answers_for_llm=answers_for_llm,
             output_format_supplement=supplement,
+            client_timezone_id=client_tz,
         )
     except RuntimeError as e:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e)) from e
@@ -435,6 +438,7 @@ async def assess_questionnaire_stream(
     session: AsyncSessionDep,
     redis: RedisDep,
     llm: QuestionnaireLLMServiceDep,
+    client_tz: ClientTimezoneIdDep,
 ) -> StreamingResponse:
     """Потоковая ИИ-оценка (SSE): фрагменты текста в событиях ``data: {"t":"..."}``; завершение — ``data: [DONE]``."""
 
@@ -449,6 +453,7 @@ async def assess_questionnaire_stream(
                 criteria=criteria,
                 answers_for_llm=answers_for_llm,
                 output_format_supplement=supplement,
+                client_timezone_id=client_tz,
             ):
                 yield f"data: {json.dumps({'t': piece}, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"

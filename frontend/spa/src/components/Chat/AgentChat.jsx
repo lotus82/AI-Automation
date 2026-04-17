@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { getBrowserIanaTimeZone } from "../../utils/clientTimeZone.js";
 
 function newId() {
   return globalThis.crypto?.randomUUID?.() ?? `m-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -70,12 +71,17 @@ export function AgentChat({ integrationIds, apiBaseUrl = "/api", className = "" 
       setIsStreaming(true);
 
       const url = `${apiBaseUrl.replace(/\/$/, "")}/v1/chat/stream`;
+      const tz = getBrowserIanaTimeZone();
 
       let response;
       try {
         response = await fetch(url, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+            ...(tz ? { "X-Client-Timezone": tz } : {}),
+          },
           body: JSON.stringify({
             message: trimmed,
             integration_ids: integrationIds,

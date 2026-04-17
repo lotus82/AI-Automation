@@ -440,6 +440,12 @@ class ChatMessageModel(Base):
         server_default=sql_text("gen_random_uuid()"),
     )
     session_id: Mapped[str] = mapped_column(String(128), index=True)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     role: Mapped[str] = mapped_column(String(16))
     content: Mapped[str] = mapped_column(Text())
     user_display: Mapped[str | None] = mapped_column(String(512), nullable=True)

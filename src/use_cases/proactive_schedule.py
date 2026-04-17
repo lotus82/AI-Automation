@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 
-from src.core.config import llm_system_time_prefix
 from src.core.utils.text_cleaner import remove_markdown
 from src.domain import system_setting_keys as sk
 from src.domain.system_roles import get_default_consultant_prompt
@@ -78,8 +77,6 @@ class ExecuteProactiveScheduleUseCase:
             full_system = f"{base}\n\n--- Инструкции расписания ---\n\n{extra}"
         else:
             full_system = base
-
-        full_system = llm_system_time_prefix() + full_system
 
         embedding = await self._embeddings.generate_embedding(user_for_rag)
         items = await self._knowledge.search_similar(embedding, limit=3)

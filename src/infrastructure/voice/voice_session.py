@@ -138,7 +138,11 @@ async def run_voice_pipeline_session(
                     redis,
                     ttl_seconds=settings.chat_memory_ttl_seconds,
                 )
-                memory = HybridChatMemoryRepository(redis_memory, session)
+                memory = HybridChatMemoryRepository(
+                    redis_memory,
+                    session,
+                    organization_id=organization_id,
+                )
                 settings_repo = PostgresSettingsRepository(session, redis, organization_id=organization_id)
                 embeddings = OpenAIEmbeddingService(settings=settings, settings_repo=settings_repo)
                 llm = DynamicLLMService(settings=settings, settings_repo=settings_repo)
@@ -151,6 +155,7 @@ async def run_voice_pipeline_session(
                     crm_service=crm,
                     settings_repository=settings_repo,
                     chat_monitoring=get_chat_events_broadcaster(),
+                    chat_monitoring_organization_id=organization_id,
                     search_service=DuckDuckGoSearchService(),
                     redis_client=redis,
                     app_settings=settings,

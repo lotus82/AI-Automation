@@ -8,26 +8,12 @@ import { IntegrationForm } from "../components/integrations/IntegrationForm.jsx"
 import { VoiceTelephonyTestPanel } from "../components/telephony/VoiceTelephonyTestPanel.jsx";
 import { SK } from "../constants/systemSettingsKeys.js";
 import { hintForSecretRow, mapFromList, parseTruthy } from "../utils/systemSettingsForm.js";
+import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 const SYSTEM_OPTIONS = [{ value: "bitrix24", label: "Битрикс24" }];
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function formatRuDate(iso) {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString("ru-RU", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "—";
-  }
-}
 
 function newId() {
   return globalThis.crypto?.randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -491,7 +477,7 @@ export function IntegrationsPage() {
                           )}
                         </td>
                         <td className={`${td} whitespace-nowrap text-slate-400`}>
-                          {formatRuDate(row.createdAt)}
+                          {formatDateTimeRu(row.createdAt)}
                         </td>
                         <td className={`${td} whitespace-nowrap`}>
                           {editingId === row.id ? (

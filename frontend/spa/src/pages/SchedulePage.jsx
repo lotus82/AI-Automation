@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../api/client.js";
 import { IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
+import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function formatDetail(detail) {
   if (detail == null) return "";
@@ -12,13 +13,6 @@ function formatApiError(err) {
   const d = err?.response?.data?.detail;
   if (d !== undefined) return formatDetail(d);
   return err?.message ?? String(err);
-}
-
-function formatDt(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("ru-RU");
 }
 
 function buildCreateBody(form) {
@@ -561,7 +555,7 @@ export function SchedulePage() {
                       {r.is_active ? "да" : "нет"}
                     </td>
                     <td className="px-3 py-2 align-top text-slate-300">
-                      {formatDt(r.last_run_at)}
+                      {formatDateTimeRu(r.last_run_at)}
                     </td>
                     <td className="px-3 py-2 align-top">
                       <button

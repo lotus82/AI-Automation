@@ -8,7 +8,7 @@ import re
 
 from openai import AsyncOpenAI
 
-from src.core.config import Settings
+from src.core.config import Settings, llm_system_time_prefix
 from src.core.llm_chat_messages import memory_history_to_openai_messages
 from src.domain.default_system_prompts import FALLBACK_ANALYST_QA_PROMPT
 from src.domain import system_setting_keys as sk
@@ -100,6 +100,7 @@ class DynamicLLMService(ILLMService):
         *,
         history: list[dict] | None = None,
         system_prompt: str | None = None,
+        client_timezone_id: str | None = None,
     ) -> str:
         client, model = await self._client_and_model()
         if not client:
@@ -129,6 +130,7 @@ class DynamicLLMService(ILLMService):
         supplement = (await self._repo.get_value(sk.TEXT_BOT_SYSTEM_SUPPLEMENT) or "").strip()
         if supplement:
             system = f"{system}\n\n---\n\n{supplement}"
+        system = llm_system_time_prefix(client_timezone_id) + system
         messages: list[dict[str, str]] = [{"role": "system", "content": system}]
         if history:
             messages.extend(memory_history_to_openai_messages(history))
@@ -208,7 +210,7 @@ class DynamicLLMService(ILLMService):
             )
 
         qa_prompt = (await get_analyst_prompt(self._repo)).strip()
-        system_content = qa_prompt or FALLBACK_ANALYST_QA_PROMPT
+        system_content = llm_system_time_prefix(None) + (qa_prompt or FALLBACK_ANALYST_QA_PROMPT)
 
         completion = await client.chat.completions.create(
             model=model,
@@ -251,6 +253,7 @@ class DynamicLLMService(ILLMService):
             title=scenario_title.strip() or "—",
             objections=objections_to_raise.strip() or "—",
         )
+        system = llm_system_time_prefix(None) + system
         completion = await client.chat.completions.create(
             model=model,
             messages=[

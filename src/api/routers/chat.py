@@ -13,6 +13,7 @@ from src.api.dependencies import (
     build_process_text_message_use_case,
     get_process_text_message_use_case,
 )
+from src.api.client_timezone import ClientTimezoneIdDep
 from src.api.dependencies_portal import get_portal_user
 from src.api.org_scope import resolve_organization_scope
 from src.api.schemas.chat import (
@@ -37,6 +38,7 @@ async def chat_text(
     session: AsyncSessionDep,
     redis: RedisDep,
     settings: SettingsDep,
+    client_tz: ClientTimezoneIdDep,
 ) -> ChatTextResponse:
     """Принимает сообщение, подмешивает историю из Redis, RAG и возвращает ответ LLM.
 
@@ -59,6 +61,7 @@ async def chat_text(
         body.message,
         str(session_id),
         append_text_messenger_system_supplement=True,
+        client_timezone_id=client_tz,
     )
     return ChatTextResponse(reply=reply, session_id=session_id)
 

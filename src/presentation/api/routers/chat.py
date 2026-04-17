@@ -9,6 +9,8 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
+
+from src.api.client_timezone import ClientTimezoneIdDep
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -68,6 +70,7 @@ async def stream_agent_chat(
     body: ChatRequest,
     use_case: ChatWithAgentUseCaseDep,
     llm: OpenAILLMProviderDep,
+    client_tz: ClientTimezoneIdDep,
 ) -> StreamingResponse:
     """Сначала цикл tool calls (нестриминг), затем финальный ответ через SSE ``data: …\\n\\n``."""
     system_prompt = (body.system_prompt or "").strip() or _DEFAULT_SYSTEM
@@ -79,6 +82,7 @@ async def stream_agent_chat(
             chat_history,
             body.message.strip(),
             body.integration_ids,
+            client_timezone_id=client_tz,
         )
     except IntegrationNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e

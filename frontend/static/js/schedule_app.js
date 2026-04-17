@@ -28,7 +28,22 @@
     if (!iso) return "—";
     var d = new Date(iso);
     if (isNaN(d.getTime())) return "—";
-    return d.toLocaleString("ru-RU");
+    var pad = function (n) {
+      return n < 10 ? "0" + n : String(n);
+    };
+    return (
+      pad(d.getDate()) +
+      "." +
+      pad(d.getMonth() + 1) +
+      "." +
+      d.getFullYear() +
+      " " +
+      pad(d.getHours()) +
+      ":" +
+      pad(d.getMinutes()) +
+      ":" +
+      pad(d.getSeconds())
+    );
   }
 
   function toggleTypeFields() {

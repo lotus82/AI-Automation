@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 
+from src.core.config import llm_system_time_prefix
 from src.infrastructure.services.dynamic_llm import DynamicLLMService
 
 _SYSTEM = """Ты — эксперт по анализу ответов в корпоративных опросниках.
@@ -35,6 +36,7 @@ class QuestionnaireLLMService(DynamicLLMService):
         criteria: str,
         answers_for_llm: list[dict],
         output_format_supplement: str = "",
+        client_timezone_id: str | None = None,
     ) -> str:
         client, model = await self._client_and_model()
         if not client:
@@ -42,7 +44,7 @@ class QuestionnaireLLMService(DynamicLLMService):
             raise RuntimeError(msg)
 
         user_content = self._user_content(criteria=criteria, answers_for_llm=answers_for_llm)
-        system = _build_system_message(output_format_supplement)
+        system = llm_system_time_prefix(client_timezone_id) + _build_system_message(output_format_supplement)
 
         completion = await client.chat.completions.create(
             model=model,
@@ -60,6 +62,7 @@ class QuestionnaireLLMService(DynamicLLMService):
         criteria: str,
         answers_for_llm: list[dict],
         output_format_supplement: str = "",
+        client_timezone_id: str | None = None,
     ) -> AsyncIterator[str]:
         client, model = await self._client_and_model()
         if not client:
@@ -67,7 +70,7 @@ class QuestionnaireLLMService(DynamicLLMService):
             raise RuntimeError(msg)
 
         user_content = self._user_content(criteria=criteria, answers_for_llm=answers_for_llm)
-        system = _build_system_message(output_format_supplement)
+        system = llm_system_time_prefix(client_timezone_id) + _build_system_message(output_format_supplement)
 
         stream = await client.chat.completions.create(
             model=model,

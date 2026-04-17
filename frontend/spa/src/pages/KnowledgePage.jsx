@@ -1,14 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../api/client.js";
 import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
-
-function formatDate(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  const pad = (n) => (n < 10 ? `0${n}` : String(n));
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function formatApiDetail(err) {
   const body = err?.response?.data;
@@ -270,7 +263,7 @@ export function KnowledgePage() {
                       )}
                     </td>
                     <td className="whitespace-nowrap px-2 py-2 align-top text-slate-400">
-                      {formatDate(r.created_at)}
+                      {formatDateTimeRu(r.created_at)}
                     </td>
                     <td className="px-2 py-2 align-top">
                       <IconDeleteButton title="Удалить фрагмент" onClick={() => onDelete(id)} />

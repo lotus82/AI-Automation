@@ -214,7 +214,7 @@ def get_chat_memory_repository(
         redis,
         ttl_seconds=settings.chat_memory_ttl_seconds,
     )
-    return HybridChatMemoryRepository(inner, session)
+    return HybridChatMemoryRepository(inner, session, organization_id=None)
 
 
 ChatMemoryRepositoryDep = Annotated[
@@ -263,10 +263,12 @@ def build_process_text_message_use_case(
         chat_memory=HybridChatMemoryRepository(
             RedisChatMemoryRepository(redis, ttl_seconds=settings.chat_memory_ttl_seconds),
             session,
+            organization_id=organization_id,
         ),
         crm_service=build_crm_service(settings.bitrix24_webhook_url),
         settings_repository=settings_repo,
         chat_monitoring=get_chat_events_broadcaster(),
+        chat_monitoring_organization_id=organization_id,
         search_service=DuckDuckGoSearchService(),
         redis_client=redis,
         app_settings=settings,

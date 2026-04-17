@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { useAuthStore } from '../store/authStore.js';
 import { useBitrixAuthStore } from '../store/bitrixAuthStore';
+import { getBrowserIanaTimeZone } from '../utils/clientTimeZone.js';
 
 const apiClient = axios.create({
     // Благодаря Vite proxy (в режиме разработки) и Nginx (на проде),
@@ -24,7 +25,8 @@ apiClient.interceptors.request.use(
                 urlPath.includes('/knowledge') ||
                 urlPath.includes('/shops') ||
                 urlPath.includes('/mis') ||
-                urlPath.includes('/questionnaires'));
+                urlPath.includes('/questionnaires') ||
+                urlPath.includes('/chats'));
         if (needsOrg) {
             const params = { ...(config.params || {}), organization_id: orgScope };
             config.params = params;
@@ -41,6 +43,11 @@ apiClient.interceptors.request.use(
         }
         if (authId) {
             config.headers['X-Bitrix-Auth-Id'] = authId;
+        }
+
+        const tz = getBrowserIanaTimeZone();
+        if (tz) {
+            config.headers['X-Client-Timezone'] = tz;
         }
 
         return config;

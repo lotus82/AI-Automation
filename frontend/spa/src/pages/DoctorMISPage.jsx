@@ -18,6 +18,7 @@ import { IconCopyButton, IconQrButton } from "../components/ui/IconActionButtons
 import { SK } from "../constants/systemSettingsKeys.js";
 import { useAuthStore } from "../store/authStore.js";
 import { mapFromList } from "../utils/systemSettingsForm.js";
+import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function formatApiDetail(err) {
   const det = err?.response?.data?.detail;
@@ -25,15 +26,6 @@ function formatApiDetail(err) {
   if (Array.isArray(det)) return det.map((x) => x?.msg ?? x).join("; ");
   if (det != null) return JSON.stringify(det);
   return err?.message ?? String(err);
-}
-
-function formatDate(iso) {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleDateString("ru-RU");
-  } catch {
-    return iso;
-  }
 }
 
 /** Рост в см, вес в кг → ИМТ */
@@ -129,6 +121,7 @@ export function DoctorMISPage() {
   const [misStartCopied, setMisStartCopied] = useState(false);
   const [phoneCopied, setPhoneCopied] = useState(false);
   const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [patientCardQrOpen, setPatientCardQrOpen] = useState(false);
   const patientUrlCopyTimer = useRef(null);
   const misStartCopyTimer = useRef(null);
   const phoneCopyTimer = useRef(null);
@@ -210,6 +203,12 @@ export function DoctorMISPage() {
         setPlan(p.treatment_plan ?? "");
         setHeight(p.height != null ? String(p.height) : "");
         setWeight(p.weight != null ? String(p.weight) : "");
+        const mc = p.max_chat_id;
+        if (mc != null && String(mc).trim() !== "") {
+          setMaxChatId(String(mc).trim());
+        } else {
+          setMaxChatId("");
+        }
       }
     } catch (e) {
       setDetailErr(formatApiDetail(e));
@@ -226,6 +225,7 @@ export function DoctorMISPage() {
       setMaxMsg("");
       setQnrMsg("");
       setQrModalOpen(false);
+      setPatientCardQrOpen(false);
       setEntriesOpen(false);
     }
   }, [patientId, loadDetail]);
@@ -364,11 +364,6 @@ export function DoctorMISPage() {
       setQnrMsg("Выберите опросник организации.");
       return;
     }
-    const id = parseInt(String(maxChatId).trim(), 10);
-    if (!Number.isFinite(id)) {
-      setQnrMsg("Укажите числовой MAX chat_id в поле выше.");
-      return;
-    }
     setQnrBusy(true);
     setQnrMsg("");
     try {
@@ -377,7 +372,6 @@ export function DoctorMISPage() {
         : `/mis/doctor/patients/${patientId}/send-questionnaire`;
       await api.post(sendUrl, {
         questionnaire_id: qnrSelectedId,
-        max_chat_id: id,
       });
       setQnrMsg("Ссылка на опросник отправлена в MAX.");
     } catch (e) {
@@ -461,6 +455,12 @@ export function DoctorMISPage() {
     [misMaxBotLinkApp, misMaxStartCommand],
   );
 
+  const patientCardPublicUrl = useMemo(() => {
+    if (!patientId) return "";
+    if (typeof window === "undefined") return `/public/mis/patient/${patientId}`;
+    return `${window.location.origin}/public/mis/patient/${patientId}`;
+  }, [patientId]);
+
   const misMaxLinkToCopy = useMemo(
     () => misMaxBotLinkHttps || misMaxStartCommand,
     [misMaxBotLinkHttps, misMaxStartCommand],
@@ -506,13 +506,15 @@ export function DoctorMISPage() {
   }, []);
 
   useEffect(() => {
-    if (!qrModalOpen) return;
+    if (!qrModalOpen && !patientCardQrOpen) return;
     const onKey = (e) => {
-      if (e.key === "Escape") setQrModalOpen(false);
+      if (e.key !== "Escape") return;
+      setQrModalOpen(false);
+      setPatientCardQrOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [qrModalOpen]);
+  }, [qrModalOpen, patientCardQrOpen]);
 
   const createPatient = async (e) => {
     e.preventDefault();
@@ -747,7 +749,7 @@ export function DoctorMISPage() {
                 >
                   <div className="font-semibold text-slate-900">{p.full_name}</div>
                   <div className="mt-1 text-xs text-slate-500">Тел.: {p.phone || "—"}</div>
-                  <div className="mt-2 text-xs text-slate-400">Обновлено: {formatDate(p.updated_at)}</div>
+                  <div className="mt-2 text-xs text-slate-400">Обновлено: {formatDateTimeRu(p.updated_at)}</div>
                 </Link>
               ))}
             </div>
@@ -783,7 +785,7 @@ export function DoctorMISPage() {
             <header className={card}>
               <h1 className="text-xl font-bold text-slate-900">{p.full_name}</h1>
               <p className="mt-1 text-sm text-slate-600">
-                {formatDate(p.birth_date)} · {p.gender || "пол не указан"} · тел. {p.phone || "—"}
+                {formatDateTimeRu(p.birth_date)} · {p.gender || "пол не указан"} · тел. {p.phone || "—"}
               </p>
               <p className="mt-2 text-xs text-slate-500">
                 <span className="font-medium text-slate-600">ID карты (для ссылки):</span>{" "}
@@ -791,9 +793,7 @@ export function DoctorMISPage() {
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-teal-100 bg-teal-50/60 px-3 py-2 text-xs text-slate-700">
                 <span className="min-w-0 flex-1 break-all font-mono text-[11px] sm:text-xs">
-                  {typeof window !== "undefined"
-                    ? `${window.location.origin}/public/mis/patient/${patientId}`
-                    : `/public/mis/patient/${patientId}`}
+                  {patientCardPublicUrl || `…/public/mis/patient/${patientId}`}
                 </span>
                 <IconCopyButton
                   variant="light"
@@ -801,6 +801,13 @@ export function DoctorMISPage() {
                   copied={patientUrlCopied}
                   className="focus-visible:ring-teal-500/50"
                   onClick={copyPatientPublicUrl}
+                />
+                <IconQrButton
+                  variant="light"
+                  title="QR-код ссылки на карту"
+                  className="focus-visible:ring-teal-500/50"
+                  disabled={!patientCardPublicUrl}
+                  onClick={() => patientCardPublicUrl && setPatientCardQrOpen(true)}
                 />
               </div>
               {misMaxStartCommand ? (
@@ -952,7 +959,7 @@ export function DoctorMISPage() {
                     {entries.map((e) => (
                       <li key={e.id} className="rounded-xl border border-slate-100 bg-slate-50/90 p-3 text-sm">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-medium text-slate-800">{formatDate(e.entry_date)}</span>
+                          <span className="font-medium text-slate-800">{formatDateTimeRu(e.entry_date)}</span>
                           <span
                             className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                               e.type === "exam" ? "bg-blue-100 text-blue-800" : "bg-violet-100 text-violet-800"
@@ -1017,7 +1024,8 @@ export function DoctorMISPage() {
               </h2>
               <p className="mt-1 text-xs text-slate-600">
                 Отправка сводки в чат через бэкенд (<code className="rounded bg-slate-100 px-1">MaxMessengerClient</code>
-                ). Нужен настроенный <strong>MAX_BOT_TOKEN</strong> и числовой <strong>chat_id</strong> получателя.
+                ). Нужен настроенный <strong>MAX_BOT_TOKEN</strong>. Поле <strong>chat_id</strong> ниже подставляется из карты
+                пациента после регистрации через бота в MAX; при необходимости его можно изменить вручную для отправки сводки.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <IconCopyButton
@@ -1062,8 +1070,9 @@ export function DoctorMISPage() {
               <div className="mt-6 border-t border-slate-100 pt-5">
                 <h3 className="text-sm font-semibold text-slate-900">Опросник по ссылке</h3>
                 <p className="mt-1 text-xs text-slate-600">
-                  Выберите опросник организации — пациенту в MAX уйдёт ссылка с защищённым приглашением. Ответы и заключение
-                  ИИ сохранятся в этой карте. Используйте тот же <strong>chat_id</strong>, что и для сводки.
+                  Выберите опросник организации — ссылка с защищённым приглашением уйдёт в чат пациента с ботом (тот же{" "}
+                  <strong>MAX chat_id</strong>, что сохранён в карте после регистрации в MAX). Ответы и заключение ИИ сохранятся в
+                  этой карте.
                 </p>
                 <div className="mt-3 flex flex-wrap items-end gap-2">
                   <label className="min-w-[12rem] text-xs font-medium text-slate-600">
@@ -1101,6 +1110,40 @@ export function DoctorMISPage() {
         ) : null}
       </div>
       )}
+
+      {patientCardQrOpen && patientCardPublicUrl ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]"
+          role="presentation"
+          onClick={() => setPatientCardQrOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="patient-card-qr-title"
+            className="relative max-h-[90vh] w-full max-w-sm overflow-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="absolute right-3 top-3 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+              title="Закрыть"
+              aria-label="Закрыть"
+              onClick={() => setPatientCardQrOpen(false)}
+            >
+              <X className="h-5 w-5" aria-hidden />
+            </button>
+            <h2 id="patient-card-qr-title" className="pr-10 text-base font-semibold text-slate-900">
+              QR: ссылка на карту пациента
+            </h2>
+            <p className="mt-1 text-xs text-slate-600">Публичная страница личного кабинета по этой ссылке.</p>
+            <div className="mt-4 flex justify-center rounded-xl bg-white p-3 ring-1 ring-slate-100">
+              <QRCode value={patientCardPublicUrl} size={220} level="M" />
+            </div>
+            <p className="mt-4 break-all font-mono text-[11px] leading-snug text-slate-700">{patientCardPublicUrl}</p>
+          </div>
+        </div>
+      ) : null}
 
       {qrModalOpen && misMaxRegistrationQrValue ? (
         <div

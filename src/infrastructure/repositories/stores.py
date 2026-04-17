@@ -6,7 +6,7 @@ import json
 import re
 
 from redis.asyncio import Redis
-from sqlalchemy import and_, desc, select, text, update
+from sqlalchemy import and_, desc, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import uuid
@@ -373,16 +373,25 @@ class HybridChatMemoryRepository(IChatMemoryRepository):
         self,
         redis_backend: RedisChatMemoryRepository,
         session: AsyncSession,
+        *,
+        organization_id: UUID | None = None,
     ) -> None:
         self._redis = redis_backend
         self._session = session
+        self._organization_id = organization_id
+
+    def _session_where(self, session_id_col, sid: str):
+        conds = [session_id_col == sid]
+        if self._organization_id is not None:
+            conds.append(ChatMessageModel.organization_id == self._organization_id)
+        return and_(*conds)
 
     async def get_history(self, session_id: str, *, limit: int | None = None) -> list[dict]:
         sid = session_id.strip()
         if limit is not None and limit > 0:
             stmt = (
                 select(ChatMessageModel)
-                .where(ChatMessageModel.session_id == sid)
+                .where(self._session_where(ChatMessageModel.session_id, sid))
                 .order_by(desc(ChatMessageModel.created_at), desc(ChatMessageModel.id))
                 .limit(limit)
             )
@@ -390,17 +399,21 @@ class HybridChatMemoryRepository(IChatMemoryRepository):
             rows = list(result.all())
             if rows:
                 return [_row_to_chat_message_dict(r) for r in reversed(rows)]
+            if self._organization_id is not None:
+                return []
             return await self._redis.get_history(session_id, limit=limit)
 
         stmt = (
             select(ChatMessageModel)
-            .where(ChatMessageModel.session_id == sid)
+            .where(self._session_where(ChatMessageModel.session_id, sid))
             .order_by(ChatMessageModel.created_at.asc(), ChatMessageModel.id.asc())
         )
         result = await self._session.scalars(stmt)
         rows = list(result.all())
         if rows:
             return [_row_to_chat_message_dict(r) for r in rows]
+        if self._organization_id is not None:
+            return []
         return await self._redis.get_history(session_id, limit=None)
 
     async def save_message(
@@ -418,6 +431,7 @@ class HybridChatMemoryRepository(IChatMemoryRepository):
         ud = user_display if role == "user" else None
         row = ChatMessageModel(
             session_id=sid,
+            organization_id=self._organization_id,
             role=role,
             content=content,
             user_display=(ud.strip() if ud else None) or None,
@@ -426,7 +440,7 @@ class HybridChatMemoryRepository(IChatMemoryRepository):
         await self._session.flush()
 
 
-_SESSION_SUMMARIES_SQL = text("""
+_SESSION_SUMMARIES_SQL_TEMPLATE = """
 SELECT session_id, last_preview, last_at, user_label FROM (
   SELECT DISTINCT ON (session_id)
     session_id,
@@ -438,15 +452,17 @@ SELECT session_id, last_preview, last_at, user_label FROM (
         AND cm2.role = 'user'
         AND cm2.user_display IS NOT NULL
         AND trim(cm2.user_display) <> ''
+        AND ({org_predicate_cm2})
       ORDER BY cm2.created_at DESC NULLS LAST
       LIMIT 1
     ) AS user_label
   FROM chat_messages
+  WHERE {org_predicate}
   ORDER BY session_id, created_at DESC, id DESC
 ) AS sub
 ORDER BY last_at DESC NULLS LAST
 LIMIT :lim
-""")
+"""
 
 
 class SqlAlchemyChatSessionRepository(IChatSessionQueryRepository):
@@ -455,9 +471,29 @@ class SqlAlchemyChatSessionRepository(IChatSessionQueryRepository):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def list_session_summaries(self, *, limit: int = 200) -> list[ChatSessionSummary]:
+    async def list_session_summaries(
+        self,
+        *,
+        organization_id: UUID | None,
+        limit: int = 200,
+    ) -> list[ChatSessionSummary]:
         lim = max(1, min(limit, 500))
-        result = await self._session.execute(_SESSION_SUMMARIES_SQL, {"lim": lim})
+        if organization_id is None:
+            stmt = text(
+                _SESSION_SUMMARIES_SQL_TEMPLATE.format(
+                    org_predicate="chat_messages.organization_id IS NULL",
+                    org_predicate_cm2="cm2.organization_id IS NULL",
+                )
+            )
+            result = await self._session.execute(stmt, {"lim": lim})
+        else:
+            stmt = text(
+                _SESSION_SUMMARIES_SQL_TEMPLATE.format(
+                    org_predicate="chat_messages.organization_id = CAST(:org_id AS uuid)",
+                    org_predicate_cm2="cm2.organization_id = CAST(:org_id AS uuid)",
+                )
+            )
+            result = await self._session.execute(stmt, {"lim": lim, "org_id": organization_id})
         out: list[ChatSessionSummary] = []
         for row in result.mappings().all():
             raw_preview = row["last_preview"] or ""
@@ -472,11 +508,20 @@ class SqlAlchemyChatSessionRepository(IChatSessionQueryRepository):
             )
         return out
 
-    async def list_messages_chronological(self, session_id: str) -> list[ChatMessage]:
+    async def list_messages_chronological(
+        self,
+        session_id: str,
+        *,
+        organization_id: UUID | None,
+    ) -> list[ChatMessage]:
         sid = session_id.strip()
+        if organization_id is None:
+            org_clause = ChatMessageModel.organization_id.is_(None)
+        else:
+            org_clause = ChatMessageModel.organization_id == organization_id
         stmt = (
             select(ChatMessageModel)
-            .where(ChatMessageModel.session_id == sid)
+            .where(ChatMessageModel.session_id == sid, org_clause)
             .order_by(ChatMessageModel.created_at.asc(), ChatMessageModel.id.asc())
         )
         result = await self._session.scalars(stmt)
@@ -491,6 +536,12 @@ class SqlAlchemyChatSessionRepository(IChatSessionQueryRepository):
             )
             for r in result.all()
         ]
+
+    async def count_messages_in_session(self, session_id: str) -> int:
+        sid = session_id.strip()
+        stmt = select(func.count()).select_from(ChatMessageModel).where(ChatMessageModel.session_id == sid)
+        n = await self._session.scalar(stmt)
+        return int(n or 0)
 
 
 def _training_scenario_to_domain(row: TrainingScenarioModel) -> TrainingScenario:
