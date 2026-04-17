@@ -32,7 +32,7 @@ from src.api.dependencies_portal import PortalUserDep
 from src.core.config import get_settings
 from src.domain import system_setting_keys as sk
 from src.domain.portal_roles import ROLE_DIRECTOR, ROLE_ORG_ADMIN, ROLE_SUPER_ADMIN
-from src.infrastructure.models import MiniAppUserModel, OrganizationModel
+from src.infrastructure.models import MiniAppUserModel, OrganizationModel, SiteModel, SitePageModel
 from src.infrastructure.portal_security import (
     create_miniapp_access_token,
     decode_miniapp_token,
@@ -43,6 +43,10 @@ logger = logging.getLogger(__name__)
 
 # Публичный роутер Mini App (монтируется как /api/miniapp) — пропускается middleware.
 router = APIRouter(prefix="/miniapp", tags=["miniapp"])
+
+# Публичный роутер конфигурации Mini App (монтируется как /api/public/miniapp) —
+# отдаёт witching content по ИНН без авторизации, помечен public в middleware.
+public_router = APIRouter(prefix="/public/miniapp", tags=["miniapp-public"])
 
 # Административный роутер (монтируется как /api/portal/miniapp) — под Portal JWT.
 admin_router = APIRouter(prefix="/portal/miniapp", tags=["miniapp-admin"])
@@ -436,6 +440,191 @@ async def list_miniapp_users(
         )
         for u in rows
     ]
+
+
+# --- Схемы конфига Mini App (public) -------------------------------------
+
+
+class MiniAppConfigPage(BaseModel):
+    """Страница сайта для клиентского Mini App (без служебных полей)."""
+
+    id: UUID
+    title: str
+    slug: str
+    content: str
+    order_index: int
+
+
+class MiniAppConfigResponse(BaseModel):
+    """Единый JSON для отрисовки Mini App организации.
+
+    Состав:
+      - идентификаторы организации/сайта,
+      - брендинг (title, subtitle, logo_url, theme_color),
+      - контакты (произвольный JSONB из карточки сайта),
+      - список опубликованных страниц (готов к рендеру в Tabbar).
+    """
+
+    organization_id: UUID
+    organization_name: str
+    organization_display_name: str | None = None
+    site_id: UUID
+    title: str
+    subtitle: str
+    logo_url: str | None = None
+    theme_color: str
+    contacts: dict[str, object]
+    pages: list[MiniAppConfigPage]
+
+
+# --- Схемы активного сайта (admin) --------------------------------------
+
+
+class MiniAppActiveSiteRequest(BaseModel):
+    """Тело для PUT /portal/miniapp/active-site: ``null`` — сброс привязки."""
+
+    site_id: UUID | None = Field(
+        default=None,
+        description="UUID сайта организации; null отключает Mini App-рендер сайта",
+    )
+
+
+class MiniAppActiveSiteResponse(BaseModel):
+    organization_id: UUID
+    active_site_id: UUID | None = None
+
+
+# --- Публичный эндпоинт: конфиг Mini App по ИНН -------------------------
+
+
+@public_router.get("/config/{inn}", response_model=MiniAppConfigResponse)
+async def get_miniapp_config(inn: str, session: AsyncSessionDep) -> MiniAppConfigResponse:
+    """Единая точка получения контента Mini App для клиентского приложения.
+
+    Возвращает настройки активного сайта организации + его опубликованные страницы
+    (отсортированные по ``order_index``). Эндпоинт публичный: клиент вызывает его
+    ПОСЛЕ авторизации по chat_id, но сам ответ не содержит приватных данных.
+    """
+    inn_value = (inn or "").strip()
+    if not inn_value:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ИНН не указан")
+
+    org = (
+        await session.execute(select(OrganizationModel).where(OrganizationModel.inn == inn_value))
+    ).scalar_one_or_none()
+    if org is None or not org.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Организация по указанному ИНН не найдена или отключена",
+        )
+
+    if org.active_site_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                "Для организации не выбран активный сайт Mini App. "
+                "Администратор должен указать его в разделе «Приложения»."
+            ),
+        )
+
+    site = await session.get(SiteModel, org.active_site_id)
+    # Дополнительно проверяем, что сайт принадлежит той же организации (защита от
+    # рассинхрона, если active_site_id был выставлен на чужой сайт — но проверка на
+    # этапе PUT отсечёт такое ещё на входе).
+    if site is None or site.organization_id != org.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Активный сайт организации не найден",
+        )
+
+    pages_rows = (
+        await session.execute(
+            select(SitePageModel)
+            .where(
+                SitePageModel.site_id == site.id,
+                SitePageModel.is_published.is_(True),
+            )
+            .order_by(SitePageModel.order_index.asc(), SitePageModel.created_at.asc())
+        )
+    ).scalars().all()
+
+    return MiniAppConfigResponse(
+        organization_id=org.id,
+        organization_name=org.name,
+        organization_display_name=(org.display_name or "").strip() or None,
+        site_id=site.id,
+        title=(site.title or "").strip() or org.display_name or org.name,
+        subtitle=(site.subtitle or "").strip(),
+        logo_url=(site.logo_url or "").strip() or None,
+        theme_color=(site.theme_color or "#000000").strip() or "#000000",
+        contacts=dict(site.contacts or {}),
+        pages=[
+            MiniAppConfigPage(
+                id=p.id,
+                title=p.title,
+                slug=p.slug,
+                content=p.content or "",
+                order_index=int(p.order_index or 0),
+            )
+            for p in pages_rows
+        ],
+    )
+
+
+# --- Админ: выбор активного сайта Mini App ------------------------------
+
+
+@admin_router.get("/active-site", response_model=MiniAppActiveSiteResponse)
+async def get_miniapp_active_site(
+    actor: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = None,
+) -> MiniAppActiveSiteResponse:
+    """Текущий активный сайт Mini App организации (для отрисовки селекта в UI)."""
+    if actor.role not in (ROLE_SUPER_ADMIN, ROLE_ORG_ADMIN, ROLE_DIRECTOR):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
+    org_id = _resolve_admin_org_id(actor, organization_id)
+    org = await session.get(OrganizationModel, org_id)
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Организация не найдена")
+    return MiniAppActiveSiteResponse(organization_id=org.id, active_site_id=org.active_site_id)
+
+
+@admin_router.put("/active-site", response_model=MiniAppActiveSiteResponse)
+async def set_miniapp_active_site(
+    body: MiniAppActiveSiteRequest,
+    actor: PortalUserDep,
+    session: AsyncSessionDep,
+    organization_id: UUID | None = None,
+) -> MiniAppActiveSiteResponse:
+    """Привязывает выбранный сайт организации к Mini App.
+
+    Доступно: ``super_admin`` (с ``organization_id`` в query), ``org_admin``, ``director``.
+    Если указан ``site_id`` — проверяем, что сайт принадлежит этой же организации
+    (защита от cross-tenant-утечек).
+    """
+    if actor.role not in (ROLE_SUPER_ADMIN, ROLE_ORG_ADMIN, ROLE_DIRECTOR):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
+    org_id = _resolve_admin_org_id(actor, organization_id)
+    org = await session.get(OrganizationModel, org_id)
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Организация не найдена")
+
+    if body.site_id is None:
+        org.active_site_id = None
+    else:
+        site = await session.get(SiteModel, body.site_id)
+        if site is None or site.organization_id != org.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Сайт не найден в вашей организации",
+            )
+        org.active_site_id = site.id
+
+    session.add(org)
+    await session.commit()
+    await session.refresh(org)
+    return MiniAppActiveSiteResponse(organization_id=org.id, active_site_id=org.active_site_id)
 
 
 @router.get("/me", response_model=MiniAppMe)

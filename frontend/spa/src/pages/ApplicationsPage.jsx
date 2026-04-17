@@ -1,4 +1,4 @@
-import { LayoutGrid, Link as LinkIcon, RefreshCcw } from "lucide-react";
+import { Check, Globe, LayoutGrid, Link as LinkIcon, RefreshCcw, Save } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import QRCode from "react-qr-code";
@@ -49,6 +49,14 @@ export function ApplicationsPage() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
 
+  const [sites, setSites] = useState([]);
+  const [sitesLoading, setSitesLoading] = useState(false);
+  const [activeSiteId, setActiveSiteId] = useState("");
+  const [savedActiveSiteId, setSavedActiveSiteId] = useState("");
+  const [savingActiveSite, setSavingActiveSite] = useState(false);
+  const [activeSiteJustSaved, setActiveSiteJustSaved] = useState(false);
+  const [activeSiteError, setActiveSiteError] = useState("");
+
   const orgInn = useMemo(() => {
     const raw = (user?.organization_inn || "").trim();
     return raw || null;
@@ -78,12 +86,68 @@ export function ApplicationsPage() {
     }
   }, [role, settingsOrgId]);
 
+  const loadSitesAndActive = useCallback(async () => {
+    setSitesLoading(true);
+    setActiveSiteError("");
+    try {
+      const params = {};
+      if (role === "super_admin" && settingsOrgId) {
+        params.organization_id = settingsOrgId;
+      }
+      const [sitesResp, activeResp] = await Promise.all([
+        api.get("/sites", { params }),
+        api.get("/portal/miniapp/active-site", { params }),
+      ]);
+      const list = Array.isArray(sitesResp.data) ? sitesResp.data : [];
+      setSites(list);
+      const currentId = activeResp?.data?.active_site_id || "";
+      setActiveSiteId(currentId);
+      setSavedActiveSiteId(currentId);
+    } catch (e) {
+      setActiveSiteError(formatApiDetail(e?.response?.data?.detail) || e?.message || String(e));
+      setSites([]);
+    } finally {
+      setSitesLoading(false);
+    }
+  }, [role, settingsOrgId]);
+
   useEffect(() => {
-    if (canAccess) load();
-  }, [canAccess, load]);
+    if (canAccess) {
+      load();
+      loadSitesAndActive();
+    }
+  }, [canAccess, load, loadSitesAndActive]);
 
   if (!user) return null;
   if (!canAccess) return <Navigate to="/scenarios/qa-analytics" replace />;
+
+  const saveActiveSite = async () => {
+    setSavingActiveSite(true);
+    setActiveSiteError("");
+    setActiveSiteJustSaved(false);
+    try {
+      const params = {};
+      if (role === "super_admin" && settingsOrgId) {
+        params.organization_id = settingsOrgId;
+      }
+      const { data } = await api.put(
+        "/portal/miniapp/active-site",
+        { site_id: activeSiteId || null },
+        { params },
+      );
+      const newId = data?.active_site_id || "";
+      setSavedActiveSiteId(newId);
+      setActiveSiteId(newId);
+      setActiveSiteJustSaved(true);
+      setTimeout(() => setActiveSiteJustSaved(false), 1500);
+    } catch (e) {
+      setActiveSiteError(formatApiDetail(e?.response?.data?.detail) || e?.message || String(e));
+    } finally {
+      setSavingActiveSite(false);
+    }
+  };
+
+  const activeSiteDirty = (activeSiteId || "") !== (savedActiveSiteId || "");
 
   const copyLink = async () => {
     if (!miniAppUrl) return;
@@ -142,6 +206,82 @@ export function ApplicationsPage() {
           Передайте эту ссылку в бота MAX (кнопка Web App). При первом открытии пользователь появится
           в таблице ниже.
         </p>
+      </section>
+
+      <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+        <header className="mb-3 flex items-center gap-2">
+          <Globe className="h-4 w-4 text-sky-300" aria-hidden />
+          <h2 className="text-sm font-semibold text-white">Настройка Mini App</h2>
+        </header>
+        <p className="text-xs text-slate-400">
+          Выберите сайт, контент которого будет отображаться клиентам в Mini App мессенджера MAX.
+          Можно менять в любой момент — клиенты увидят изменения при следующем открытии.
+        </p>
+
+        {activeSiteError ? (
+          <div className="mt-3 rounded-lg border border-red-600/40 bg-red-600/10 p-3 text-sm text-red-200">
+            {activeSiteError}
+          </div>
+        ) : null}
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <label className="flex min-w-[260px] flex-1 flex-col gap-1 text-xs font-medium text-slate-300">
+            Активный сайт
+            <select
+              value={activeSiteId || ""}
+              onChange={(e) => setActiveSiteId(e.target.value)}
+              disabled={sitesLoading || savingActiveSite}
+              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none disabled:opacity-60"
+            >
+              <option value="">
+                {sitesLoading ? "Загрузка списка сайтов…" : "— сайт не выбран —"}
+              </option>
+              {sites.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                  {s.title ? ` — ${s.title}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="flex items-end gap-2 pb-[1px]">
+            <button
+              type="button"
+              onClick={saveActiveSite}
+              disabled={!activeSiteDirty || savingActiveSite}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+            >
+              {activeSiteJustSaved ? (
+                <>
+                  <Check className="h-3.5 w-3.5" aria-hidden />
+                  Сохранено
+                </>
+              ) : (
+                <>
+                  <Save className="h-3.5 w-3.5" aria-hidden />
+                  {savingActiveSite ? "Сохранение…" : "Сохранить"}
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={loadSitesAndActive}
+              disabled={sitesLoading || savingActiveSite}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60"
+              title="Обновить список сайтов"
+            >
+              <RefreshCcw className={`h-3.5 w-3.5 ${sitesLoading ? "animate-spin" : ""}`} aria-hidden />
+              Обновить
+            </button>
+          </div>
+        </div>
+
+        {sites.length === 0 && !sitesLoading ? (
+          <p className="mt-3 text-xs text-slate-500">
+            У организации ещё нет сайтов. Создайте сайт в разделе «Сайты» — он появится в списке.
+          </p>
+        ) : null}
       </section>
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/70">

@@ -207,6 +207,7 @@ def create_app() -> FastAPI:
     application.include_router(settings_router.router, prefix="/api", tags=["settings"])
     application.include_router(max_bot.router, prefix="/api")
     application.include_router(miniapp.router, prefix="/api")
+    application.include_router(miniapp.public_router, prefix="/api")
     application.include_router(miniapp.admin_router, prefix="/api")
     application.include_router(sites.router, prefix="/api")
     application.include_router(sites.public_router, prefix="/api")

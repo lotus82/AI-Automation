@@ -564,6 +564,16 @@ class OrganizationModel(Base):
         index=True,
     )
     is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=sql_text("true"))
+    # Активный сайт, отдаваемый в Mini App этой организации. ``NULL`` — сайт ещё не выбран.
+    # ON DELETE SET NULL: если активный сайт удалён, организация остаётся без привязки.
+    # use_alter=True + явное имя: между sites и organizations есть взаимные FK,
+    # SQLAlchemy должен их «доспроить» после создания обеих таблиц.
+    active_site_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("sites.id", ondelete="SET NULL", use_alter=True, name="fk_organizations_active_site_id"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=sql_text("now()"),
@@ -571,6 +581,13 @@ class OrganizationModel(Base):
     )
 
     shops: Mapped[list["ShopModel"]] = relationship("ShopModel", back_populates="organization")
+    active_site: Mapped["SiteModel | None"] = relationship(
+        "SiteModel",
+        primaryjoin="OrganizationModel.active_site_id == SiteModel.id",
+        foreign_keys="OrganizationModel.active_site_id",
+        uselist=False,
+        lazy="noload",
+    )
     medical_doctors: Mapped[list["MedicalDoctorModel"]] = relationship(
         "MedicalDoctorModel",
         back_populates="organization",
