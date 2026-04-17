@@ -75,6 +75,47 @@ def decode_portal_token(token: str, secret: str) -> dict[str, Any]:
     return jwt.decode(token, secret, algorithms=["HS256"])
 
 
+MINIAPP_TYP = "miniapp"
+
+
+def create_miniapp_access_token(
+    *,
+    user_id: UUID,
+    organization_id: UUID,
+    chat_id: str,
+    secret: str,
+    expire_minutes: int = 60 * 24,
+) -> str:
+    """JWT для пользователя Mini App мессенджера MAX.
+
+    ``typ``/``aud``: ``miniapp``; ``sub`` — ``MiniAppUserModel.id`` (внутренний UUID),
+    ``org_id`` — организация, ``chat_id`` — идентификатор чата в мессенджере.
+    """
+    now = datetime.now(UTC)
+    payload: dict[str, Any] = {
+        "sub": str(user_id),
+        "org_id": str(organization_id),
+        "chat_id": str(chat_id),
+        "typ": MINIAPP_TYP,
+        "aud": MINIAPP_TYP,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=expire_minutes)).timestamp()),
+    }
+    return jwt.encode(payload, secret, algorithm="HS256")
+
+
+def decode_miniapp_token(token: str, secret: str) -> dict[str, Any]:
+    data = jwt.decode(
+        token,
+        secret,
+        algorithms=["HS256"],
+        audience=MINIAPP_TYP,
+    )
+    if data.get("typ") != MINIAPP_TYP:
+        raise JWTInvalidTokenError("Неверный тип токена Mini App")
+    return data
+
+
 MIS_QUESTIONNAIRE_INVITE_TYP = "mis_q_invite"
 
 

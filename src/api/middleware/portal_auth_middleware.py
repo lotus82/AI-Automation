@@ -76,6 +76,8 @@ def _is_public_path(path: str, method: str) -> bool:
         return True
     if method == "POST" and path == "/api/mis/auth/max/register":
         return True
+    if path.startswith("/api/miniapp/"):
+        return True
     return False
 
 

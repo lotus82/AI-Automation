@@ -77,6 +77,7 @@ def _org_to_public(
         name=org.name,
         display_name=(org.display_name or "").strip() or None,
         slug=org.slug,
+        inn=(org.inn or "").strip() or None,
         is_active=org.is_active,
         created_at=org.created_at,
         org_admin_display_name=org_admin_display_name,
@@ -128,10 +129,21 @@ async def create_organization(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Логин администратора уже занят")
 
     org_dn = (body.organization_display_name or "").strip() or None
+    inn_value = (body.inn or "").strip() or None
+    if inn_value is not None:
+        taken_inn = await session.scalar(
+            select(OrganizationModel.id).where(OrganizationModel.inn == inn_value)
+        )
+        if taken_inn is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Организация с таким ИНН уже зарегистрирована",
+            )
     org = OrganizationModel(
         name=body.name.strip(),
         display_name=org_dn,
         slug=slug,
+        inn=inn_value,
         is_active=True,
     )
     session.add(org)
@@ -169,6 +181,7 @@ async def patch_organization(
         and body.organization_display_name is None
         and body.is_active is None
         and body.org_admin_display_name is None
+        and body.inn is None
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -181,6 +194,21 @@ async def patch_organization(
         org.name = body.name.strip()
     if body.organization_display_name is not None:
         org.display_name = (body.organization_display_name or "").strip() or None
+    if body.inn is not None:
+        new_inn = (body.inn or "").strip() or None
+        if new_inn is not None:
+            taken_inn = await session.scalar(
+                select(OrganizationModel.id).where(
+                    OrganizationModel.inn == new_inn,
+                    OrganizationModel.id != org.id,
+                )
+            )
+            if taken_inn is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Организация с таким ИНН уже зарегистрирована",
+                )
+        org.inn = new_inn
     if body.is_active is not None:
         org.is_active = body.is_active
     if body.org_admin_display_name is not None:

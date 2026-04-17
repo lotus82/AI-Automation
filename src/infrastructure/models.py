@@ -557,6 +557,12 @@ class OrganizationModel(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     slug: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    inn: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
     is_active: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=sql_text("true"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -1226,3 +1232,43 @@ class MedicalEntryModel(Base):
         "MedicalPatientModel",
         back_populates="entries",
     )
+
+
+class MiniAppUserModel(Base):
+    """Пользователь Mini App (мессенджер MAX): идентифицируется chat_id в рамках организации.
+
+    Создаётся при первом входе в Web App организации по ссылке ``/inn/<inn>``: бэкенд
+    извлекает chat_id из init_data мессенджера и upsert'ит запись по (organization_id, chat_id).
+    """
+
+    __tablename__ = "mini_app_users"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "chat_id", name="uq_mini_app_users_org_chat"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    chat_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    organization: Mapped["OrganizationModel"] = relationship("OrganizationModel")

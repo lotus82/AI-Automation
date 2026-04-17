@@ -33,6 +33,10 @@ class PortalUserMe(BaseModel):
         default=None,
         description="Краткое имя организации для шапки; если пусто — смотреть organization_name",
     )
+    organization_inn: str | None = Field(
+        default=None,
+        description="ИНН организации (используется как публичный ключ для Mini App — /inn/<inn>)",
+    )
     permissions: dict[str, Any]
     sections: list[str] = Field(
         default_factory=list,
@@ -57,6 +61,11 @@ class OrganizationCreate(BaseModel):
         description="Краткое имя для панели (шапка); полное юридическое — в name",
     )
     slug: str | None = Field(default=None, max_length=128)
+    inn: str | None = Field(
+        default=None,
+        max_length=32,
+        description="ИНН — публичный ключ организации для Mini App (используется в ссылке /inn/<inn>)",
+    )
     admin_username: str = Field(min_length=2, max_length=128)
     admin_password: str = Field(min_length=6, max_length=256)
     admin_display_name: str | None = Field(default=None, max_length=255)
@@ -67,6 +76,7 @@ class OrganizationPublic(BaseModel):
     name: str
     display_name: str | None = None
     slug: str
+    inn: str | None = None
     is_active: bool
     created_at: datetime
     org_admin_display_name: str | None = Field(
@@ -80,6 +90,7 @@ class OrganizationPatch(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
     organization_display_name: str | None = Field(default=None, max_length=255)
+    inn: str | None = Field(default=None, max_length=32)
     org_admin_display_name: str | None = Field(
         default=None,
         max_length=255,

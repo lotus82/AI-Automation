@@ -19,6 +19,7 @@ export function OrganizationsPage() {
   const [name, setName] = useState("");
   const [orgDisplayName, setOrgDisplayName] = useState("");
   const [slug, setSlug] = useState("");
+  const [inn, setInn] = useState("");
   const [adminUser, setAdminUser] = useState("");
   const [adminPass, setAdminPass] = useState("");
   const [adminName, setAdminName] = useState("");
@@ -27,6 +28,7 @@ export function OrganizationsPage() {
   const [editingOrg, setEditingOrg] = useState(null);
   const [editName, setEditName] = useState("");
   const [editOrgDisplayName, setEditOrgDisplayName] = useState("");
+  const [editInn, setEditInn] = useState("");
   const [editOrgAdminDisplayName, setEditOrgAdminDisplayName] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editMsg, setEditMsg] = useState("");
@@ -63,6 +65,7 @@ export function OrganizationsPage() {
         name: name.trim(),
         organization_display_name: orgDisplayName.trim() || null,
         slug: slug.trim() || null,
+        inn: inn.trim() || null,
         admin_username: adminUser.trim(),
         admin_password: adminPass,
         admin_display_name: adminName.trim() || null,
@@ -70,6 +73,7 @@ export function OrganizationsPage() {
       setName("");
       setOrgDisplayName("");
       setSlug("");
+      setInn("");
       setAdminUser("");
       setAdminPass("");
       setAdminName("");
@@ -87,6 +91,7 @@ export function OrganizationsPage() {
     setEditingOrg(o);
     setEditName(o.name || "");
     setEditOrgDisplayName(o.display_name || "");
+    setEditInn(o.inn || "");
     setEditOrgAdminDisplayName(o.org_admin_display_name || "");
     setEditMsg("");
   };
@@ -110,6 +115,7 @@ export function OrganizationsPage() {
       await api.patch(`/portal/organizations/${editingOrg.id}`, {
         name: n,
         organization_display_name: editOrgDisplayName.trim() || null,
+        inn: editInn.trim() || null,
         org_admin_display_name: editOrgAdminDisplayName.trim() || null,
       });
       closeEdit();
@@ -196,6 +202,19 @@ export function OrganizationsPage() {
               onChange={(e) => setSlug(e.target.value)}
             />
           </div>
+          <div>
+            <label className="mb-1 block text-xs text-slate-400" htmlFor="org-inn">
+              ИНН (опционально)
+            </label>
+            <input
+              id="org-inn"
+              className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+              placeholder="Публичный ключ Mini App — ссылка /inn/<ИНН>"
+              value={inn}
+              onChange={(e) => setInn(e.target.value)}
+              inputMode="numeric"
+            />
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs text-slate-400" htmlFor="org-admin-user">
@@ -262,6 +281,7 @@ export function OrganizationsPage() {
                   <th className="px-3 py-2 text-xs font-medium uppercase text-slate-400">Название</th>
                   <th className="px-3 py-2 text-xs font-medium uppercase text-slate-400">В панели</th>
                   <th className="px-3 py-2 text-xs font-medium uppercase text-slate-400">Slug</th>
+                  <th className="px-3 py-2 text-xs font-medium uppercase text-slate-400">ИНН</th>
                   <th className="px-3 py-2 text-xs font-medium uppercase text-slate-400">Активна</th>
                   <th className="px-3 py-2 text-xs font-medium uppercase text-slate-400">Создана</th>
                   <th className="px-3 py-2 text-xs font-medium uppercase text-slate-400 w-24">
@@ -275,6 +295,9 @@ export function OrganizationsPage() {
                     <td className="px-3 py-2 text-slate-200">{o.name}</td>
                     <td className="px-3 py-2 text-slate-400">{o.display_name || "—"}</td>
                     <td className="px-3 py-2 font-mono text-xs text-slate-400">{o.slug}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-slate-300">
+                      {o.inn || <span className="text-slate-600">—</span>}
+                    </td>
                     <td className="px-3 py-2">{o.is_active ? "да" : "нет"}</td>
                     <td className="px-3 py-2 text-slate-500">
                       {formatDateTimeRu(o.created_at)}
@@ -338,6 +361,19 @@ export function OrganizationsPage() {
                   placeholder="Краткое имя в шапке панели"
                   value={editOrgDisplayName}
                   onChange={(e) => setEditOrgDisplayName(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-slate-400" htmlFor="org-edit-inn">
+                  ИНН (опционально)
+                </label>
+                <input
+                  id="org-edit-inn"
+                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                  placeholder="Публичный ключ Mini App — ссылка /inn/<ИНН>"
+                  value={editInn}
+                  onChange={(e) => setEditInn(e.target.value)}
+                  inputMode="numeric"
                 />
               </div>
               <div>

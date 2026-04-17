@@ -7,8 +7,11 @@ import { useBitrixAuth } from "./hooks/useBitrixAuth.js";
 import { Layout } from "./layouts/Layout.jsx";
 import { ScenariosIndexRedirect, ScenariosLayout } from "./layouts/ScenariosLayout.jsx";
 import { AITrainerPage } from "./pages/AITrainerPage.jsx";
+import { ApplicationsPage } from "./pages/ApplicationsPage.jsx";
 import { BotsPage } from "./pages/BotsPage.jsx";
 import { FormsPage } from "./pages/FormsPage.jsx";
+import { MiniAppLayout } from "./components/layout/MiniAppLayout.jsx";
+import { MiniAppEntryPage } from "./pages/miniapp/MiniAppEntryPage.jsx";
 import { IntegrationsPage } from "./pages/IntegrationsPage.jsx";
 import { KnowledgePage } from "./pages/KnowledgePage.jsx";
 import { LandingPage } from "./pages/LandingPage.jsx";
@@ -54,6 +57,10 @@ export default function App() {
         <Route index element={<StoreFrontPage />} />
         <Route path="cart" element={<StoreCartPage />} />
       </Route>
+      {/** Mini App MAX (публичный Web App, открывается из бота организации) */}
+      <Route path="/inn/:inn" element={<MiniAppLayout />}>
+        <Route index element={<MiniAppEntryPage />} />
+      </Route>
       <Route path="/public/mis/questionnaire" element={<PublicMisQuestionnairePage />} />
       <Route path="/public/mis/patient" element={<MisPublicLayout />}>
         <Route index element={<PatientMISPage />} />
@@ -91,6 +98,7 @@ export default function App() {
           <Route path="shops/:shopId/edit" element={<ShopConstructorPage />} />
           <Route path="mis" element={<DoctorMISPage />} />
           <Route path="mis/patients/:patientId" element={<DoctorMISPage />} />
+          <Route path="applications" element={<ApplicationsPage />} />
           <Route path="portal/organizations" element={<OrganizationsPage />} />
           <Route path="portal/users" element={<OrgUsersPage />} />
         </Route>

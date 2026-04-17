@@ -5,6 +5,7 @@ import {
   ClipboardList,
   FileText,
   Layers,
+  LayoutGrid,
   Plug,
   ScrollText,
   Settings,
@@ -39,6 +40,7 @@ const BASE_NAV = [
   { to: "/forms", section: "forms", label: "Формы", icon: FileText },
   { to: "/shops", section: "shops", label: "Магазины", icon: Store },
   { to: "/mis", section: "mis", label: "МИС", icon: Stethoscope },
+  { to: "/applications", section: "applications", label: "Приложения", icon: LayoutGrid, managerOnly: true },
   { to: "/integrations", section: "integrations", label: "Интеграции", icon: Plug },
   { to: "/roles", section: "roles", label: "Роли", icon: UsersRound },
   { to: "/settings", section: "settings", label: "Настройки", icon: Settings },
@@ -57,6 +59,13 @@ function SidebarContent({ onNavigate, headerAction }) {
     if (item.scenariosGroup) {
       if (user.role === "super_admin" || user.role === "org_admin") return true;
       return SCENARIO_SECTIONS.some((s) => sections.has(s));
+    }
+    if (item.managerOnly) {
+      return (
+        user.role === "super_admin" ||
+        user.role === "org_admin" ||
+        user.role === "director"
+      );
     }
     if (user.role === "super_admin" || user.role === "org_admin") return true;
     return sections.has(item.section);

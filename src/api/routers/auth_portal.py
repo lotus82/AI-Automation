@@ -74,11 +74,13 @@ async def portal_login(
 async def portal_me(user: PortalUserDep, session: AsyncSessionDep) -> PortalUserMe:
     org_name = None
     org_display = None
+    org_inn = None
     if user.organization_id and user.organization:
         org = user.organization
         org_name = org.name
         od = (org.display_name or "").strip()
         org_display = od or None
+        org_inn = (org.inn or "").strip() or None
     doc_stmt = (
         select(MedicalDoctorModel.id)
         .where(
@@ -96,6 +98,7 @@ async def portal_me(user: PortalUserDep, session: AsyncSessionDep) -> PortalUser
         organization_id=user.organization_id,
         organization_name=org_name,
         organization_display_name=org_display,
+        organization_inn=org_inn,
         permissions=user.permissions or {},
         sections=effective_sections(user),
         medical_doctor_id=medical_doctor_id,

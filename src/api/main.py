@@ -22,6 +22,7 @@ from src.api.routers import (
     knowledge,
     leads,
     max_bot,
+    miniapp,
     notifications,
     mis,
     mis_patient_auth,
@@ -204,6 +205,8 @@ def create_app() -> FastAPI:
     application.include_router(dialer.router, prefix="/api", tags=["dialer"])
     application.include_router(settings_router.router, prefix="/api", tags=["settings"])
     application.include_router(max_bot.router, prefix="/api")
+    application.include_router(miniapp.router, prefix="/api")
+    application.include_router(miniapp.admin_router, prefix="/api")
     application.include_router(chats.router, prefix="/api")
     application.include_router(schedules.router, prefix="/api")
     application.include_router(notifications.router, prefix="/api")
