@@ -1,4 +1,4 @@
-import { Avatar, Button, Container, Flex, Panel, Typography } from "@maxhub/max-ui";
+import { Button, Container, Flex, Panel, Spinner, Typography } from "@maxhub/max-ui";
 import axios from "axios";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
@@ -70,12 +70,12 @@ function StatusScreen({ children }) {
   );
 }
 
-function Spinner({ label }) {
+function LoadingScreen({ label }) {
   return (
     <StatusScreen>
-      <Avatar size={64} aria-hidden />
-      <Typography.Title level={3}>Входим в приложение…</Typography.Title>
-      {label ? <Typography.Text>{label}</Typography.Text> : null}
+      <Spinner size="large" />
+      <Typography.Title>Входим в приложение…</Typography.Title>
+      {label ? <Typography.Body>{label}</Typography.Body> : null}
     </StatusScreen>
   );
 }
@@ -83,9 +83,8 @@ function Spinner({ label }) {
 function ErrorScreen({ title, detail, onRetry }) {
   return (
     <StatusScreen>
-      <Avatar size={64} aria-hidden />
-      <Typography.Title level={3}>{title}</Typography.Title>
-      {detail ? <Typography.Text>{detail}</Typography.Text> : null}
+      <Typography.Title>{title}</Typography.Title>
+      {detail ? <Typography.Body>{detail}</Typography.Body> : null}
       {onRetry ? (
         <Button mode="primary" onClick={onRetry}>
           Повторить
@@ -97,8 +96,10 @@ function ErrorScreen({ title, detail, onRetry }) {
 
 /**
  * Нижняя навигация (Tabbar) по списку опубликованных страниц сайта.
- * Дизайн сделан максимально нативно: фиксированная нижняя планка, safe-area,
- * активная вкладка подсвечивается фирменным цветом через CSS-переменные MAX UI.
+ *
+ * Намеренно используем обычный nav/button/ul — во-первых, Flex из MAX UI
+ * валидирует ограниченный список значений ``justify``/``align``; во-вторых,
+ * Tabbar визуально уникален и проще описать его стилями, чем через Flex.
  */
 function MiniAppTabbar({ pages, activeSlug, onChange, themeColor }) {
   if (!pages || pages.length === 0) return null;
@@ -117,11 +118,14 @@ function MiniAppTabbar({ pages, activeSlug, onChange, themeColor }) {
         paddingBottom: "env(safe-area-inset-bottom, 0px)",
       }}
     >
-      <Flex
-        as="ul"
-        justify="space-around"
-        align="stretch"
-        style={{ listStyle: "none", margin: 0, padding: "4px 4px 6px" }}
+      <ul
+        style={{
+          display: "flex",
+          listStyle: "none",
+          margin: 0,
+          padding: "4px 4px 6px",
+          gap: 2,
+        }}
       >
         {pages.map((p) => {
           const active = p.slug === activeSlug;
@@ -139,7 +143,7 @@ function MiniAppTabbar({ pages, activeSlug, onChange, themeColor }) {
                   flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: 2,
+                  gap: 4,
                   background: "transparent",
                   border: "none",
                   cursor: "pointer",
@@ -178,7 +182,7 @@ function MiniAppTabbar({ pages, activeSlug, onChange, themeColor }) {
             </li>
           );
         })}
-      </Flex>
+      </ul>
     </nav>
   );
 }
@@ -187,21 +191,21 @@ function MiniAppTabbar({ pages, activeSlug, onChange, themeColor }) {
  * Шапка Mini App. Заголовок и подзаголовок — из конфига сайта, акцент — theme_color.
  */
 function MiniAppHeader({ title, subtitle, logoUrl, themeColor }) {
+  const background = themeColor
+    ? `linear-gradient(135deg, ${themeColor} 0%, ${themeColor}DD 100%)`
+    : "var(--max-color-primary, #0f172a)";
   return (
     <Panel
       mode="primary"
       style={{
         padding: "16px",
         borderBottom: "1px solid var(--max-color-separator, rgba(0,0,0,0.08))",
-        background: themeColor
-          ? `linear-gradient(135deg, ${themeColor} 0%, ${themeColor}DD 100%)`
-          : "var(--max-color-primary, #0f172a)",
+        background,
         color: "#fff",
       }}
     >
       <Flex align="center" gap={12}>
         {logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={logoUrl}
             alt=""
@@ -214,11 +218,26 @@ function MiniAppHeader({ title, subtitle, logoUrl, themeColor }) {
             }}
           />
         ) : (
-          <Avatar size={44} aria-hidden />
+          <div
+            aria-hidden
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              background: "rgba(255,255,255,0.2)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 20,
+              fontWeight: 600,
+              color: "#fff",
+            }}
+          >
+            {(title || "M").slice(0, 1).toUpperCase()}
+          </div>
         )}
         <Flex direction="column" gap={2} style={{ minWidth: 0, flex: 1 }}>
           <Typography.Title
-            level={4}
             style={{
               color: "#fff",
               margin: 0,
@@ -230,9 +249,9 @@ function MiniAppHeader({ title, subtitle, logoUrl, themeColor }) {
             {title || "Mini App"}
           </Typography.Title>
           {subtitle ? (
-            <Typography.Caption style={{ color: "rgba(255,255,255,0.85)" }}>
+            <Typography.Label style={{ color: "rgba(255,255,255,0.85)" }}>
               {subtitle}
-            </Typography.Caption>
+            </Typography.Label>
           ) : null}
         </Flex>
       </Flex>
@@ -243,31 +262,35 @@ function MiniAppHeader({ title, subtitle, logoUrl, themeColor }) {
 /**
  * Отрисовка контента страницы (HTML/Markdown из CMS).
  *
- * Сейчас используется `dangerouslySetInnerHTML`, т.к. контент введён внутри
- * компании (не UGC) и рендерится в нативном WebView мессенджера. Если в будущем
- * появится публичное редактирование — стоит прогонять через DOMPurify.
+ * Сейчас используется `dangerouslySetInnerHTML`, т.к. контент вводят внутри
+ * компании (не UGC) и рендерится в нативном WebView мессенджера. Если позже
+ * появится публичное редактирование — прогнать через DOMPurify.
  */
 function MiniAppPageContent({ page }) {
   if (!page) {
     return (
       <Flex direction="column" align="center" gap={8} style={{ padding: 32, textAlign: "center" }}>
-        <Typography.Title level={4}>Страница не выбрана</Typography.Title>
-        <Typography.Text>Выберите раздел в нижнем меню.</Typography.Text>
+        <Typography.Title>Страница не выбрана</Typography.Title>
+        <Typography.Body>Выберите раздел в нижнем меню.</Typography.Body>
       </Flex>
     );
   }
   return (
     <Container>
       <Flex direction="column" gap={12} style={{ padding: "16px 16px 24px" }}>
-        <Typography.Title level={3}>{page.title}</Typography.Title>
+        <Typography.Title>{page.title}</Typography.Title>
         {page.content ? (
           <div
             className="miniapp-page-content"
-            style={{ lineHeight: 1.55, fontSize: 15, color: "var(--max-color-text-primary, #111)" }}
+            style={{
+              lineHeight: 1.55,
+              fontSize: 15,
+              color: "var(--max-color-text-primary, #111)",
+            }}
             dangerouslySetInnerHTML={{ __html: page.content }}
           />
         ) : (
-          <Typography.Text>Раздел пока пуст.</Typography.Text>
+          <Typography.Body>Раздел пока пуст.</Typography.Body>
         )}
       </Flex>
     </Container>
@@ -384,7 +407,7 @@ export function MiniAppEntryPage() {
   }, [setThemeColor]);
 
   if (status === "loading") {
-    return <Spinner label="Загружаем содержимое…" />;
+    return <LoadingScreen label="Загружаем содержимое…" />;
   }
   if (status === "error") {
     return <ErrorScreen title={errorTitle} detail={errorDetail} onRetry={bootstrap} />;
@@ -411,10 +434,10 @@ export function MiniAppEntryPage() {
             gap={8}
             style={{ padding: 32, textAlign: "center" }}
           >
-            <Typography.Title level={4}>Пока нет опубликованных страниц</Typography.Title>
-            <Typography.Text>
+            <Typography.Title>Пока нет опубликованных страниц</Typography.Title>
+            <Typography.Body>
               Администратор ещё не наполнил сайт. Попробуйте позже.
-            </Typography.Text>
+            </Typography.Body>
           </Flex>
         ) : (
           <MiniAppPageContent page={activePage} />
