@@ -7,39 +7,71 @@ import { useMiniAppConfigStore } from "../../store/miniAppConfigStore.js";
 import { useMiniAppThemeStore } from "../../store/miniAppThemeStore.js";
 
 /**
- * Извлекает строку init_data из параметров запуска Web App мессенджера.
+ * Извлекает строку ``init_data`` из параметров запуска Mini App мессенджера MAX.
+ *
+ * Согласно документации MAX (https://dev.max.ru/docs/webapps/validation) стартовые
+ * параметры передаются в URL-фрагменте в поле ``WebAppData``:
+ *
+ *     https://example.com/inn/1234#WebAppData=<urlencoded>&WebAppPlatform=web&WebAppVersion=26.2.8
+ *
+ * Клиент обязан передать на бэкенд ИМЕННО содержимое ``WebAppData`` (один раз URL-
+ * декодированное — это автоматически делает ``URLSearchParams.get``). Именно по этой
+ * строке бэкенд считает HMAC-SHA256 и проверяет поле ``hash``.
+ *
+ * Порядок поиска (в порядке приоритета):
+ *   1. ``window.WebApp.initData`` — официальный MAX Bridge; содержит уже готовую
+ *      строку ``WebAppData``.
+ *   2. URL-фрагмент (``window.location.hash``), ключ ``WebAppData``.
+ *   3. Совместимость с Telegram-стилем (``tgWebAppData``/``initData``) и явный
+ *      query-param ``?init_data=…`` — пригодится для E2E тестов и прежних клиентов.
+ *   4. Dev-fallback ``?chat_id=…`` для браузерной отладки (подпись будет невалидна —
+ *      бэкенд отдаст 401/403, но это ожидаемо вне мессенджера).
  */
 function extractInitData(searchParams) {
   const winAny = typeof window !== "undefined" ? window : {};
 
-  const fromWindow =
+  const fromMaxBridge =
+    winAny?.WebApp?.initData ||
     winAny?.MaxWebApp?.initData ||
     winAny?.maxWebApp?.initData ||
     winAny?.TelegramWebApp?.initData ||
     winAny?.Telegram?.WebApp?.initData ||
     "";
-  if (typeof fromWindow === "string" && fromWindow.trim()) {
-    return fromWindow.trim();
+  if (typeof fromMaxBridge === "string" && fromMaxBridge.trim()) {
+    return fromMaxBridge.trim();
+  }
+
+  const rawHash =
+    typeof window !== "undefined" ? (window.location.hash || "").replace(/^#/, "") : "";
+  if (rawHash) {
+    let hashParams = null;
+    try {
+      hashParams = new URLSearchParams(rawHash);
+    } catch {
+      hashParams = null;
+    }
+    if (hashParams) {
+      const webAppData = hashParams.get("WebAppData");
+      if (webAppData && webAppData.trim()) return webAppData.trim();
+      const tgLike =
+        hashParams.get("tgWebAppData") ||
+        hashParams.get("initData") ||
+        hashParams.get("init_data") ||
+        "";
+      if (tgLike && tgLike.trim()) return tgLike.trim();
+    }
+    if (/=/.test(rawHash) && /\bhash=/.test(rawHash)) {
+      return rawHash;
+    }
   }
 
   const fromQuery =
     searchParams.get("init_data") ||
     searchParams.get("initData") ||
     searchParams.get("tgWebAppData") ||
+    searchParams.get("WebAppData") ||
     "";
   if (fromQuery) return fromQuery;
-
-  const hash = typeof window !== "undefined" ? (window.location.hash || "").replace(/^#/, "") : "";
-  if (hash) {
-    const parsed = new URLSearchParams(hash);
-    const h =
-      parsed.get("init_data") ||
-      parsed.get("initData") ||
-      parsed.get("tgWebAppData") ||
-      "";
-    if (h) return h;
-    if (/=/.test(hash)) return hash;
-  }
 
   const devChatId = searchParams.get("chat_id");
   if (devChatId) {

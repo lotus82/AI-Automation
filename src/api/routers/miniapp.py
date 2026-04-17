@@ -133,12 +133,30 @@ async def _verify_init_data_signature(init_data: str, bot_token: str) -> dict[st
             ),
         )
 
-    parsed_data = dict(parse_qsl(init_data or "", keep_blank_values=True))
-
-    if "hash" not in parsed_data:
+    raw = (init_data or "").strip()
+    if not raw:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Отсутствует hash в данных авторизации",
+            detail=(
+                "Не переданы стартовые параметры мессенджера (WebAppData). "
+                "Откройте Mini App из бота MAX."
+            ),
+        )
+
+    # parse_qsl: разбивает по '&', URL-декодирует значения — соответствует шагам 1-4
+    # валидации MAX (https://dev.max.ru/docs/webapps/validation).
+    parsed_data = dict(parse_qsl(raw, keep_blank_values=True))
+
+    if "hash" not in parsed_data:
+        # Попадаем сюда, если с фронта пришла строка без hash (например, содержимое
+        # ``#WebAppData=…`` не было извлечено и прилетел dev-fallback `chat_id=…`).
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=(
+                "В данных авторизации отсутствует подпись (hash). "
+                "Откройте Mini App из бота MAX — клиент должен передать параметр "
+                "WebAppData из URL-фрагмента."
+            ),
         )
 
     received_hash = parsed_data.pop("hash")
@@ -167,14 +185,14 @@ async def _verify_init_data_signature(init_data: str, bot_token: str) -> dict[st
     return parsed_data
 
 
-def _user_object_from_parsed(parsed: dict[str, str]) -> dict:
-    """Достаёт вложенный JSON-объект ``user`` из проверенных данных (если он есть).
+def _json_object_from_parsed(parsed: dict[str, str], key: str) -> dict:
+    """Достаёт вложенный JSON-объект по ключу из проверенных данных.
 
-    В Telegram Web Apps и у большинства реализаций MAX параметр ``user`` — это сериализованный
-    JSON с полями ``id``, ``first_name``, ``last_name``, ``username`` и т.д. Если ключа нет
-    или это не валидный JSON — возвращаем пустой dict (caller упадёт с 400 уже на chat_id).
+    У MAX поля ``user`` и ``chat`` — сериализованные JSON-объекты (см.
+    https://dev.max.ru/docs/webapps/bridge). Если ключа нет или значение не JSON-
+    объект, возвращаем пустой dict.
     """
-    raw = parsed.get("user")
+    raw = parsed.get(key)
     if not raw:
         return {}
     try:
@@ -184,17 +202,30 @@ def _user_object_from_parsed(parsed: dict[str, str]) -> dict:
     return obj if isinstance(obj, dict) else {}
 
 
-def _extract_chat_id(parsed: dict[str, str]) -> str:
-    """Достаёт chat_id из ПРОВЕРЕННЫХ полей init_data.
+def _user_object_from_parsed(parsed: dict[str, str]) -> dict:
+    """Алиас для user-объекта (обратная совместимость с вызывающим кодом)."""
+    return _json_object_from_parsed(parsed, "user")
 
-    Приоритет:
-      1. Прямое поле ``chat_id`` (контракт MAX, bot с кнопкой Web App привязанной к чату).
-      2. Вложенный ``user.id`` (стандарт Telegram Web Apps).
-      3. Запасные плоские поля: ``user_id``, ``id``.
+
+def _extract_chat_id(parsed: dict[str, str]) -> str:
+    """Достаёт chat_id из ПРОВЕРЕННЫХ полей init_data MAX.
+
+    Согласно https://dev.max.ru/docs/webapps/bridge, MAX передаёт объект ``chat`` в
+    формате ``{"id": 12345, "type": "DIALOG"}``. Идентификатор пользователя —
+    в объекте ``user`` (``user.id``). Поэтому приоритет:
+
+      1. ``chat.id`` — собственно идентификатор чата (main identity для MAX Mini App,
+         т.к. на одного пользователя может приходиться несколько чатов с ботом).
+      2. ``user.id`` — стандарт Telegram WebApp (MAX также возвращает это поле).
+      3. Плоский ``chat_id`` — для нестандартных/legacy-клиентов и локальной отладки.
+      4. Запасные плоские поля ``user_id``/``id``.
     """
-    direct = (parsed.get("chat_id") or "").strip()
-    if direct:
-        return direct
+    chat_obj = _json_object_from_parsed(parsed, "chat")
+    cid = chat_obj.get("id")
+    if cid is not None:
+        s = str(cid).strip()
+        if s:
+            return s
 
     user_obj = _user_object_from_parsed(parsed)
     uid = user_obj.get("id")
@@ -203,6 +234,10 @@ def _extract_chat_id(parsed: dict[str, str]) -> str:
         if s:
             return s
 
+    direct = (parsed.get("chat_id") or "").strip()
+    if direct:
+        return direct
+
     for key in ("user_id", "id"):
         v = (parsed.get(key) or "").strip()
         if v:
@@ -210,7 +245,7 @@ def _extract_chat_id(parsed: dict[str, str]) -> str:
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail="В init_data отсутствует идентификатор чата (chat_id)",
+        detail="В init_data отсутствует идентификатор чата (chat.id / user.id)",
     )
 
 
