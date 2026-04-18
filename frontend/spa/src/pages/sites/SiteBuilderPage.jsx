@@ -9,10 +9,13 @@ import {
   RefreshCcw,
   Save,
   Settings as SettingsIcon,
+  Smartphone,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
+import ReactQuill from "react-quill";
+import "react-quill/dist/quill.snow.css";
 import api from "../../api/client.js";
 import { useAuthStore } from "../../store/authStore.js";
 import { PAGE_SHELL, PAGE_TEXT, TAB_ROW, tabBtn } from "../../styles/pageLayout.js";
@@ -356,42 +359,58 @@ export function SiteBuilderPage() {
       </div>
 
       <div className="rounded-b-2xl rounded-tr-2xl border border-t-0 border-slate-600 bg-slate-900/60 p-4 sm:p-6">
-        {tab === "settings" ? (
-          <SettingsTab
-            form={form}
-            setForm={setForm}
-            setContactField={setContactField}
-            onSave={onSaveSite}
-            saving={savingSite}
-            loading={loadingSite}
-          />
-        ) : null}
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="min-w-0">
+            {tab === "settings" ? (
+              <SettingsTab
+                form={form}
+                setForm={setForm}
+                setContactField={setContactField}
+                onSave={onSaveSite}
+                saving={savingSite}
+                loading={loadingSite}
+              />
+            ) : null}
 
-        {tab === "pages" ? (
-          <PagesTab
-            pages={pages}
-            loading={loadingPages}
-            onCreate={onCreatePage}
-            onOpen={openPageEditor}
-            onDelete={onDeletePage}
-            onChangeOrder={onChangePageOrder}
-            onTogglePublished={onTogglePublished}
-          />
-        ) : null}
+            {tab === "pages" ? (
+              <PagesTab
+                pages={pages}
+                loading={loadingPages}
+                onCreate={onCreatePage}
+                onOpen={openPageEditor}
+                onDelete={onDeletePage}
+                onChangeOrder={onChangePageOrder}
+                onTogglePublished={onTogglePublished}
+              />
+            ) : null}
 
-        {tab === "page-editor" ? (
-          <PageEditorTab
-            page={editingPage}
-            form={pageForm}
-            setForm={setPageForm}
-            onSave={onSavePage}
-            saving={pageSaving}
-            onDelete={() =>
-              editingPage ? onDeletePage(editingPage.id, editingPage.title) : null
-            }
-            onBackToList={() => setTab("pages")}
-          />
-        ) : null}
+            {tab === "page-editor" ? (
+              <PageEditorTab
+                page={editingPage}
+                form={pageForm}
+                setForm={setPageForm}
+                onSave={onSavePage}
+                saving={pageSaving}
+                onDelete={() =>
+                  editingPage ? onDeletePage(editingPage.id, editingPage.title) : null
+                }
+                onBackToList={() => setTab("pages")}
+              />
+            ) : null}
+          </div>
+
+          <aside className="min-w-0">
+            <div className="xl:sticky xl:top-4">
+              <MiniAppPreview
+                tab={tab}
+                form={form}
+                pages={pages}
+                editingPageId={editingPageId}
+                pageForm={pageForm}
+              />
+            </div>
+          </aside>
+        </div>
       </div>
     </div>
   );
@@ -630,6 +649,8 @@ function PagesTab({ pages, loading, onCreate, onOpen, onDelete, onChangeOrder, o
 }
 
 function PageEditorTab({ page, form, setForm, onSave, saving, onDelete, onBackToList }) {
+  const [isHtmlMode, setIsHtmlMode] = useState(false);
+
   if (!page) {
     return (
       <div className="py-8 text-center text-slate-400">
@@ -710,18 +731,49 @@ function PageEditorTab({ page, form, setForm, onSave, saving, onDelete, onBackTo
         </Field>
       </div>
 
-      <Field
-        label="Контент"
-        hint="Пока — простой текст / HTML / Markdown. В будущем подключим WYSIWYG."
-      >
-        <textarea
-          value={form.content}
-          onChange={(e) => setForm((p) => ({ ...p, content: e.target.value }))}
-          className={`${inputClass} min-h-[360px] font-mono text-[13px]`}
-          maxLength={500000}
-          placeholder="<h1>Добро пожаловать</h1>&#10;<p>Описание вашего сервиса…</p>"
-        />
-      </Field>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="block text-xs font-medium text-slate-300">Контент</label>
+          <button
+            type="button"
+            onClick={() => setIsHtmlMode(!isHtmlMode)}
+            className="text-xs text-emerald-400 hover:text-emerald-300 underline underline-offset-2"
+          >
+            {isHtmlMode ? "Вернуться в визуальный редактор" : "Редактировать HTML"}
+          </button>
+        </div>
+        
+        {isHtmlMode ? (
+          <textarea
+            value={form.content}
+            onChange={(e) => setForm((p) => ({ ...p, content: e.target.value }))}
+            className={`${inputClass} min-h-[360px] font-mono text-[13px]`}
+            maxLength={500000}
+            placeholder="<h1>Добро пожаловать</h1>&#10;<p>Описание вашего сервиса…</p>"
+          />
+        ) : (
+          <div className="rounded-lg border border-slate-700 bg-white text-slate-900 overflow-hidden">
+            <ReactQuill
+              theme="snow"
+              value={form.content}
+              onChange={(val) => setForm((p) => ({ ...p, content: val }))}
+              className="h-[320px] pb-10"
+              modules={{
+                toolbar: [
+                  [{ header: [1, 2, 3, false] }],
+                  ["bold", "italic", "underline", "strike", "blockquote"],
+                  [{ list: "ordered" }, { list: "bullet" }],
+                  ["link", "image"],
+                  ["clean"],
+                ],
+              }}
+            />
+          </div>
+        )}
+        <div className="text-[11px] text-slate-500">
+          В визуальном редакторе могут удаляться сложные HTML-теги и классы. Для тонкой настройки используйте HTML-режим.
+        </div>
+      </div>
 
       <div className="flex justify-end">
         <button
@@ -734,5 +786,223 @@ function PageEditorTab({ page, form, setForm, onSave, saving, onDelete, onBackTo
         </button>
       </div>
     </form>
+  );
+}
+
+// ============================================================================
+// Live-превью Mini App
+// ============================================================================
+
+/** Безопасный hex — для inline-стилей превью (защита от мусора в поле). */
+function sanitizeHex(hex, fallback = "#0f172a") {
+  if (typeof hex !== "string") return fallback;
+  const s = hex.trim();
+  return /^#[0-9a-fA-F]{3}$/.test(s) || /^#[0-9a-fA-F]{6}$/.test(s) ? s : fallback;
+}
+
+/**
+ * Превью Mini App в виде «телефона».
+ *
+ * Особенности:
+ *  - Использует ``form`` (несохранённые настройки сайта) и ``pageForm`` (живой
+ *    ввод редактора страницы), чтобы админ видел изменения до нажатия «Сохранить».
+ *  - Активная страница выбирается исходя из вкладки:
+ *      settings → первая опубликованная,
+ *      pages → первая опубликованная,
+ *      page-editor → редактируемая страница (с актуальными значениями из pageForm).
+ *  - В меню (Tabbar) подставляется title и slug из pageForm для редактируемой
+ *    страницы — так видно порядок / публикацию до сохранения.
+ *  - Рендер HTML страницы — через ``dangerouslySetInnerHTML`` (контент вводится
+ *    внутри компании, тот же способ использует публичный Mini App).
+ */
+function MiniAppPreview({ tab, form, pages, editingPageId, pageForm }) {
+  const themeColor = sanitizeHex(form?.theme_color, "#0f172a");
+  const title = (form?.title || "").trim() || (form?.name || "").trim() || "Mini App";
+  const subtitle = (form?.subtitle || "").trim();
+  const logoUrl = (form?.logo_url || "").trim();
+
+  // Подменяем редактируемую страницу в списке живыми значениями формы редактора.
+  const liveList = useMemo(() => {
+    if (!Array.isArray(pages)) return [];
+    if (tab !== "page-editor" || !editingPageId) return pages;
+    return pages.map((p) =>
+      p.id === editingPageId
+        ? {
+            ...p,
+            title: (pageForm?.title || p.title || "").trim() || p.title,
+            slug: (pageForm?.slug || p.slug || "").trim() || p.slug,
+            content: pageForm?.content ?? p.content ?? "",
+            order_index: Number.isFinite(Number(pageForm?.order_index))
+              ? Number(pageForm.order_index)
+              : p.order_index,
+            is_published: Boolean(pageForm?.is_published ?? p.is_published),
+          }
+        : p,
+    );
+  }, [pages, tab, editingPageId, pageForm]);
+
+  const publishedPages = useMemo(
+    () =>
+      (liveList || [])
+        .filter((p) => p.is_published)
+        .slice()
+        .sort(
+          (a, b) =>
+            (Number(a.order_index) || 0) - (Number(b.order_index) || 0) ||
+            String(a.title).localeCompare(String(b.title)),
+        ),
+    [liveList],
+  );
+
+  const activePage = useMemo(() => {
+    if (tab === "page-editor" && editingPageId) {
+      const live = liveList.find((p) => p.id === editingPageId);
+      if (live) return live;
+    }
+    return publishedPages[0] || null;
+  }, [tab, editingPageId, liveList, publishedPages]);
+
+  const headerBackground = `linear-gradient(135deg, ${themeColor} 0%, ${themeColor}DD 100%)`;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 text-xs font-medium text-slate-300">
+        <Smartphone className="h-4 w-4 text-slate-400" aria-hidden />
+        Предпросмотр Mini App
+        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
+          Live
+        </span>
+      </div>
+
+      <div className="mx-auto w-full max-w-[340px]">
+        <div
+          className="relative overflow-hidden rounded-[38px] border border-slate-700 bg-black p-2 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.6)]"
+          aria-label="Превью Mini App"
+        >
+          <div className="pointer-events-none absolute left-1/2 top-1.5 z-10 h-5 w-24 -translate-x-1/2 rounded-full bg-black" />
+          <div
+            className="relative flex h-[600px] w-full flex-col overflow-hidden rounded-[30px] bg-white"
+            style={{ colorScheme: "light" }}
+          >
+            <div
+              className="flex items-center gap-3 px-4 pb-3 pt-6 text-white"
+              style={{ background: headerBackground }}
+            >
+              {logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt=""
+                  className="h-11 w-11 rounded-xl object-cover"
+                  style={{ background: "rgba(255,255,255,0.15)" }}
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none";
+                  }}
+                />
+              ) : (
+                <div
+                  aria-hidden
+                  className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/20 text-lg font-semibold"
+                >
+                  {(title || "M").slice(0, 1).toUpperCase()}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[15px] font-semibold leading-tight">{title}</div>
+                {subtitle ? (
+                  <div className="truncate text-[11px] text-white/85">{subtitle}</div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 py-4">
+              {activePage ? (
+                <PagePreviewBody page={activePage} />
+              ) : publishedPages.length === 0 ? (
+                <EmptyPreview
+                  title="Нет опубликованных страниц"
+                  detail="Создайте страницу во вкладке «Страницы» и включите публикацию."
+                />
+              ) : (
+                <EmptyPreview
+                  title="Страница не выбрана"
+                  detail="Выберите раздел в нижнем меню."
+                />
+              )}
+            </div>
+
+            <nav className="border-t border-slate-200 bg-white/95 backdrop-blur">
+              {publishedPages.length === 0 ? (
+                <div className="px-3 py-2 text-center text-[11px] text-slate-400">
+                  Меню появится после публикации хотя бы одной страницы
+                </div>
+              ) : (
+                <ul className="flex items-stretch px-1 py-1">
+                  {publishedPages.map((p) => {
+                    const isActive = activePage && p.id === activePage.id;
+                    return (
+                      <li key={p.id} className="flex flex-1">
+                        <div
+                          className="flex w-full flex-col items-center justify-center gap-1 px-1 py-1.5 text-[11px] leading-tight"
+                          style={{
+                            color: isActive ? themeColor : "#6b7280",
+                            fontWeight: isActive ? 600 : 500,
+                          }}
+                        >
+                          <span
+                            aria-hidden
+                            className="inline-block h-1.5 w-1.5 rounded-full"
+                            style={{
+                              background: isActive ? themeColor : "transparent",
+                            }}
+                          />
+                          <span
+                            className="w-full truncate text-center"
+                            title={p.title}
+                          >
+                            {p.title || "—"}
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </nav>
+          </div>
+        </div>
+      </div>
+
+      <div className="text-[11px] text-slate-500">
+        В реальном Mini App цвет темы, шапка и нижнее меню строятся по этим же
+        настройкам. Редактируемая страница обновляется прямо во время ввода.
+      </div>
+    </div>
+  );
+}
+
+function PagePreviewBody({ page }) {
+  return (
+    <article className="text-slate-800">
+      <h2 className="mb-2 text-lg font-semibold text-slate-900">
+        {(page.title || "").trim() || "Без заголовка"}
+      </h2>
+      {page.content ? (
+        <div
+          className="miniapp-preview-content space-y-2 text-[14px] leading-relaxed"
+          dangerouslySetInnerHTML={{ __html: page.content }}
+        />
+      ) : (
+        <p className="text-[13px] text-slate-500">Раздел пока пуст.</p>
+      )}
+    </article>
+  );
+}
+
+function EmptyPreview({ title, detail }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-1 text-center text-slate-500">
+      <div className="text-sm font-semibold text-slate-700">{title}</div>
+      {detail ? <div className="text-xs">{detail}</div> : null}
+    </div>
   );
 }
