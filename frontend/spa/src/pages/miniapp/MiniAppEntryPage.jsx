@@ -140,10 +140,8 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
     <nav
       aria-label="Навигация Mini App"
       style={{
-        position: "sticky",
-        bottom: 0,
-        left: 0,
-        right: 0,
+        flexShrink: 0,
+        flexGrow: 0,
         zIndex: 10,
         backdropFilter: "blur(10px)",
         background: "var(--max-color-panel-secondary, rgba(255,255,255,0.96))",
@@ -227,12 +225,15 @@ function MiniAppHeader({ title, subtitle, logoUrl, themeColor }) {
   const background = themeColor
     ? `linear-gradient(135deg, ${themeColor} 0%, ${themeColor}DD 100%)`
     : "var(--max-color-primary, #0f172a)";
+  /* Обычный header вместо Panel: у Panel в max-ui часто flex-grow:1 — шапка съедала весь экран. */
   return (
-    <Panel
-      mode="primary"
+    <header
       style={{
+        flexShrink: 0,
+        flexGrow: 0,
+        boxSizing: "border-box",
         padding: "16px",
-        borderBottom: "1px solid var(--max-color-separator, rgba(0,0,0,0.08))",
+        borderBottom: "1px solid rgba(0,0,0,0.08)",
         background,
         color: "#fff",
       }}
@@ -270,25 +271,28 @@ function MiniAppHeader({ title, subtitle, logoUrl, themeColor }) {
           </div>
         )}
         <Flex direction="column" gap={2} style={{ minWidth: 0, flex: 1 }}>
-          <Typography.Title
+          <div
             style={{
               color: "#fff",
               margin: 0,
+              fontSize: 18,
+              fontWeight: 600,
+              lineHeight: 1.25,
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
             }}
           >
             {title || "Mini App"}
-          </Typography.Title>
+          </div>
           {subtitle ? (
-            <Typography.Label style={{ color: "rgba(255,255,255,0.85)" }}>
+            <div style={{ color: "rgba(255,255,255,0.9)", fontSize: 13, lineHeight: 1.35 }}>
               {subtitle}
-            </Typography.Label>
+            </div>
           ) : null}
         </Flex>
       </Flex>
-    </Panel>
+    </header>
   );
 }
 
@@ -312,19 +316,33 @@ function MiniAppPageContent({ page }) {
   }
   return (
     <div style={{ padding: "16px 16px 24px" }}>
-      <Typography.Title style={{ marginBottom: 12 }}>{page.title}</Typography.Title>
+      {/*
+        Не используем Typography.Title для заголовка страницы: в MAX UI это часто
+        «display»-уровень и тянет accent (theme_color), визуально перекрывая контент.
+      */}
+      <h2
+        style={{
+          margin: "0 0 12px",
+          fontSize: 20,
+          fontWeight: 600,
+          lineHeight: 1.3,
+          color: "#111827",
+        }}
+      >
+        {(page.title || "").trim() || "Страница"}
+      </h2>
       {page.content ? (
         <div
           className="miniapp-page-content"
           style={{
             lineHeight: 1.55,
             fontSize: 15,
-            color: "var(--max-color-text-primary, #111)",
+            color: "#1f2937",
           }}
           dangerouslySetInnerHTML={{ __html: page.content }}
         />
       ) : (
-        <Typography.Body>Раздел пока пуст.</Typography.Body>
+        <p style={{ margin: 0, fontSize: 15, color: "#6b7280" }}>Раздел пока пуст.</p>
       )}
     </div>
   );
@@ -471,8 +489,7 @@ export function MiniAppEntryPage() {
   const themeColor = config?.theme_color || null;
 
   return (
-    <Panel
-      mode="secondary"
+    <div
       style={{
         flex: 1,
         minHeight: 0,
@@ -480,6 +497,8 @@ export function MiniAppEntryPage() {
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
+        alignItems: "stretch",
+        background: "var(--max-color-bg-secondary, #f3f4f6)",
       }}
     >
       <MiniAppHeader
@@ -488,7 +507,18 @@ export function MiniAppEntryPage() {
         logoUrl={config?.logo_url}
         themeColor={themeColor}
       />
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overscrollBehavior: "contain" }}>
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          overscrollBehavior: "contain",
+          WebkitOverflowScrolling: "touch",
+          /* Явный светлый фон: в dark-схеме MAX UI иначе тело страницы может быть невидимо */
+          background: "#ffffff",
+          color: "#111827",
+        }}
+      >
         {pages.length === 0 ? (
           <Flex
             direction="column"
@@ -511,6 +541,6 @@ export function MiniAppEntryPage() {
         onChange={setActiveSlug}
         themeColor={themeColor}
       />
-    </Panel>
+    </div>
   );
 }
