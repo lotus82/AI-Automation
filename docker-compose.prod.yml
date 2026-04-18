@@ -63,9 +63,11 @@ services:
       VOICE_TTS_PROVIDER: ${VOICE_TTS_PROVIDER:-salutespeech}
       CALL_RECORDINGS_DIR: /app/data/recordings
       SHOP_UPLOAD_DIR: /app/data/shop_uploads
+      SITE_UPLOAD_DIR: /app/data/site_uploads
     volumes:
       - recordings_data:/app/data/recordings
       - shop_uploads_data:/app/data/shop_uploads
+      - site_uploads_data:/app/data/site_uploads
       # Панель «Логи» (ADMIN_LOGS_TOKEN): только read-only, см. README по безопасности
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
@@ -163,3 +165,4 @@ volumes:
   postgres_data:
   recordings_data:
   shop_uploads_data:
+  site_uploads_data:

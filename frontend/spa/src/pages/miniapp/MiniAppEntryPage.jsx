@@ -13,7 +13,7 @@ import "./miniappPageContent.css";
  * Отступ снизу у области прокрутки: таббар `position: fixed` к нижнему краю WebView.
  * Увеличьте, если чипы меню стали выше (две строки + safe-area), см. MiniAppTabbar.
  */
-const MINIAPP_TABBAR_SCROLL_PAD = "calc(env(safe-area-inset-bottom, 0px) + 10px)";
+const MINIAPP_TABBAR_SCROLL_PAD = "calc(env(safe-area-inset-bottom, 0px) + 0px)";
 
 /**
  * Извлекает строку ``init_data`` из параметров запуска Mini App мессенджера MAX.
@@ -209,7 +209,7 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
                 aria-current={active ? "page" : undefined}
                 style={{
                   width: "100%",
-                  minHeight: 30,
+                  minHeight: 40,
                   padding: "4px 8px",
                   display: "flex",
                   alignItems: "center",
@@ -222,7 +222,7 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
                   background: active ? hexToRgba(accent, 0.16) : "rgba(255, 255, 255, 0.9)",
                   color: active ? accent : "#475569",
                   fontWeight: active ? 700 : 600,
-                  fontSize: 12,
+                  fontSize: 14,
                   lineHeight: 1.4,
                   letterSpacing: active ? "-0.01em" : "0",
                   boxShadow: active

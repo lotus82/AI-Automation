@@ -70,11 +70,15 @@ services:
       ASTERISK_RTP_PORT_MIN: "18000"
       ASTERISK_RTP_PORT_MAX: "18015"
       CALL_RECORDINGS_DIR: /app/data/recordings
+      SHOP_UPLOAD_DIR: /app/data/shop_uploads
+      SITE_UPLOAD_DIR: /app/data/site_uploads
     volumes:
       - ./src:/app/src
       - ./alembic:/app/alembic
       - ./alembic.ini:/app/alembic.ini
       - ./data/recordings:/app/data/recordings
+      - ./data/shop_uploads:/app/data/shop_uploads
+      - ./data/site_uploads:/app/data/site_uploads
     depends_on:
       postgres:
         condition: service_healthy
