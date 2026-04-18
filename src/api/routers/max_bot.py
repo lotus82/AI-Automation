@@ -138,7 +138,7 @@ async def max_messenger_webhook(
 
     async def on_intermediate(msg: str) -> None:
         """Сразу уведомляет пользователя MAX до выполнения веб-поиска (фаза 21)."""
-        await max_client.send_message(chat_id, msg)
+        await max_client.send_message(chat_id, msg, text_format="auto")
 
     voice_audio: list[bytes] = []
 
@@ -156,7 +156,7 @@ async def max_messenger_webhook(
             on_intermediate_message=on_intermediate,
             on_voice_generated=on_voice_generated,
         )
-        await max_client.send_message(chat_id, reply)
+        await max_client.send_message(chat_id, reply, text_format="auto")
         if voice_audio:
             try:
                 await max_client.send_voice_message(chat_id, voice_audio[0])

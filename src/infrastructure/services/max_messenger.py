@@ -10,9 +10,10 @@ import hashlib
 import json
 import logging
 import os
+import re
 import socket
 from collections import Counter
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 import httpx
@@ -101,6 +102,22 @@ def _truncate_utf8_for_max_api(text: str, max_bytes: int = _MAX_OUTGOING_MESSAGE
         except UnicodeDecodeError:
             cut -= 1
     return suffix
+
+
+_MAX_MD_LINK_RE = re.compile(
+    r"\[[^\]\n]{1,400}\]\(\s*https?://[^)\s]{1,2000}\s*\)",
+    re.IGNORECASE,
+)
+
+
+def _infer_max_api_text_format(text: str) -> Literal["html", "markdown"] | None:
+    """Подбирает ``format`` для POST /messages (см. dev.max.ru: html | markdown). Без поля — разметка не парсится."""
+    s = text or ""
+    if re.search(r"<a\s[^>]*href\s*=", s, re.IGNORECASE):
+        return "html"
+    if _MAX_MD_LINK_RE.search(s):
+        return "markdown"
+    return None
 
 
 async def _post_max_voice_multipart(
@@ -722,7 +739,7 @@ class MaxMessengerClient:
                 session_id = str(chat_id)
 
                 async def on_intermediate(msg: str) -> None:
-                    await self.send_message(chat_id, msg)
+                    await self.send_message(chat_id, msg, text_format="auto")
 
                 voice_audio: list[bytes] = []
 
@@ -754,7 +771,7 @@ class MaxMessengerClient:
                     continue
 
                 try:
-                    await self.send_message(chat_id, reply)
+                    await self.send_message(chat_id, reply, text_format="auto")
                     replies_sent += 1
                     logger.info(
                         "MAX long poll: ответ отправлен chat_id=%s len(reply)=%s instance=%s",
@@ -788,8 +805,18 @@ class MaxMessengerClient:
                     replies_sent,
                 )
 
-    async def send_message(self, chat_id: int, text: str) -> None:
-        """POST ``/messages`` на Platform API: ``chat_id`` в query, токен в ``Authorization`` (см. dev.max.ru)."""
+    async def send_message(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        text_format: Literal["plain", "html", "markdown", "auto"] | None = None,
+    ) -> None:
+        """POST ``/messages`` на Platform API: ``chat_id`` в query, токен в ``Authorization`` (см. dev.max.ru).
+
+        Поле API ``format`` (``html`` / ``markdown``) нужно для кликабельных ссылок в тексте; иначе теги уходят как обычный текст.
+        ``text_format='auto'`` — выставить ``format``, если в тексте есть HTML-ссылки или markdown ``[текст](url)``.
+        """
         token = await self._resolve_bot_token()
         if not token:
             msg = (
@@ -812,7 +839,16 @@ class MaxMessengerClient:
                 len(raw_text.encode("utf-8")),
                 chat_id,
             )
-        payload = {"text": safe}
+        fmt: str | None
+        if text_format in (None, "plain"):
+            fmt = None
+        elif text_format == "auto":
+            fmt = _infer_max_api_text_format(safe)
+        else:
+            fmt = text_format
+        payload: dict[str, Any] = {"text": safe}
+        if fmt:
+            payload["format"] = fmt
 
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
