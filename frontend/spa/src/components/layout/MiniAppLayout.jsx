@@ -104,7 +104,7 @@ export function MiniAppLayout() {
     flexDirection: "column",
     overflow: "hidden",
     paddingTop: "env(safe-area-inset-top, 0px)",
-    paddingBottom: "env(safe-area-inset-bottom, 0px)",
+    /* Нижний safe-area только у таббара (MiniAppTabbar), иначе под панелью остаётся «воздух» */
     paddingLeft: "env(safe-area-inset-left, 0px)",
     paddingRight: "env(safe-area-inset-right, 0px)",
     ...brandStyle,

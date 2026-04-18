@@ -143,6 +143,7 @@ function ErrorScreen({ title, detail, onRetry }) {
 
 /**
  * Нижняя навигация: сегментированные «кнопки» (чипы) с акцентом бренда.
+ * Высоту блока правьте здесь: отступы nav, gap, minHeight/padding/fontSize у button.
  */
 function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
   if (!items || items.length === 0) return null;
@@ -153,15 +154,17 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
       style={{
         flexShrink: 0,
         flexGrow: 0,
+        alignSelf: "stretch",
+        marginTop: "auto",
         zIndex: 10,
         backdropFilter: "blur(12px)",
         background: "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(248,250,252,0.98) 100%)",
         borderTop: "1px solid rgba(15, 23, 42, 0.08)",
-        boxShadow: "0 -4px 24px rgba(15, 23, 42, 0.06)",
-        paddingTop: 6,
-        paddingLeft: 10,
-        paddingRight: 10,
-        paddingBottom: "calc(6px + env(safe-area-inset-bottom, 0px))",
+        boxShadow: "0 -2px 16px rgba(15, 23, 42, 0.05)",
+        paddingTop: 4,
+        paddingLeft: 8,
+        paddingRight: 8,
+        paddingBottom: "calc(4px + env(safe-area-inset-bottom, 0px))",
       }}
     >
       <ul
@@ -172,8 +175,8 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
           listStyleType: "none",
           margin: 0,
           padding: 0,
-          gap: 6,
-          rowGap: 4,
+          gap: 4,
+          rowGap: 2,
           justifyContent: "center",
           alignItems: "stretch",
         }}
@@ -186,7 +189,7 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
               key={item.slug}
               style={{
                 flex: "1 1 auto",
-                minWidth: "min(100%, 6.5rem)",
+                minWidth: "min(100%, 6rem)",
                 maxWidth: "100%",
                 listStyle: "none",
                 listStyleType: "none",
@@ -198,21 +201,21 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
                 aria-current={active ? "page" : undefined}
                 style={{
                   width: "100%",
-                  minHeight: 36,
-                  padding: "6px 10px",
+                  minHeight: 30,
+                  padding: "4px 8px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   cursor: "pointer",
-                  borderRadius: 11,
+                  borderRadius: 9,
                   border: active
                     ? `1.5px solid ${hexToRgba(accent, 0.55)}`
                     : "1.5px solid rgba(15, 23, 42, 0.1)",
                   background: active ? hexToRgba(accent, 0.16) : "rgba(255, 255, 255, 0.9)",
                   color: active ? accent : "#475569",
                   fontWeight: active ? 700 : 600,
-                  fontSize: 12,
-                  lineHeight: 1.25,
+                  fontSize: 11,
+                  lineHeight: 1.2,
                   letterSpacing: active ? "-0.01em" : "0",
                   boxShadow: active
                     ? `0 2px 8px ${hexToRgba(accent, 0.22)}, inset 0 1px 0 rgba(255,255,255,0.85)`
