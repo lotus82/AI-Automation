@@ -99,6 +99,7 @@ const EMPTY_CONTACTS = {
   max: "",
   whatsapp: "",
   instagram: "",
+  payment_url: "",
 };
 
 /** Поля, которые можно показывать в UI контактов. */
@@ -523,6 +524,7 @@ export function SiteBuilderPage() {
                 page={editingPage}
                 form={pageForm}
                 setForm={setPageForm}
+                paymentLinkDefault={(form.contacts?.payment_url || "").trim()}
                 onSave={onSavePage}
                 saving={pageSaving}
                 onDelete={() =>
@@ -962,6 +964,20 @@ function SettingsTab({ siteId, form, setForm, setSite, setContactField, setError
             />
           </div>
         </Field>
+        <Field
+          label="Ссылка на оплату"
+          hint="Для организации — своя ссылка (например https://sberbank.ru/qr/?uuid=…). Кнопка «QR Сбер» в редакторе страницы подставляет это значение в блок."
+        >
+          <input
+            type="text"
+            value={form.contacts?.payment_url || ""}
+            onChange={(e) => setContactField("payment_url", e.target.value)}
+            className={inputClass}
+            maxLength={1024}
+            placeholder="https://sberbank.ru/qr/?uuid=…"
+            autoComplete="off"
+          />
+        </Field>
       </section>
 
       <section className="space-y-4">
@@ -1118,16 +1134,18 @@ function PagesTab({ pages, loading, onCreate, onOpen, onDelete, onChangeOrder, o
   );
 }
 
-function PageEditorTab({ page, form, setForm, onSave, saving, onDelete, onBackToList }) {
+function PageEditorTab({ page, form, setForm, paymentLinkDefault, onSave, saving, onDelete, onBackToList }) {
   const [isHtmlMode, setIsHtmlMode] = useState(false);
 
   const insertSberDonationBlock = () => {
+    const fromSettings = (paymentLinkDefault || "").trim();
+    const preset = fromSettings || SBER_DONATION_DEFAULT_HREF;
     const raw = window.prompt(
-      "Ссылка для QR и перехода (формат Сбера, можно редактировать целиком):",
-      SBER_DONATION_DEFAULT_HREF,
+      "Ссылка в QR и при нажатии (по умолчанию из «Настроек» сайта; при необходимости измените):",
+      preset,
     );
     if (raw === null) return;
-    const href = String(raw).trim() || SBER_DONATION_DEFAULT_HREF;
+    const href = String(raw).trim() || preset;
     const block = buildSberQrDonationBlockHtml({ href });
     setForm((p) => ({
       ...p,
@@ -1224,7 +1242,7 @@ function PageEditorTab({ page, form, setForm, onSave, saving, onDelete, onBackTo
               type="button"
               onClick={insertSberDonationBlock}
               className="inline-flex items-center gap-1 rounded-lg border border-slate-600 bg-slate-800/80 px-2.5 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-700"
-              title="Вставляет HTML: SVG QR (react-qr-code) и ссылка sberbankonline://…; ссылку можно править в коде страницы"
+              title="SVG QR + ссылка; в MAX открывается через внешний браузер (WebApp.openLink)"
             >
               <QrCode className="h-3.5 w-3.5" aria-hidden />
               QR Сбер (пожертвование)
@@ -1267,9 +1285,10 @@ function PageEditorTab({ page, form, setForm, onSave, saving, onDelete, onBackTo
           </div>
         )}
         <div className="text-[11px] text-slate-500">
-          В визуальном редакторе Quill может упростить разметку (в т.ч. ссылки вида{" "}
-          <code className="rounded bg-slate-800 px-1">sberbankonline://…</code> и встроенный SVG). Блоки с QR и
-          нестандартными ссылками держите в HTML-режиме и сохраняйте страницу из него.
+          В визуальном редакторе Quill может упростить разметку (в т.ч. ссылки и встроенный SVG). Для оплаты из
+          Mini App используйте{" "}
+          <code className="rounded bg-slate-800 px-1">https://sberbank.ru/qr/?uuid=…</code> — открытие идёт через
+          внешний браузер MAX. Блоки с QR держите в HTML-режиме.
         </div>
       </div>
 
@@ -1508,7 +1527,7 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm }) {
 }
 
 function PagePreviewBody({ page }) {
-  const previewContentRef = useMiniAppHtmlLinkDelegate(page?.content);
+  const previewContentRef = useMiniAppHtmlLinkDelegate(page?.content, { forceExternal: true });
   return (
     <article className="text-slate-800">
       <h2 className="mb-2 text-lg font-semibold text-slate-900">

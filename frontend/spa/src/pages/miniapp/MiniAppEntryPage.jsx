@@ -158,10 +158,10 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
         background: "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(248,250,252,0.98) 100%)",
         borderTop: "1px solid rgba(15, 23, 42, 0.08)",
         boxShadow: "0 -4px 24px rgba(15, 23, 42, 0.06)",
-        paddingTop: 10,
-        paddingLeft: 12,
-        paddingRight: 12,
-        paddingBottom: "calc(10px + env(safe-area-inset-bottom, 0px))",
+        paddingTop: 6,
+        paddingLeft: 10,
+        paddingRight: 10,
+        paddingBottom: "calc(6px + env(safe-area-inset-bottom, 0px))",
       }}
     >
       <ul
@@ -172,7 +172,8 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
           listStyleType: "none",
           margin: 0,
           padding: 0,
-          gap: 8,
+          gap: 6,
+          rowGap: 4,
           justifyContent: "center",
           alignItems: "stretch",
         }}
@@ -185,7 +186,7 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
               key={item.slug}
               style={{
                 flex: "1 1 auto",
-                minWidth: "min(100%, 7.5rem)",
+                minWidth: "min(100%, 6.5rem)",
                 maxWidth: "100%",
                 listStyle: "none",
                 listStyleType: "none",
@@ -197,21 +198,21 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
                 aria-current={active ? "page" : undefined}
                 style={{
                   width: "100%",
-                  minHeight: 44,
-                  padding: "10px 14px",
+                  minHeight: 36,
+                  padding: "6px 10px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   cursor: "pointer",
-                  borderRadius: 14,
+                  borderRadius: 11,
                   border: active
                     ? `1.5px solid ${hexToRgba(accent, 0.55)}`
                     : "1.5px solid rgba(15, 23, 42, 0.1)",
                   background: active ? hexToRgba(accent, 0.16) : "rgba(255, 255, 255, 0.9)",
                   color: active ? accent : "#475569",
                   fontWeight: active ? 700 : 600,
-                  fontSize: 13,
-                  lineHeight: 1.3,
+                  fontSize: 12,
+                  lineHeight: 1.25,
                   letterSpacing: active ? "-0.01em" : "0",
                   boxShadow: active
                     ? `0 2px 8px ${hexToRgba(accent, 0.22)}, inset 0 1px 0 rgba(255,255,255,0.85)`
@@ -328,8 +329,8 @@ function MiniAppHeader({ title, subtitle, logoUrl, themeColor }) {
  * Отрисовка контента страницы (HTML/Markdown из CMS).
  *
  * Сейчас используется `dangerouslySetInnerHTML`, т.к. контент вводят внутри
- * компании (не UGC) и рендерится в нативном WebView мессенджера. Если позже
- * появится публичное редактирование — прогнать через DOMPurify.
+ * компании (не UGC) и рендерится в нативном WebView мессенджера. Клики по ссылкам
+ * ведут через WebApp.openLink (внешний браузер), см. useMiniAppHtmlLinkDelegate.
  */
 function MiniAppPageContent({ page }) {
   const contentRef = useMiniAppHtmlLinkDelegate(page?.content);

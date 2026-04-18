@@ -1,24 +1,17 @@
 import { useEffect, useRef } from "react";
+import { openExternalLinkFromMiniApp } from "../utils/miniAppOpenExternalLink.js";
 
 /**
- * В WebView Mini App клики по <a href="sberbankonline://…"> и другим не-http(s) схемам
- * часто не срабатывают. Перехватываем в capture и открываем через location.assign.
- */
-function shouldDelegateNavigation(href) {
-  if (!href || href.startsWith("#")) return false;
-  const t = href.trim();
-  if (/^javascript:/i.test(t)) return false;
-  const low = t.toLowerCase();
-  if (low.startsWith("http://") || low.startsWith("https://")) return false;
-  if (low.startsWith("mailto:") || low.startsWith("tel:") || low.startsWith("sms:")) return false;
-  return /^[a-z][a-z0-9+.-]*:/i.test(t);
-}
-
-/**
- * @param {string | undefined} html — при смене контента перевешиваем обработчик
+ * Ссылки в HTML страницы: в WebView MAX навигация по https отличается от внешнего браузера
+ * (платёж Сбера и др.). Открываем через WebApp.openLink / см. miniAppOpenExternalLink.
+ * mailto/tel/sms — без перехвата.
+ *
+ * @param {string | undefined} html
+ * @param {{ forceExternal?: boolean }} [options] — в превью админки: открывать https в новой вкладке
  * @returns {React.RefObject<HTMLDivElement | null>}
  */
-export function useMiniAppHtmlLinkDelegate(html) {
+export function useMiniAppHtmlLinkDelegate(html, options = {}) {
+  const { forceExternal = false } = options;
   const ref = useRef(null);
 
   useEffect(() => {
@@ -30,15 +23,30 @@ export function useMiniAppHtmlLinkDelegate(html) {
       const anchor = e.target.closest("a[href]");
       if (!anchor || !root.contains(anchor)) return;
       const href = anchor.getAttribute("href");
-      if (!href || !shouldDelegateNavigation(href)) return;
+      if (!href || href.startsWith("#")) return;
+      const t = href.trim();
+      if (/^javascript:/i.test(t)) return;
+      const low = t.toLowerCase();
+      if (low.startsWith("mailto:") || low.startsWith("tel:") || low.startsWith("sms:")) return;
+
       e.preventDefault();
       e.stopPropagation();
-      window.location.assign(href);
+
+      if (forceExternal && (low.startsWith("http://") || low.startsWith("https://"))) {
+        try {
+          window.open(t, "_blank", "noopener,noreferrer");
+        } catch {
+          window.location.assign(t);
+        }
+        return;
+      }
+
+      openExternalLinkFromMiniApp(t);
     };
 
     root.addEventListener("click", onClickCapture, true);
     return () => root.removeEventListener("click", onClickCapture, true);
-  }, [html]);
+  }, [html, forceExternal]);
 
   return ref;
 }

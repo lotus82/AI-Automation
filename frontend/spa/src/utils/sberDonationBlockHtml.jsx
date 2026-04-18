@@ -2,7 +2,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import QRCode from "react-qr-code";
 
-const DEFAULT_HREF = "sberbankonline://sberbank.ru/qr/?uuid=2000175537";
+/** В Mini App переход обрабатывается через WebApp.openLink (внешний браузер) — как при обычном открытии ссылки. */
+const DEFAULT_HREF = "https://sberbank.ru/qr/?uuid=2000175537";
 
 function escapeHtmlAttr(s) {
   return String(s)
@@ -16,7 +17,7 @@ function escapeHtmlAttr(s) {
  * HTML-блок: SVG QR (react-qr-code) + ссылка. Одна и та же строка кодируется в QR и стоит в href — правьте в HTML при необходимости.
  *
  * @param {object} opts
- * @param {string} [opts.href] — полная ссылка, например sberbankonline://sberbank.ru/qr/?uuid=…
+ * @param {string} [opts.href] — полная ссылка (рекомендуется https://sberbank.ru/qr/?uuid=… для оплаты из Mini App)
  */
 export function buildSberQrDonationBlockHtml(opts = {}) {
   const hrefRaw = String(opts.href ?? DEFAULT_HREF).trim();

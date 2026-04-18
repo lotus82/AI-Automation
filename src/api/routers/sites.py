@@ -100,6 +100,11 @@ class SiteContacts(BaseModel):
     max: str | None = Field(default=None, max_length=255)
     whatsapp: str | None = Field(default=None, max_length=255)
     instagram: str | None = Field(default=None, max_length=255)
+    payment_url: str | None = Field(
+        default=None,
+        max_length=1024,
+        description="Ссылка на оплату (например https://sberbank.ru/qr/?uuid=…) для блока QR в страницах",
+    )
 
 
 class SiteMenuItemInput(BaseModel):
