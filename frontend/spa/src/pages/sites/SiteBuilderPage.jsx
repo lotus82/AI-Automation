@@ -24,7 +24,7 @@ import api from "../../api/client.js";
 import { useAuthStore } from "../../store/authStore.js";
 import { PAGE_SHELL, PAGE_TEXT, TAB_ROW, tabBtn } from "../../styles/pageLayout.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
-import { normalizeSiteLogoUrl } from "../../utils/siteLogoUrl.js";
+import { siteLogoImgSrc } from "../../utils/siteLogoUrl.js";
 
 /** Область кропа в пикселях исходного изображения (как в react-easy-crop). */
 function loadImage(src) {
@@ -918,16 +918,17 @@ function SettingsTab({ siteId, form, setForm, setSite, setContactField, setError
         </Field>
         <Field
           label="URL логотипа"
-          hint="Можно указать внешнюю ссылку или загрузить файл — после загрузки подставится адрес на сервере."
+          hint="Полная ссылка или путь вида /api/public/sites/assets/… после загрузки файла."
         >
           <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-stretch">
             <input
-              type="url"
+              type="text"
               value={form.logo_url}
               onChange={(e) => setForm((p) => ({ ...p, logo_url: e.target.value }))}
               className={`${inputClass} !mt-0 sm:min-w-0 sm:flex-1`}
               maxLength={1024}
-              placeholder="https://…/logo.png"
+              placeholder="https://…/logo.png или /api/public/sites/assets/…"
+              autoComplete="off"
             />
             <button
               type="button"
@@ -1314,7 +1315,7 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm }) {
   const title = (form?.title || "").trim() || (form?.name || "").trim() || "Mini App";
   const subtitle = (form?.subtitle || "").trim();
   const logoUrlRaw = (form?.logo_url || "").trim();
-  const logoSrc = useMemo(() => normalizeSiteLogoUrl(logoUrlRaw), [logoUrlRaw]);
+  const logoSrc = useMemo(() => siteLogoImgSrc(logoUrlRaw), [logoUrlRaw]);
   const [logoBroken, setLogoBroken] = useState(false);
   useEffect(() => {
     setLogoBroken(false);

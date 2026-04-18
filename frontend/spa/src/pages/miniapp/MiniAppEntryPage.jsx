@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { useMiniAppAuthStore } from "../../store/miniAppAuthStore.js";
 import { useMiniAppConfigStore } from "../../store/miniAppConfigStore.js";
 import { useMiniAppThemeStore } from "../../store/miniAppThemeStore.js";
-import { normalizeSiteLogoUrl } from "../../utils/siteLogoUrl.js";
+import { siteLogoImgSrc } from "../../utils/siteLogoUrl.js";
 import "./miniappPageContent.css";
 
 /**
@@ -242,7 +242,7 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
  * Шапка Mini App. Заголовок и подзаголовок — из конфига сайта, акцент — theme_color.
  */
 function MiniAppHeader({ title, subtitle, logoUrl, themeColor }) {
-  const logoSrc = useMemo(() => normalizeSiteLogoUrl(logoUrl), [logoUrl]);
+  const logoSrc = useMemo(() => siteLogoImgSrc(logoUrl), [logoUrl]);
   const [logoBroken, setLogoBroken] = useState(false);
   useEffect(() => {
     setLogoBroken(false);

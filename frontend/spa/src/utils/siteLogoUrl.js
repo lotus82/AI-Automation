@@ -19,3 +19,18 @@ export function normalizeSiteLogoUrl(url) {
   }
   return s;
 }
+
+/**
+ * Значение для атрибута src у <img>: для путей с ведущим «/» подставляет origin окна
+ * (надёжнее во встроенных WebView, чем относительный путь).
+ * @param {string | null | undefined} url
+ * @returns {string}
+ */
+export function siteLogoImgSrc(url) {
+  const s = normalizeSiteLogoUrl(url);
+  if (!s) return "";
+  if (typeof window !== "undefined" && s.startsWith("/")) {
+    return `${window.location.origin}${s}`;
+  }
+  return s;
+}
