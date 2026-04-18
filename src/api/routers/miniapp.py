@@ -32,6 +32,7 @@ from src.api.dependencies_portal import PortalUserDep
 from src.core.config import get_settings
 from src.domain import system_setting_keys as sk
 from src.domain.portal_roles import ROLE_DIRECTOR, ROLE_ORG_ADMIN, ROLE_SUPER_ADMIN
+from src.domain.site_logo_url import normalize_site_logo_url
 from src.domain.site_menu import nav_items_for_miniapp
 from src.infrastructure.models import MiniAppUserModel, OrganizationModel, SiteModel, SitePageModel
 from src.infrastructure.portal_security import (
@@ -602,7 +603,7 @@ async def get_miniapp_config(inn: str, session: AsyncSessionDep) -> MiniAppConfi
         site_id=site.id,
         title=(site.title or "").strip() or org.display_name or org.name,
         subtitle=(site.subtitle or "").strip(),
-        logo_url=(site.logo_url or "").strip() or None,
+        logo_url=normalize_site_logo_url((site.logo_url or "").strip() or None),
         theme_color=(site.theme_color or "#000000").strip() or "#000000",
         contacts=dict(site.contacts or {}),
         pages=[

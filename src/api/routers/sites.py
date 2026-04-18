@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -28,6 +28,7 @@ from src.api.org_scope import resolve_organization_scope
 from src.domain.portal_roles import ROLE_SUPER_ADMIN
 from src.domain.site_menu import nav_items_for_miniapp
 from src.core.config import Settings
+from src.domain.site_logo_url import normalize_site_logo_url, site_uploaded_logo_public_path
 from src.infrastructure.models import OrganizationModel, SiteModel, SitePageModel
 
 logger = logging.getLogger(__name__)
@@ -70,11 +71,6 @@ async def _read_logo_upload_limit(file: UploadFile) -> bytes:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Файл больше 5 МБ")
     return data
 
-
-def _site_logo_asset_url(request: Request, site_id: UUID, relative: str) -> str:
-    base = str(request.base_url).rstrip("/")
-    rel = relative.lstrip("/").replace("\\", "/")
-    return f"{base}/api/public/sites/assets/{site_id}/{rel}"
 
 # Админский роутер (префикс /api/sites) — под Portal JWT middleware.
 router = APIRouter(prefix="/sites", tags=["sites"])
@@ -293,7 +289,7 @@ def _site_to_detail(row: SiteModel) -> SiteDetail:
         title=row.title or "",
         subtitle=row.subtitle or "",
         theme_color=row.theme_color or "#000000",
-        logo_url=(row.logo_url or "").strip() or None,
+        logo_url=normalize_site_logo_url((row.logo_url or "").strip() or None),
         contacts=SiteContacts.model_validate(row.contacts or {}),
         menu_items=_menu_public_from_db(getattr(row, "menu_items", None)),
         created_at=row.created_at,
@@ -309,7 +305,7 @@ def _site_to_list_item(row: SiteModel) -> SiteListItem:
         title=row.title or "",
         subtitle=row.subtitle or "",
         theme_color=row.theme_color or "#000000",
-        logo_url=(row.logo_url or "").strip() or None,
+        logo_url=normalize_site_logo_url((row.logo_url or "").strip() or None),
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -493,7 +489,6 @@ async def upload_site_logo(
     site_id: UUID,
     user: PortalUserDep,
     session: AsyncSessionDep,
-    request: Request,
     settings: SettingsDep,
     organization_id: UUID | None = Query(default=None),
     file: UploadFile = File(...),
@@ -511,7 +506,7 @@ async def upload_site_logo(
     root.mkdir(parents=True, exist_ok=True)
     dest = root / rel
     dest.write_bytes(raw)
-    row.logo_url = _site_logo_asset_url(request, site_id, rel)
+    row.logo_url = site_uploaded_logo_public_path(site_id, rel)
     session.add(row)
     await session.commit()
     await session.refresh(row)
@@ -692,7 +687,7 @@ async def get_public_site(site_id: UUID, session: AsyncSessionDep) -> PublicSite
         name=site.name,
         title=site.title or "",
         subtitle=site.subtitle or "",
-        logo_url=(site.logo_url or "").strip() or None,
+        logo_url=normalize_site_logo_url((site.logo_url or "").strip() or None),
         theme_color=site.theme_color or "#000000",
         contacts=SiteContacts.model_validate(site.contacts or {}),
         pages=[

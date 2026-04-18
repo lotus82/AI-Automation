@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { useMiniAppAuthStore } from "../../store/miniAppAuthStore.js";
 import { useMiniAppConfigStore } from "../../store/miniAppConfigStore.js";
 import { useMiniAppThemeStore } from "../../store/miniAppThemeStore.js";
+import { normalizeSiteLogoUrl } from "../../utils/siteLogoUrl.js";
 import "./miniappPageContent.css";
 
 /**
@@ -165,23 +166,30 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
       <ul
         style={{
           display: "flex",
+          flexWrap: "wrap",
           listStyle: "none",
+          listStyleType: "none",
           margin: 0,
           padding: 0,
           gap: 8,
-          overflowX: "auto",
-          overflowY: "hidden",
-          WebkitOverflowScrolling: "touch",
-          scrollbarWidth: "none",
-          msOverflowStyle: "none",
-          justifyContent: items.length <= 3 ? "center" : "flex-start",
+          justifyContent: "center",
+          alignItems: "stretch",
         }}
         className="miniapp-tabbar-scroll"
       >
         {items.map((item) => {
           const active = item.slug === activeSlug;
           return (
-            <li key={item.slug} style={{ flex: items.length <= 3 ? "1 1 0" : "0 0 auto", minWidth: 0, maxWidth: items.length <= 3 ? "100%" : 200 }}>
+            <li
+              key={item.slug}
+              style={{
+                flex: "1 1 auto",
+                minWidth: "min(100%, 7.5rem)",
+                maxWidth: "100%",
+                listStyle: "none",
+                listStyleType: "none",
+              }}
+            >
               <button
                 type="button"
                 onClick={() => onChange(item.slug)}
@@ -193,7 +201,6 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: 6,
                   cursor: "pointer",
                   borderRadius: 14,
                   border: active
@@ -203,7 +210,7 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
                   color: active ? accent : "#475569",
                   fontWeight: active ? 700 : 600,
                   fontSize: 13,
-                  lineHeight: 1.25,
+                  lineHeight: 1.3,
                   letterSpacing: active ? "-0.01em" : "0",
                   boxShadow: active
                     ? `0 2px 8px ${hexToRgba(accent, 0.22)}, inset 0 1px 0 rgba(255,255,255,0.85)`
@@ -213,22 +220,11 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
                 }}
               >
                 <span
-                  aria-hidden
                   style={{
-                    flexShrink: 0,
-                    width: 7,
-                    height: 7,
-                    borderRadius: "50%",
-                    background: active ? accent : "rgba(148, 163, 184, 0.85)",
-                    boxShadow: active ? `0 0 0 2px ${hexToRgba(accent, 0.25)}` : "none",
-                  }}
-                />
-                <span
-                  style={{
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
                     textAlign: "center",
+                    whiteSpace: "normal",
+                    overflowWrap: "anywhere",
+                    wordBreak: "break-word",
                   }}
                 >
                   {item.label}
@@ -246,6 +242,12 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
  * Шапка Mini App. Заголовок и подзаголовок — из конфига сайта, акцент — theme_color.
  */
 function MiniAppHeader({ title, subtitle, logoUrl, themeColor }) {
+  const logoSrc = useMemo(() => normalizeSiteLogoUrl(logoUrl), [logoUrl]);
+  const [logoBroken, setLogoBroken] = useState(false);
+  useEffect(() => {
+    setLogoBroken(false);
+  }, [logoSrc]);
+
   const background = themeColor
     ? `linear-gradient(135deg, ${themeColor} 0%, ${themeColor}DD 100%)`
     : "var(--max-color-primary, #0f172a)";
@@ -263,10 +265,11 @@ function MiniAppHeader({ title, subtitle, logoUrl, themeColor }) {
       }}
     >
       <Flex align="center" gap={12}>
-        {logoUrl ? (
+        {logoSrc && !logoBroken ? (
           <img
-            src={logoUrl}
+            src={logoSrc}
             alt=""
+            onError={() => setLogoBroken(true)}
             style={{
               width: 44,
               height: 44,

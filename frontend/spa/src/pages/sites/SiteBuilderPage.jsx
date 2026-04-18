@@ -24,6 +24,7 @@ import api from "../../api/client.js";
 import { useAuthStore } from "../../store/authStore.js";
 import { PAGE_SHELL, PAGE_TEXT, TAB_ROW, tabBtn } from "../../styles/pageLayout.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
+import { normalizeSiteLogoUrl } from "../../utils/siteLogoUrl.js";
 
 /** Область кропа в пикселях исходного изображения (как в react-easy-crop). */
 function loadImage(src) {
@@ -1312,7 +1313,12 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm }) {
   const themeColor = sanitizeHex(form?.theme_color, "#0f172a");
   const title = (form?.title || "").trim() || (form?.name || "").trim() || "Mini App";
   const subtitle = (form?.subtitle || "").trim();
-  const logoUrl = (form?.logo_url || "").trim();
+  const logoUrlRaw = (form?.logo_url || "").trim();
+  const logoSrc = useMemo(() => normalizeSiteLogoUrl(logoUrlRaw), [logoUrlRaw]);
+  const [logoBroken, setLogoBroken] = useState(false);
+  useEffect(() => {
+    setLogoBroken(false);
+  }, [logoSrc]);
 
   // Подменяем редактируемую страницу в списке живыми значениями формы редактора.
   const liveList = useMemo(() => {
@@ -1391,15 +1397,13 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm }) {
               className="flex items-center gap-3 px-4 pb-3 pt-6 text-white"
               style={{ background: headerBackground }}
             >
-              {logoUrl ? (
+              {logoSrc && !logoBroken ? (
                 <img
-                  src={logoUrl}
+                  src={logoSrc}
                   alt=""
-                  className="h-11 w-11 rounded-xl object-cover"
+                  className="h-11 w-11 shrink-0 rounded-xl object-cover"
                   style={{ background: "rgba(255,255,255,0.15)" }}
-                  onError={(e) => {
-                    e.currentTarget.style.display = "none";
-                  }}
+                  onError={() => setLogoBroken(true)}
                 />
               ) : (
                 <div
@@ -1439,31 +1443,19 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm }) {
                   Меню появится после публикации хотя бы одной страницы
                 </div>
               ) : (
-                <ul className="flex items-stretch px-1 py-1">
+                <ul className="flex flex-wrap items-stretch justify-center gap-1 px-1 py-1 [list-style:none]">
                   {nav.map((item) => {
                     const isActive = activePage && activePage.slug === item.slug;
                     return (
-                      <li key={item.slug} className="flex flex-1">
+                      <li key={item.slug} className="min-w-0 flex-[1_1_auto]" style={{ minWidth: "min(100%,6rem)", maxWidth: "100%" }}>
                         <div
-                          className="flex w-full flex-col items-center justify-center gap-1 px-1 py-1.5 text-[11px] leading-tight"
+                          className="flex w-full items-center justify-center px-1 py-1.5 text-center text-[11px] leading-snug"
                           style={{
                             color: isActive ? themeColor : "#6b7280",
                             fontWeight: isActive ? 600 : 500,
                           }}
                         >
-                          <span
-                            aria-hidden
-                            className="inline-block h-1.5 w-1.5 rounded-full"
-                            style={{
-                              background: isActive ? themeColor : "transparent",
-                            }}
-                          />
-                          <span
-                            className="w-full truncate text-center"
-                            title={item.label}
-                          >
-                            {item.label || "—"}
-                          </span>
+                          <span className="break-words [overflow-wrap:anywhere]">{item.label || "—"}</span>
                         </div>
                       </li>
                     );
