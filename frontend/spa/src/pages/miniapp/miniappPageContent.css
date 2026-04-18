@@ -32,10 +32,22 @@
   width: 100%;
   height: auto;
   display: block;
+  /* Клик должен попадать на обёртку <a>, иначе во WebView часть тапов «теряется» на SVG */
+  pointer-events: none;
 }
 
-.miniapp-page-content a {
+.miniapp-page-content a,
+.miniapp-preview-content a {
   color: var(--max-color-link, var(--max-color-primary, #0066cc));
+  cursor: pointer;
+  -webkit-tap-highlight-color: rgba(0, 102, 204, 0.15);
+  touch-action: manipulation;
+}
+
+.miniapp-page-content .sber-donation-block a,
+.miniapp-preview-content .sber-donation-block a {
+  color: inherit;
+  -webkit-tap-highlight-color: rgba(33, 160, 56, 0.2);
 }
 
 /* Горизонтальный скролл пунктов меню без полосы прокрутки */

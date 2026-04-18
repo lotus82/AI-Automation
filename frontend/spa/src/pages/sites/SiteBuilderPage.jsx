@@ -22,6 +22,7 @@ import ReactQuill from "react-quill";
 import "react-easy-crop/react-easy-crop.css";
 import "react-quill/dist/quill.snow.css";
 import api from "../../api/client.js";
+import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
 import { useAuthStore } from "../../store/authStore.js";
 import { PAGE_SHELL, PAGE_TEXT, TAB_ROW, tabBtn } from "../../styles/pageLayout.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
@@ -1266,7 +1267,9 @@ function PageEditorTab({ page, form, setForm, onSave, saving, onDelete, onBackTo
           </div>
         )}
         <div className="text-[11px] text-slate-500">
-          В визуальном редакторе могут удаляться сложные HTML-теги и классы. Для тонкой настройки используйте HTML-режим.
+          В визуальном редакторе Quill может упростить разметку (в т.ч. ссылки вида{" "}
+          <code className="rounded bg-slate-800 px-1">sberbankonline://…</code> и встроенный SVG). Блоки с QR и
+          нестандартными ссылками держите в HTML-режиме и сохраняйте страницу из него.
         </div>
       </div>
 
@@ -1505,6 +1508,7 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm }) {
 }
 
 function PagePreviewBody({ page }) {
+  const previewContentRef = useMiniAppHtmlLinkDelegate(page?.content);
   return (
     <article className="text-slate-800">
       <h2 className="mb-2 text-lg font-semibold text-slate-900">
@@ -1512,6 +1516,7 @@ function PagePreviewBody({ page }) {
       </h2>
       {page.content ? (
         <div
+          ref={previewContentRef}
           className="miniapp-preview-content space-y-2 text-[14px] leading-relaxed"
           dangerouslySetInnerHTML={{ __html: page.content }}
         />

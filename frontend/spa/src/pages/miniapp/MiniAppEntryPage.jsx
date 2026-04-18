@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { useMiniAppAuthStore } from "../../store/miniAppAuthStore.js";
 import { useMiniAppConfigStore } from "../../store/miniAppConfigStore.js";
 import { useMiniAppThemeStore } from "../../store/miniAppThemeStore.js";
+import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
 import { siteLogoImgSrc } from "../../utils/siteLogoUrl.js";
 import "./miniappPageContent.css";
 
@@ -331,6 +332,8 @@ function MiniAppHeader({ title, subtitle, logoUrl, themeColor }) {
  * появится публичное редактирование — прогнать через DOMPurify.
  */
 function MiniAppPageContent({ page }) {
+  const contentRef = useMiniAppHtmlLinkDelegate(page?.content);
+
   if (!page) {
     return (
       <div style={{ padding: "32px 16px", textAlign: "center" }}>
@@ -360,6 +363,7 @@ function MiniAppPageContent({ page }) {
       </h2>
       {page.content ? (
         <div
+          ref={contentRef}
           className="miniapp-page-content"
           style={{
             lineHeight: 1.55,
