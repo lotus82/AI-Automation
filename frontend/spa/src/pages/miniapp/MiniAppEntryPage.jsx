@@ -85,6 +85,18 @@ function extractInitData(searchParams) {
   return "";
 }
 
+/** HEX → rgba() для полупрозрачных кнопок меню. */
+function hexToRgba(hex, alpha) {
+  if (typeof hex !== "string" || alpha < 0 || alpha > 1) return `rgba(99, 102, 241, ${alpha})`;
+  const s = hex.trim().replace(/^#/, "");
+  if (!/^[0-9a-fA-F]{3}$/.test(s) && !/^[0-9a-fA-F]{6}$/.test(s)) return `rgba(99, 102, 241, ${alpha})`;
+  const full = s.length === 3 ? s.split("").map((c) => c + c).join("") : s;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function StatusScreen({ children }) {
   return (
     <Panel mode="secondary" style={{ minHeight: "100%" }}>
@@ -128,14 +140,11 @@ function ErrorScreen({ title, detail, onRetry }) {
 }
 
 /**
- * Нижняя навигация (Tabbar) по списку опубликованных страниц сайта.
- *
- * Намеренно используем обычный nav/button/ul — во-первых, Flex из MAX UI
- * валидирует ограниченный список значений ``justify``/``align``; во-вторых,
- * Tabbar визуально уникален и проще описать его стилями, чем через Flex.
+ * Нижняя навигация: сегментированные «кнопки» (чипы) с акцентом бренда.
  */
 function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
   if (!items || items.length === 0) return null;
+  const accent = themeColor && themeColor.trim() ? themeColor.trim() : "#4f46e5";
   return (
     <nav
       aria-label="Навигация Mini App"
@@ -143,10 +152,14 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
         flexShrink: 0,
         flexGrow: 0,
         zIndex: 10,
-        backdropFilter: "blur(10px)",
-        background: "var(--max-color-panel-secondary, rgba(255,255,255,0.96))",
-        borderTop: "1px solid var(--max-color-separator, rgba(0,0,0,0.08))",
-        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        backdropFilter: "blur(12px)",
+        background: "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(248,250,252,0.98) 100%)",
+        borderTop: "1px solid rgba(15, 23, 42, 0.08)",
+        boxShadow: "0 -4px 24px rgba(15, 23, 42, 0.06)",
+        paddingTop: 10,
+        paddingLeft: 12,
+        paddingRight: 12,
+        paddingBottom: "calc(10px + env(safe-area-inset-bottom, 0px))",
       }}
     >
       <ul
@@ -154,57 +167,68 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
           display: "flex",
           listStyle: "none",
           margin: 0,
-          padding: "4px 4px 6px",
-          gap: 2,
+          padding: 0,
+          gap: 8,
+          overflowX: "auto",
+          overflowY: "hidden",
+          WebkitOverflowScrolling: "touch",
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
+          justifyContent: items.length <= 3 ? "center" : "flex-start",
         }}
+        className="miniapp-tabbar-scroll"
       >
         {items.map((item) => {
           const active = item.slug === activeSlug;
           return (
-            <li key={item.slug} style={{ flex: 1, display: "flex" }}>
+            <li key={item.slug} style={{ flex: items.length <= 3 ? "1 1 0" : "0 0 auto", minWidth: 0, maxWidth: items.length <= 3 ? "100%" : 200 }}>
               <button
                 type="button"
                 onClick={() => onChange(item.slug)}
                 aria-current={active ? "page" : undefined}
                 style={{
-                  flex: 1,
-                  minHeight: 52,
-                  padding: "6px 4px",
+                  width: "100%",
+                  minHeight: 44,
+                  padding: "10px 14px",
                   display: "flex",
-                  flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: 4,
-                  background: "transparent",
-                  border: "none",
+                  gap: 6,
                   cursor: "pointer",
-                  color: active
-                    ? themeColor || "var(--max-color-primary, #000)"
-                    : "var(--max-color-text-secondary, #6b7280)",
-                  fontWeight: active ? 600 : 500,
-                  fontSize: 12,
-                  lineHeight: 1.2,
-                  transition: "color 120ms ease",
+                  borderRadius: 14,
+                  border: active
+                    ? `1.5px solid ${hexToRgba(accent, 0.55)}`
+                    : "1.5px solid rgba(15, 23, 42, 0.1)",
+                  background: active ? hexToRgba(accent, 0.16) : "rgba(255, 255, 255, 0.9)",
+                  color: active ? accent : "#475569",
+                  fontWeight: active ? 700 : 600,
+                  fontSize: 13,
+                  lineHeight: 1.25,
+                  letterSpacing: active ? "-0.01em" : "0",
+                  boxShadow: active
+                    ? `0 2px 8px ${hexToRgba(accent, 0.22)}, inset 0 1px 0 rgba(255,255,255,0.85)`
+                    : "0 1px 3px rgba(15, 23, 42, 0.07), inset 0 1px 0 rgba(255,255,255,0.95)",
+                  transition: "background 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease",
+                  WebkitTapHighlightColor: "transparent",
                 }}
               >
                 <span
                   aria-hidden
                   style={{
-                    display: "inline-block",
-                    width: 6,
-                    height: 6,
+                    flexShrink: 0,
+                    width: 7,
+                    height: 7,
                     borderRadius: "50%",
-                    background: active
-                      ? themeColor || "var(--max-color-primary, #000)"
-                      : "transparent",
+                    background: active ? accent : "rgba(148, 163, 184, 0.85)",
+                    boxShadow: active ? `0 0 0 2px ${hexToRgba(accent, 0.25)}` : "none",
                   }}
                 />
                 <span
                   style={{
-                    maxWidth: "100%",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
+                    textAlign: "center",
                   }}
                 >
                   {item.label}

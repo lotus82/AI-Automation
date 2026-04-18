@@ -29,3 +29,8 @@
 .miniapp-page-content a {
   color: var(--max-color-link, var(--max-color-primary, #0066cc));
 }
+
+/* Горизонтальный скролл пунктов меню без полосы прокрутки */
+.miniapp-tabbar-scroll::-webkit-scrollbar {
+  display: none;
+}
