@@ -7,6 +7,7 @@ import {
   Menu,
   Palette,
   Plus,
+  QrCode,
   RefreshCcw,
   Save,
   Settings as SettingsIcon,
@@ -25,6 +26,7 @@ import { useAuthStore } from "../../store/authStore.js";
 import { PAGE_SHELL, PAGE_TEXT, TAB_ROW, tabBtn } from "../../styles/pageLayout.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
 import { siteLogoImgSrc } from "../../utils/siteLogoUrl.js";
+import { buildSberQrDonationBlockHtml, SBER_DONATION_DEFAULT_HREF } from "../../utils/sberDonationBlockHtml";
 
 /** Область кропа в пикселях исходного изображения (как в react-easy-crop). */
 function loadImage(src) {
@@ -1118,6 +1120,21 @@ function PagesTab({ pages, loading, onCreate, onOpen, onDelete, onChangeOrder, o
 function PageEditorTab({ page, form, setForm, onSave, saving, onDelete, onBackToList }) {
   const [isHtmlMode, setIsHtmlMode] = useState(false);
 
+  const insertSberDonationBlock = () => {
+    const raw = window.prompt(
+      "Ссылка для QR и перехода (формат Сбера, можно редактировать целиком):",
+      SBER_DONATION_DEFAULT_HREF,
+    );
+    if (raw === null) return;
+    const href = String(raw).trim() || SBER_DONATION_DEFAULT_HREF;
+    const block = buildSberQrDonationBlockHtml({ href });
+    setForm((p) => ({
+      ...p,
+      content: `${(p.content || "").trim()}\n\n${block}\n`.trim(),
+    }));
+    if (!isHtmlMode) setIsHtmlMode(true);
+  };
+
   if (!page) {
     return (
       <div className="py-8 text-center text-slate-400">
@@ -1199,15 +1216,26 @@ function PageEditorTab({ page, form, setForm, onSave, saving, onDelete, onBackTo
       </div>
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <label className="block text-xs font-medium text-slate-300">Контент</label>
-          <button
-            type="button"
-            onClick={() => setIsHtmlMode(!isHtmlMode)}
-            className="text-xs text-emerald-400 hover:text-emerald-300 underline underline-offset-2"
-          >
-            {isHtmlMode ? "Вернуться в визуальный редактор" : "Редактировать HTML"}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={insertSberDonationBlock}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-600 bg-slate-800/80 px-2.5 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-700"
+              title="Вставляет HTML: SVG QR (react-qr-code) и ссылка sberbankonline://…; ссылку можно править в коде страницы"
+            >
+              <QrCode className="h-3.5 w-3.5" aria-hidden />
+              QR Сбер (пожертвование)
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsHtmlMode(!isHtmlMode)}
+              className="text-xs text-emerald-400 hover:text-emerald-300 underline underline-offset-2"
+            >
+              {isHtmlMode ? "Вернуться в визуальный редактор" : "Редактировать HTML"}
+            </button>
+          </div>
         </div>
         
         {isHtmlMode ? (

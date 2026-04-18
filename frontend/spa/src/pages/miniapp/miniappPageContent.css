@@ -26,6 +26,14 @@
   height: auto;
 }
 
+/* Блок пожертвований: встроенный SVG из react-qr-code */
+.miniapp-page-content .sber-donation-block svg,
+.miniapp-preview-content .sber-donation-block svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
 .miniapp-page-content a {
   color: var(--max-color-link, var(--max-color-primary, #0066cc));
 }
