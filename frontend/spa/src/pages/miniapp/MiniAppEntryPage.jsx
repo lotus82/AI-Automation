@@ -444,14 +444,13 @@ export function MiniAppEntryPage() {
     };
   }, [setThemeColor]);
 
-  if (status === "loading") {
-    return <LoadingScreen label="Загружаем содержимое…" />;
-  }
-  if (status === "error") {
-    return <ErrorScreen title={errorTitle} detail={errorDetail} onRetry={bootstrap} />;
-  }
+  // Важно: хуки только до любых return — иначе при смене status (loading → ready)
+  // меняется число вызовов useMemo и React падает (часто — пустой тёмный экран в WebView).
+  const pages = useMemo(
+    () => (Array.isArray(config?.pages) ? config.pages : []),
+    [config?.pages],
+  );
 
-  const pages = Array.isArray(config?.pages) ? config.pages : [];
   const navItems = useMemo(() => {
     const raw = config?.nav_items;
     if (Array.isArray(raw) && raw.length > 0) {
@@ -459,6 +458,13 @@ export function MiniAppEntryPage() {
     }
     return pages.map((p) => ({ label: p.title, slug: p.slug }));
   }, [config?.nav_items, pages]);
+
+  if (status === "loading") {
+    return <LoadingScreen label="Загружаем содержимое…" />;
+  }
+  if (status === "error") {
+    return <ErrorScreen title={errorTitle} detail={errorDetail} onRetry={bootstrap} />;
+  }
 
   const activePage =
     pages.find((p) => p.slug === activeSlug) || (pages.length > 0 ? pages[0] : null);

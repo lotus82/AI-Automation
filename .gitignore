@@ -1,5 +1,6 @@
 # PyCharm / IntelliJ IDEA / WebStorm — весь каталог настроек IDE (не коммитить, не показывать в коммитах)
 .idea/
+.idea/AI-Automation.iml
 
 ### Python template
 # Byte-compiled / optimized / DLL files
