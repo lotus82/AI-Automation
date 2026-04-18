@@ -10,6 +10,12 @@ import { siteLogoImgSrc } from "../../utils/siteLogoUrl.js";
 import "./miniappPageContent.css";
 
 /**
+ * Отступ снизу у области прокрутки: таббар `position: fixed` к нижнему краю WebView.
+ * Увеличьте, если чипы меню стали выше (две строки + safe-area), см. MiniAppTabbar.
+ */
+const MINIAPP_TABBAR_SCROLL_PAD = "calc(env(safe-area-inset-bottom, 0px) + 10px)";
+
+/**
  * Извлекает строку ``init_data`` из параметров запуска Mini App мессенджера MAX.
  *
  * Согласно документации MAX (https://dev.max.ru/docs/webapps/validation) стартовые
@@ -143,7 +149,8 @@ function ErrorScreen({ title, detail, onRetry }) {
 
 /**
  * Нижняя навигация: сегментированные «кнопки» (чипы) с акцентом бренда.
- * Высоту блока правьте здесь: отступы nav, gap, minHeight/padding/fontSize у button.
+ * Высоту блока правьте здесь; таббар fixed к низу экрана (зазор снизу в WebView MAX).
+ * При смене высоты синхронизируйте MINIAPP_TABBAR_SCROLL_PAD в этом файле.
  */
 function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
   if (!items || items.length === 0) return null;
@@ -152,18 +159,19 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
     <nav
       aria-label="Навигация Mini App"
       style={{
-        flexShrink: 0,
-        flexGrow: 0,
-        alignSelf: "stretch",
-        marginTop: "auto",
-        zIndex: 10,
+        position: "fixed",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 100,
+        boxSizing: "border-box",
         backdropFilter: "blur(12px)",
         background: "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(248,250,252,0.98) 100%)",
         borderTop: "1px solid rgba(15, 23, 42, 0.08)",
         boxShadow: "0 -2px 16px rgba(15, 23, 42, 0.05)",
         paddingTop: 4,
-        paddingLeft: 8,
-        paddingRight: 8,
+        paddingLeft: "max(8px, env(safe-area-inset-left, 0px))",
+        paddingRight: "max(8px, env(safe-area-inset-right, 0px))",
         paddingBottom: "calc(4px + env(safe-area-inset-bottom, 0px))",
       }}
     >
@@ -214,8 +222,8 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
                   background: active ? hexToRgba(accent, 0.16) : "rgba(255, 255, 255, 0.9)",
                   color: active ? accent : "#475569",
                   fontWeight: active ? 700 : 600,
-                  fontSize: 11,
-                  lineHeight: 1.2,
+                  fontSize: 12,
+                  lineHeight: 1.4,
                   letterSpacing: active ? "-0.01em" : "0",
                   boxShadow: active
                     ? `0 2px 8px ${hexToRgba(accent, 0.22)}, inset 0 1px 0 rgba(255,255,255,0.85)`
@@ -549,6 +557,7 @@ export function MiniAppEntryPage() {
           overflowY: "auto",
           overscrollBehavior: "contain",
           WebkitOverflowScrolling: "touch",
+          paddingBottom: MINIAPP_TABBAR_SCROLL_PAD,
           /* Явный светлый фон: в dark-схеме MAX UI иначе тело страницы может быть невидимо */
           background: "#ffffff",
           color: "#111827",

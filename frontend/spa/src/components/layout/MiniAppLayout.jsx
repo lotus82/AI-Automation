@@ -3,6 +3,7 @@ import "@maxhub/max-ui/dist/styles.css";
 import { useEffect, useMemo } from "react";
 import { Outlet } from "react-router-dom";
 import { useMiniAppThemeStore } from "../../store/miniAppThemeStore.js";
+import "./miniappViewport.css";
 
 /**
  * HEX-цвет → RGB-строка "r, g, b" для использования в `rgba(var(--max-color-primary-rgb), …)`.
@@ -84,6 +85,11 @@ export function MiniAppLayout() {
     document.body.style.overflow = "hidden";
     document.body.style.overscrollBehavior = "none";
 
+    document.documentElement.classList.add("miniapp-viewport");
+    document.body.classList.add("miniapp-viewport");
+    const rootEl = document.getElementById("root");
+    rootEl?.classList.add("miniapp-viewport-fill");
+
     return () => {
       if (prevContent !== null) {
         meta.setAttribute("content", prevContent);
@@ -92,21 +98,26 @@ export function MiniAppLayout() {
       }
       document.body.style.overflow = prevBodyOverflow;
       document.body.style.overscrollBehavior = prevBodyOverscroll;
+      document.documentElement.classList.remove("miniapp-viewport");
+      document.body.classList.remove("miniapp-viewport");
+      document.getElementById("root")?.classList.remove("miniapp-viewport-fill");
     };
   }, []);
 
   const brandStyle = useMemo(() => buildBrandStyle(themeColor), [themeColor]);
 
   const rootStyle = {
-    height: "100dvh",
-    width: "100vw",
+    flex: 1,
+    minHeight: 0,
+    width: "100%",
+    maxWidth: "100vw",
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
     paddingTop: "env(safe-area-inset-top, 0px)",
-    /* Нижний safe-area только у таббара (MiniAppTabbar), иначе под панелью остаётся «воздух» */
     paddingLeft: "env(safe-area-inset-left, 0px)",
     paddingRight: "env(safe-area-inset-right, 0px)",
+    background: "var(--max-color-bg-secondary, #f3f4f6)",
     ...brandStyle,
   };
 
@@ -116,24 +127,40 @@ export function MiniAppLayout() {
 
   return (
     <MaxUI {...maxUiProps}>
-      <div style={rootStyle} className="miniapp-root">
-        {/*
-          Важно: не включаем прокрутку на <main>. Иначе вложенный flex (Panel + область контента)
-          с flex:1 / minHeight:0 внутри прокручиваемого родителя даёт нулевую высоту середины —
-          в WebView MAX видна только шапка и Tabbar, без текста страницы.
-        */}
-        <main
-          style={{
-            flex: 1,
-            minHeight: 0,
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-            overscrollBehavior: "none",
-          }}
-        >
-          <Outlet />
-        </main>
+      {/*
+        Провайдер MAX UI может оборачивать дерево; внешний flex гарантирует высоту до #root.
+        См. https://dev.max.ru/ui — типовая вёрстка мини-приложения на всю область WebView.
+      */}
+      <div
+        className="miniapp-maxui-stretch"
+        style={{
+          flex: 1,
+          minHeight: 0,
+          width: "100%",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+        <div style={rootStyle} className="miniapp-root">
+          {/*
+            Важно: не включаем прокрутку на <main>. Иначе вложенный flex (Panel + область контента)
+            с flex:1 / minHeight:0 внутри прокручиваемого родителя даёт нулевую высоту середины —
+            в WebView MAX видна только шапка и Tabbar, без текста страницы.
+          */}
+          <main
+            style={{
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              overscrollBehavior: "none",
+            }}
+          >
+            <Outlet />
+          </main>
+        </div>
       </div>
     </MaxUI>
   );
