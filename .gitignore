@@ -130,6 +130,9 @@ data/recordings/*.wav
 # Загрузки витрин магазинов (логотипы / фото товаров)
 data/shop_uploads/
 
+# Загрузки логотипов конструктора сайтов
+data/site_uploads/
+
 # Environments
 .env
 .venv

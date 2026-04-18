@@ -282,6 +282,11 @@ class Settings(BaseSettings):
         default="data/shop_uploads",
         validation_alias="SHOP_UPLOAD_DIR",
     )
+    # Конструктор сайтов Mini App: загруженные логотипы на диске
+    site_upload_dir: str = Field(
+        default="data/site_uploads",
+        validation_alias="SITE_UPLOAD_DIR",
+    )
 
     # Портал: JWT для панели (обязательно задать в production)
     portal_jwt_secret: str = Field(

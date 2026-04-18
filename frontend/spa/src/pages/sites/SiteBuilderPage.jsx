@@ -12,15 +12,64 @@ import {
   Settings as SettingsIcon,
   Smartphone,
   Trash2,
+  Upload,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
+import Cropper from "react-easy-crop";
 import ReactQuill from "react-quill";
+import "react-easy-crop/react-easy-crop.css";
 import "react-quill/dist/quill.snow.css";
 import api from "../../api/client.js";
 import { useAuthStore } from "../../store/authStore.js";
 import { PAGE_SHELL, PAGE_TEXT, TAB_ROW, tabBtn } from "../../styles/pageLayout.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
+
+/** Область кропа в пикселях исходного изображения (как в react-easy-crop). */
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => resolve(image));
+    image.addEventListener("error", (err) => reject(err));
+    image.src = src;
+  });
+}
+
+/**
+ * Вырезает прямоугольник в PNG (поддержка прозрачности у логотипов).
+ * @param {string} imageSrc object URL или URL
+ * @param {{ x: number, y: number, width: number, height: number }} pixelCrop
+ * @returns {Promise<Blob>}
+ */
+async function getCroppedImgBlob(imageSrc, pixelCrop) {
+  const image = await loadImage(imageSrc);
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas unsupported");
+  canvas.width = Math.max(1, Math.round(pixelCrop.width));
+  canvas.height = Math.max(1, Math.round(pixelCrop.height));
+  ctx.drawImage(
+    image,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    canvas.width,
+    canvas.height,
+  );
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) reject(new Error("Пустое изображение после кропа"));
+        else resolve(blob);
+      },
+      "image/png",
+      1,
+    );
+  });
+}
 
 function formatApiDetail(d) {
   if (d == null) return "";
@@ -430,9 +479,12 @@ export function SiteBuilderPage() {
           <div className="min-w-0">
             {tab === "settings" ? (
               <SettingsTab
+                siteId={siteId}
                 form={form}
                 setForm={setForm}
+                setSite={setSite}
                 setContactField={setContactField}
+                setError={setError}
                 onSave={onSaveSite}
                 saving={savingSite}
                 loading={loadingSite}
@@ -696,10 +748,142 @@ function Field({ label, hint, children }) {
 const inputClass =
   "mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none";
 
-function SettingsTab({ form, setForm, setContactField, onSave, saving, loading }) {
+function SettingsTab({ siteId, form, setForm, setSite, setContactField, setError, onSave, saving, loading }) {
+  const fileInputRef = useRef(null);
+  const [cropOpen, setCropOpen] = useState(false);
+  const [imageSrc, setImageSrc] = useState(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+
+  const closeCropModal = useCallback(() => {
+    if (imageSrc) {
+      try {
+        URL.revokeObjectURL(imageSrc);
+      } catch {
+        /* ignore */
+      }
+    }
+    setImageSrc(null);
+    setCropOpen(false);
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setCroppedAreaPixels(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, [imageSrc]);
+
+  const onCropComplete = useCallback((_area, areaPixels) => {
+    setCroppedAreaPixels(areaPixels);
+  }, []);
+
+  const onPickLogoFile = useCallback(
+    (e) => {
+      const file = e.target.files?.[0];
+      if (!file || !file.type.startsWith("image/")) {
+        setError("Выберите файл изображения.");
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      setImageSrc(url);
+      setCropOpen(true);
+      setCrop({ x: 0, y: 0 });
+      setZoom(1);
+      setCroppedAreaPixels(null);
+    },
+    [setError],
+  );
+
+  const onApplyCropAndUpload = useCallback(async () => {
+    if (!siteId || !imageSrc || !croppedAreaPixels) return;
+    setLogoUploading(true);
+    setError("");
+    try {
+      const blob = await getCroppedImgBlob(imageSrc, croppedAreaPixels);
+      const fd = new FormData();
+      fd.append("file", blob, "logo.png");
+      const { data } = await api.post(`/sites/${siteId}/logo`, fd);
+      setForm((p) => ({ ...p, logo_url: data.logo_url || "" }));
+      setSite(data);
+      closeCropModal();
+    } catch (err) {
+      setError(formatApiDetail(err?.response?.data?.detail) || err?.message || String(err));
+    } finally {
+      setLogoUploading(false);
+    }
+  }, [siteId, imageSrc, croppedAreaPixels, setForm, setSite, setError, closeCropModal]);
+
   if (loading) return <div className="py-6 text-center text-slate-400">Загрузка…</div>;
   return (
     <form onSubmit={onSave} className="grid gap-6 lg:grid-cols-2">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        className="hidden"
+        onChange={onPickLogoFile}
+      />
+
+      {cropOpen && imageSrc ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="logo-crop-title"
+        >
+          <div className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-2xl border border-slate-600 bg-slate-900 shadow-xl">
+            <h3 id="logo-crop-title" className="border-b border-slate-700 px-4 py-3 text-sm font-semibold text-white">
+              Область логотипа
+            </h3>
+            <p className="px-4 pt-3 text-xs text-slate-400">
+              Перетащите и масштабируйте изображение; рамка задаёт зону кропа.
+            </p>
+            <div className="relative mx-4 mt-3 h-64 w-auto overflow-hidden rounded-lg bg-slate-950 md:h-72">
+              <Cropper
+                image={imageSrc}
+                crop={crop}
+                zoom={zoom}
+                onCropChange={setCrop}
+                onZoomChange={setZoom}
+                onCropComplete={onCropComplete}
+              />
+            </div>
+            <div className="px-4 py-3">
+              <label className="flex items-center gap-2 text-xs text-slate-300">
+                <span className="shrink-0">Масштаб</span>
+                <input
+                  type="range"
+                  min={1}
+                  max={3}
+                  step={0.05}
+                  value={zoom}
+                  onChange={(e) => setZoom(Number(e.target.value))}
+                  className="min-w-0 flex-1"
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-700 px-4 py-3">
+              <button
+                type="button"
+                onClick={closeCropModal}
+                className="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                disabled={logoUploading || !croppedAreaPixels}
+                onClick={onApplyCropAndUpload}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+              >
+                <Upload className="h-4 w-4" aria-hidden />
+                {logoUploading ? "Загрузка…" : "Обрезать и загрузить"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <section className="space-y-4">
         <h2 className="text-sm font-semibold text-white">Общие</h2>
         <Field label="Внутреннее название" hint="Видно только в админ-панели.">
@@ -731,15 +915,29 @@ function SettingsTab({ form, setForm, setContactField, onSave, saving, loading }
             placeholder="Что предлагает сайт, 1–2 предложения"
           />
         </Field>
-        <Field label="URL логотипа" hint="Можно указать полную ссылку на изображение.">
-          <input
-            type="url"
-            value={form.logo_url}
-            onChange={(e) => setForm((p) => ({ ...p, logo_url: e.target.value }))}
-            className={inputClass}
-            maxLength={1024}
-            placeholder="https://…/logo.png"
-          />
+        <Field
+          label="URL логотипа"
+          hint="Можно указать внешнюю ссылку или загрузить файл — после загрузки подставится адрес на сервере."
+        >
+          <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-stretch">
+            <input
+              type="url"
+              value={form.logo_url}
+              onChange={(e) => setForm((p) => ({ ...p, logo_url: e.target.value }))}
+              className={`${inputClass} !mt-0 sm:min-w-0 sm:flex-1`}
+              maxLength={1024}
+              placeholder="https://…/logo.png"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!siteId || logoUploading}
+              className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700 disabled:opacity-50 sm:w-auto"
+            >
+              <Upload className="h-4 w-4" aria-hidden />
+              Загрузить логотип
+            </button>
+          </div>
         </Field>
         <Field label="Цвет темы" hint="HEX-код, используется как акцент в Mini App.">
           <div className="mt-1 flex items-center gap-3">

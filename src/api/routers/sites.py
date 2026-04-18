@@ -10,24 +10,71 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 import uuid
 from datetime import datetime
+from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from starlette.responses import Response
+from starlette.responses import FileResponse, Response
 
-from src.api.dependencies import AsyncSessionDep
+from src.api.dependencies import AsyncSessionDep, SettingsDep
 from src.api.dependencies_portal import PortalUserDep
 from src.api.org_scope import resolve_organization_scope
 from src.domain.portal_roles import ROLE_SUPER_ADMIN
 from src.domain.site_menu import nav_items_for_miniapp
+from src.core.config import Settings
 from src.infrastructure.models import OrganizationModel, SiteModel, SitePageModel
 
 logger = logging.getLogger(__name__)
+
+_MAX_UPLOAD = 5 * 1024 * 1024
+_ALLOWED_LOGO_EXT = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif"})
+
+
+def _site_upload_root(settings: Settings, site_id: UUID) -> Path:
+    return Path(settings.site_upload_dir).resolve() / str(site_id)
+
+
+def _safe_join_under(root: Path, *parts: str) -> Path | None:
+    target = (root / Path(*parts)).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
+        return None
+    return target
+
+
+def _logo_ext_from_filename(name: str) -> str:
+    suf = Path(name or "").suffix.lower()
+    return suf if suf in _ALLOWED_LOGO_EXT else ".png"
+
+
+def _clear_site_logo_files(root: Path) -> None:
+    if not root.is_dir():
+        return
+    for p in root.glob("logo.*"):
+        try:
+            p.unlink()
+        except OSError:
+            logger.warning("sites: не удалось удалить старый логотип %s", p, exc_info=True)
+
+
+async def _read_logo_upload_limit(file: UploadFile) -> bytes:
+    data = await file.read()
+    if len(data) > _MAX_UPLOAD:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Файл больше 5 МБ")
+    return data
+
+
+def _site_logo_asset_url(request: Request, site_id: UUID, relative: str) -> str:
+    base = str(request.base_url).rstrip("/")
+    rel = relative.lstrip("/").replace("\\", "/")
+    return f"{base}/api/public/sites/assets/{site_id}/{rel}"
 
 # Админский роутер (префикс /api/sites) — под Portal JWT middleware.
 router = APIRouter(prefix="/sites", tags=["sites"])
@@ -441,17 +488,51 @@ async def update_site(
     return _site_to_detail(row)
 
 
+@router.post("/{site_id}/logo", response_model=SiteDetail)
+async def upload_site_logo(
+    site_id: UUID,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    request: Request,
+    settings: SettingsDep,
+    organization_id: UUID | None = Query(default=None),
+    file: UploadFile = File(...),
+) -> SiteDetail:
+    """Загрузка логотипа: файл на диске + публичный URL в ``logo_url`` (для Mini App без JWT)."""
+    scope = _resolve_site_org_scope(user, organization_id)
+    row = await _get_site_for_user(session, site_id, scope)
+    raw = await _read_logo_upload_limit(file)
+    if not raw:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Пустой файл")
+    ext = _logo_ext_from_filename(file.filename or "")
+    rel = f"logo{ext}"
+    root = _site_upload_root(settings, site_id)
+    _clear_site_logo_files(root)
+    root.mkdir(parents=True, exist_ok=True)
+    dest = root / rel
+    dest.write_bytes(raw)
+    row.logo_url = _site_logo_asset_url(request, site_id, rel)
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return _site_to_detail(row)
+
+
 @router.delete("/{site_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_site(
     site_id: UUID,
     user: PortalUserDep,
     session: AsyncSessionDep,
+    settings: SettingsDep,
     organization_id: UUID | None = Query(default=None),
 ) -> Response:
     scope = _resolve_site_org_scope(user, organization_id)
     row = await _get_site_for_user(session, site_id, scope)
     await session.delete(row)
     await session.commit()
+    upload_root = _site_upload_root(settings, site_id)
+    if upload_root.exists():
+        shutil.rmtree(upload_root, ignore_errors=True)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -567,6 +648,22 @@ async def delete_site_page(
 
 
 # --- Публичный эндпоинт (для клиентского Mini App) ----------------------
+
+
+@public_router.get("/assets/{site_id}/{rest:path}")
+async def get_public_site_asset(
+    site_id: UUID,
+    rest: str,
+    settings: SettingsDep,
+) -> FileResponse:
+    """Раздача загруженного логотипа (и др. файлов сайта) без авторизации."""
+    if ".." in rest or rest.startswith(("/", "\\")):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Не найдено")
+    root = _site_upload_root(settings, site_id)
+    path = _safe_join_under(root, *rest.split("/"))
+    if path is None or not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Не найдено")
+    return FileResponse(path)
 
 
 @public_router.get("/{site_id}", response_model=PublicSiteResponse)
