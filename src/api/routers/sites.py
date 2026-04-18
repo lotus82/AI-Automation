@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import re
+import uuid
 from datetime import datetime
 from uuid import UUID
 
@@ -23,6 +24,7 @@ from src.api.dependencies import AsyncSessionDep
 from src.api.dependencies_portal import PortalUserDep
 from src.api.org_scope import resolve_organization_scope
 from src.domain.portal_roles import ROLE_SUPER_ADMIN
+from src.domain.site_menu import nav_items_for_miniapp
 from src.infrastructure.models import OrganizationModel, SiteModel, SitePageModel
 
 logger = logging.getLogger(__name__)
@@ -57,6 +59,26 @@ class SiteContacts(BaseModel):
     instagram: str | None = Field(default=None, max_length=255)
 
 
+class SiteMenuItemInput(BaseModel):
+    """Один пункт нижнего меню Mini App (редактор в портале)."""
+
+    id: str | None = Field(default=None, max_length=64, description="Стабильный id для UI; если пусто — генерируется")
+    label: str = Field(min_length=1, max_length=128)
+    page_id: UUID
+    order_index: int = Field(default=0, ge=0, le=100_000)
+    is_visible: bool = True
+
+
+class SiteMenuItemPublic(BaseModel):
+    """Пункт меню, как отдаётся в GET /sites/{id}."""
+
+    id: str
+    label: str
+    page_id: UUID
+    order_index: int
+    is_visible: bool
+
+
 class SiteListItem(BaseModel):
     id: UUID
     organization_id: UUID
@@ -71,6 +93,7 @@ class SiteListItem(BaseModel):
 
 class SiteDetail(SiteListItem):
     contacts: SiteContacts
+    menu_items: list[SiteMenuItemPublic]
 
 
 class SiteCreateRequest(BaseModel):
@@ -86,6 +109,10 @@ class SiteUpdateRequest(BaseModel):
     logo_url: str | None = Field(default=None, max_length=1024)
     theme_color: str | None = Field(default=None, max_length=16)
     contacts: SiteContacts | None = None
+    menu_items: list[SiteMenuItemInput] | None = Field(
+        default=None,
+        description="Полная замена меню Mini App; null — не менять",
+    )
 
     @field_validator("theme_color")
     @classmethod
@@ -160,6 +187,13 @@ class PublicSitePage(BaseModel):
     order_index: int
 
 
+class PublicNavItem(BaseModel):
+    """Пункт нижнего меню (подпись в Tabbar + slug страницы)."""
+
+    label: str
+    slug: str
+
+
 class PublicSiteResponse(BaseModel):
     id: UUID
     name: str
@@ -169,9 +203,39 @@ class PublicSiteResponse(BaseModel):
     theme_color: str
     contacts: SiteContacts
     pages: list[PublicSitePage]
+    nav_items: list[PublicNavItem]
 
 
 # --- Helpers -------------------------------------------------------------
+
+
+def _menu_public_from_db(raw: object) -> list[SiteMenuItemPublic]:
+    """Нормализует JSONB ``menu_items`` для ответа API."""
+    if not raw or not isinstance(raw, list):
+        return []
+    out: list[SiteMenuItemPublic] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        pid_raw = item.get("page_id")
+        if not pid_raw:
+            continue
+        try:
+            page_id = UUID(str(pid_raw))
+        except ValueError:
+            continue
+        iid = str(item.get("id") or "").strip() or str(uuid.uuid4())
+        out.append(
+            SiteMenuItemPublic(
+                id=iid,
+                label=str(item.get("label") or ""),
+                page_id=page_id,
+                order_index=int(item.get("order_index", 0) or 0),
+                is_visible=bool(item.get("is_visible", True)),
+            ),
+        )
+    out.sort(key=lambda x: (x.order_index, x.label))
+    return out
 
 
 def _site_to_detail(row: SiteModel) -> SiteDetail:
@@ -184,6 +248,7 @@ def _site_to_detail(row: SiteModel) -> SiteDetail:
         theme_color=row.theme_color or "#000000",
         logo_url=(row.logo_url or "").strip() or None,
         contacts=SiteContacts.model_validate(row.contacts or {}),
+        menu_items=_menu_public_from_db(getattr(row, "menu_items", None)),
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -289,6 +354,7 @@ async def create_site(
         logo_url=None,
         theme_color="#000000",
         contacts={},
+        menu_items=[],
     )
     session.add(row)
     await session.commit()
@@ -333,6 +399,41 @@ async def update_site(
     if body.contacts is not None:
         # model_dump(exclude_none=True) — не храним None-поля, чтобы JSONB не разрастался
         row.contacts = body.contacts.model_dump(exclude_none=True)
+
+    if body.menu_items is not None:
+        pids = [it.page_id for it in body.menu_items]
+        if len(pids) != len(set(pids)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="В меню нельзя дважды привязать одну и ту же страницу",
+            )
+        if pids:
+            found = (
+                await session.execute(
+                    select(SitePageModel.id).where(
+                        SitePageModel.site_id == site_id,
+                        SitePageModel.id.in_(pids),
+                    )
+                )
+            ).scalars().all()
+            if set(found) != set(pids):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="В меню указана страница, не принадлежащая этому сайту",
+                )
+        stored: list[dict] = []
+        for it in sorted(body.menu_items, key=lambda x: (x.order_index, str(x.page_id))):
+            iid = (it.id or "").strip() or str(uuid.uuid4())
+            stored.append(
+                {
+                    "id": iid,
+                    "label": it.label.strip(),
+                    "page_id": str(it.page_id),
+                    "order_index": int(it.order_index),
+                    "is_visible": bool(it.is_visible),
+                },
+            )
+        row.menu_items = stored
 
     session.add(row)
     await session.commit()
@@ -486,6 +587,9 @@ async def get_public_site(site_id: UUID, session: AsyncSessionDep) -> PublicSite
         )
     ).scalars().all()
 
+    menu_raw = site.menu_items if isinstance(site.menu_items, list) else None
+    nav_dtos = nav_items_for_miniapp(menu_raw, pages_rows)
+
     return PublicSiteResponse(
         id=site.id,
         name=site.name,
@@ -504,4 +608,5 @@ async def get_public_site(site_id: UUID, session: AsyncSessionDep) -> PublicSite
             )
             for p in pages_rows
         ],
+        nav_items=[PublicNavItem(label=n.label, slug=n.slug) for n in nav_dtos],
     )

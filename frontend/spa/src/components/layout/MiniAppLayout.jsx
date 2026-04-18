@@ -117,7 +117,21 @@ export function MiniAppLayout() {
   return (
     <MaxUI {...maxUiProps}>
       <div style={rootStyle} className="miniapp-root">
-        <main style={{ flex: 1, minHeight: 0, overflowY: "auto", overscrollBehavior: "contain" }}>
+        {/*
+          Важно: не включаем прокрутку на <main>. Иначе вложенный flex (Panel + область контента)
+          с flex:1 / minHeight:0 внутри прокручиваемого родителя даёт нулевую высоту середины —
+          в WebView MAX видна только шапка и Tabbar, без текста страницы.
+        */}
+        <main
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            overscrollBehavior: "none",
+          }}
+        >
           <Outlet />
         </main>
       </div>

@@ -1321,6 +1321,12 @@ class SiteModel(Base):
         nullable=False,
         server_default=sql_text("'{}'::jsonb"),
     )
+    # Пункты нижнего меню Mini App: [{ "id", "label", "page_id", "order_index", "is_visible" }, …]
+    menu_items: Mapped[list[Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sql_text("'[]'::jsonb"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=sql_text("now()"),

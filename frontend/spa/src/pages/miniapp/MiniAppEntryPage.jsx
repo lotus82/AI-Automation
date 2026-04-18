@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { useMiniAppAuthStore } from "../../store/miniAppAuthStore.js";
 import { useMiniAppConfigStore } from "../../store/miniAppConfigStore.js";
 import { useMiniAppThemeStore } from "../../store/miniAppThemeStore.js";
+import "./miniappPageContent.css";
 
 /**
  * Извлекает строку ``init_data`` из параметров запуска Mini App мессенджера MAX.
@@ -133,8 +134,8 @@ function ErrorScreen({ title, detail, onRetry }) {
  * валидирует ограниченный список значений ``justify``/``align``; во-вторых,
  * Tabbar визуально уникален и проще описать его стилями, чем через Flex.
  */
-function MiniAppTabbar({ pages, activeSlug, onChange, themeColor }) {
-  if (!pages || pages.length === 0) return null;
+function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
+  if (!items || items.length === 0) return null;
   return (
     <nav
       aria-label="Навигация Mini App"
@@ -159,13 +160,13 @@ function MiniAppTabbar({ pages, activeSlug, onChange, themeColor }) {
           gap: 2,
         }}
       >
-        {pages.map((p) => {
-          const active = p.slug === activeSlug;
+        {items.map((item) => {
+          const active = item.slug === activeSlug;
           return (
-            <li key={p.id} style={{ flex: 1, display: "flex" }}>
+            <li key={item.slug} style={{ flex: 1, display: "flex" }}>
               <button
                 type="button"
-                onClick={() => onChange(p.slug)}
+                onClick={() => onChange(item.slug)}
                 aria-current={active ? "page" : undefined}
                 style={{
                   flex: 1,
@@ -208,7 +209,7 @@ function MiniAppTabbar({ pages, activeSlug, onChange, themeColor }) {
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {p.title}
+                  {item.label}
                 </span>
               </button>
             </li>
@@ -301,31 +302,31 @@ function MiniAppHeader({ title, subtitle, logoUrl, themeColor }) {
 function MiniAppPageContent({ page }) {
   if (!page) {
     return (
-      <Flex direction="column" align="center" gap={8} style={{ padding: 32, textAlign: "center" }}>
+      <div style={{ padding: "32px 16px", textAlign: "center" }}>
         <Typography.Title>Страница не выбрана</Typography.Title>
-        <Typography.Body>Выберите раздел в нижнем меню.</Typography.Body>
-      </Flex>
+        <div style={{ marginTop: 8 }}>
+          <Typography.Body>Выберите раздел в нижнем меню.</Typography.Body>
+        </div>
+      </div>
     );
   }
   return (
-    <Container>
-      <Flex direction="column" gap={12} style={{ padding: "16px 16px 24px" }}>
-        <Typography.Title>{page.title}</Typography.Title>
-        {page.content ? (
-          <div
-            className="miniapp-page-content"
-            style={{
-              lineHeight: 1.55,
-              fontSize: 15,
-              color: "var(--max-color-text-primary, #111)",
-            }}
-            dangerouslySetInnerHTML={{ __html: page.content }}
-          />
-        ) : (
-          <Typography.Body>Раздел пока пуст.</Typography.Body>
-        )}
-      </Flex>
-    </Container>
+    <div style={{ padding: "16px 16px 24px" }}>
+      <Typography.Title style={{ marginBottom: 12 }}>{page.title}</Typography.Title>
+      {page.content ? (
+        <div
+          className="miniapp-page-content"
+          style={{
+            lineHeight: 1.55,
+            fontSize: 15,
+            color: "var(--max-color-text-primary, #111)",
+          }}
+          dangerouslySetInnerHTML={{ __html: page.content }}
+        />
+      ) : (
+        <Typography.Body>Раздел пока пуст.</Typography.Body>
+      )}
+    </div>
   );
 }
 
@@ -411,7 +412,12 @@ export function MiniAppEntryPage() {
       );
       setConfig(cfg);
       if (cfg?.theme_color) setThemeColor(cfg.theme_color);
-      const firstSlug = Array.isArray(cfg?.pages) && cfg.pages.length ? cfg.pages[0].slug : null;
+      const pgs = Array.isArray(cfg?.pages) ? cfg.pages : [];
+      const nav =
+        Array.isArray(cfg?.nav_items) && cfg.nav_items.length > 0
+          ? cfg.nav_items.filter((x) => x && x.slug)
+          : pgs.map((p) => ({ label: p.title, slug: p.slug }));
+      const firstSlug = nav[0]?.slug ?? pgs[0]?.slug ?? null;
       setActiveSlug(firstSlug);
       setStatus("ready");
     } catch (e) {
@@ -446,12 +452,30 @@ export function MiniAppEntryPage() {
   }
 
   const pages = Array.isArray(config?.pages) ? config.pages : [];
+  const navItems = useMemo(() => {
+    const raw = config?.nav_items;
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw.filter((x) => x && x.slug);
+    }
+    return pages.map((p) => ({ label: p.title, slug: p.slug }));
+  }, [config?.nav_items, pages]);
+
   const activePage =
     pages.find((p) => p.slug === activeSlug) || (pages.length > 0 ? pages[0] : null);
   const themeColor = config?.theme_color || null;
 
   return (
-    <Panel mode="secondary" style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
+    <Panel
+      mode="secondary"
+      style={{
+        flex: 1,
+        minHeight: 0,
+        width: "100%",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
       <MiniAppHeader
         title={config?.title}
         subtitle={config?.subtitle}
@@ -476,7 +500,7 @@ export function MiniAppEntryPage() {
         )}
       </div>
       <MiniAppTabbar
-        pages={pages}
+        items={navItems}
         activeSlug={activePage?.slug || null}
         onChange={setActiveSlug}
         themeColor={themeColor}

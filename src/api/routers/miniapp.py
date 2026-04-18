@@ -32,6 +32,7 @@ from src.api.dependencies_portal import PortalUserDep
 from src.core.config import get_settings
 from src.domain import system_setting_keys as sk
 from src.domain.portal_roles import ROLE_DIRECTOR, ROLE_ORG_ADMIN, ROLE_SUPER_ADMIN
+from src.domain.site_menu import nav_items_for_miniapp
 from src.infrastructure.models import MiniAppUserModel, OrganizationModel, SiteModel, SitePageModel
 from src.infrastructure.portal_security import (
     create_miniapp_access_token,
@@ -490,6 +491,13 @@ class MiniAppConfigPage(BaseModel):
     order_index: int
 
 
+class MiniAppNavItem(BaseModel):
+    """Пункт нижнего меню (подпись + slug опубликованной страницы)."""
+
+    label: str
+    slug: str
+
+
 class MiniAppConfigResponse(BaseModel):
     """Единый JSON для отрисовки Mini App организации.
 
@@ -510,6 +518,7 @@ class MiniAppConfigResponse(BaseModel):
     theme_color: str
     contacts: dict[str, object]
     pages: list[MiniAppConfigPage]
+    nav_items: list[MiniAppNavItem]
 
 
 # --- Схемы активного сайта (admin) --------------------------------------
@@ -583,6 +592,9 @@ async def get_miniapp_config(inn: str, session: AsyncSessionDep) -> MiniAppConfi
         )
     ).scalars().all()
 
+    menu_raw = site.menu_items if isinstance(getattr(site, "menu_items", None), list) else None
+    nav_dtos = nav_items_for_miniapp(menu_raw, pages_rows)
+
     return MiniAppConfigResponse(
         organization_id=org.id,
         organization_name=org.name,
@@ -603,6 +615,7 @@ async def get_miniapp_config(inn: str, session: AsyncSessionDep) -> MiniAppConfi
             )
             for p in pages_rows
         ],
+        nav_items=[MiniAppNavItem(label=n.label, slug=n.slug) for n in nav_dtos],
     )
 
 

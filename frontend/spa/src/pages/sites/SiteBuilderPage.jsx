@@ -4,6 +4,7 @@ import {
   Eye,
   EyeOff,
   FileText,
+  Menu,
   Palette,
   Plus,
   RefreshCcw,
@@ -71,7 +72,7 @@ export function SiteBuilderPage() {
   const role = user?.role;
   const canAccess = role === "super_admin" || role === "org_admin" || role === "director";
 
-  const [tab, setTab] = useState("settings"); // settings | pages | page-editor
+  const [tab, setTab] = useState("settings"); // settings | menu | pages | page-editor
   const [site, setSite] = useState(null);
   const [loadingSite, setLoadingSite] = useState(true);
   const [error, setError] = useState("");
@@ -84,8 +85,10 @@ export function SiteBuilderPage() {
     logo_url: "",
     theme_color: "#000000",
     contacts: EMPTY_CONTACTS,
+    menu_items: [],
   });
   const [savingSite, setSavingSite] = useState(false);
+  const [savingMenu, setSavingMenu] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
 
   // Страницы
@@ -120,6 +123,15 @@ export function SiteBuilderPage() {
         logo_url: data.logo_url || "",
         theme_color: data.theme_color || "#000000",
         contacts: { ...EMPTY_CONTACTS, ...(data.contacts || {}) },
+        menu_items: Array.isArray(data.menu_items)
+          ? data.menu_items.map((m) => ({
+              id: m.id || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Math.random())),
+              label: m.label || "",
+              page_id: m.page_id,
+              order_index: m.order_index ?? 0,
+              is_visible: m.is_visible !== false,
+            }))
+          : [],
       });
     } catch (e) {
       setError(formatApiDetail(e?.response?.data?.detail) || e?.message || String(e));
@@ -181,11 +193,60 @@ export function SiteBuilderPage() {
       };
       const { data } = await api.put(`/sites/${siteId}`, payload);
       setSite(data);
+      if (Array.isArray(data.menu_items)) {
+        setForm((prev) => ({
+          ...prev,
+          menu_items: data.menu_items.map((m) => ({
+            id: m.id || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Math.random())),
+            label: m.label || "",
+            page_id: m.page_id,
+            order_index: m.order_index ?? 0,
+            is_visible: m.is_visible !== false,
+          })),
+        }));
+      }
       setSavedAt(new Date());
     } catch (err) {
       setError(formatApiDetail(err?.response?.data?.detail) || err?.message || String(err));
     } finally {
       setSavingSite(false);
+    }
+  };
+
+  const onSaveMenu = async (e) => {
+    e?.preventDefault();
+    if (!siteId) return;
+    setSavingMenu(true);
+    setError("");
+    try {
+      const payload = {
+        menu_items: (form.menu_items || []).map((it, idx) => ({
+          id: it.id,
+          label: (it.label || "").trim() || "Пункт",
+          page_id: it.page_id,
+          order_index: Math.max(0, Number(it.order_index) || idx),
+          is_visible: Boolean(it.is_visible),
+        })),
+      };
+      const { data } = await api.put(`/sites/${siteId}`, payload);
+      setSite(data);
+      if (Array.isArray(data.menu_items)) {
+        setForm((prev) => ({
+          ...prev,
+          menu_items: data.menu_items.map((m) => ({
+            id: m.id || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Math.random())),
+            label: m.label || "",
+            page_id: m.page_id,
+            order_index: m.order_index ?? 0,
+            is_visible: m.is_visible !== false,
+          })),
+        }));
+      }
+      setSavedAt(new Date());
+    } catch (err) {
+      setError(formatApiDetail(err?.response?.data?.detail) || err?.message || String(err));
+    } finally {
+      setSavingMenu(false);
     }
   };
 
@@ -338,6 +399,12 @@ export function SiteBuilderPage() {
             Настройки
           </span>
         </button>
+        <button type="button" className={tabBtn(tab === "menu")} onClick={() => setTab("menu")}>
+          <span className="inline-flex items-center gap-1.5">
+            <Menu className="h-3.5 w-3.5" aria-hidden />
+            Меню
+          </span>
+        </button>
         <button type="button" className={tabBtn(tab === "pages")} onClick={() => setTab("pages")}>
           <span className="inline-flex items-center gap-1.5">
             <FileText className="h-3.5 w-3.5" aria-hidden />
@@ -369,6 +436,17 @@ export function SiteBuilderPage() {
                 onSave={onSaveSite}
                 saving={savingSite}
                 loading={loadingSite}
+              />
+            ) : null}
+
+            {tab === "menu" ? (
+              <MenuTab
+                form={form}
+                setForm={setForm}
+                pages={pages}
+                loading={loadingSite || loadingPages}
+                onSave={onSaveMenu}
+                saving={savingMenu}
               />
             ) : null}
 
@@ -413,6 +491,195 @@ export function SiteBuilderPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Редактор нижнего меню Mini App: подпись пункта, порядок, привязка к странице, видимость.
+ */
+function MenuTab({ form, setForm, pages, loading, onSave, saving }) {
+  if (loading) return <div className="py-6 text-center text-slate-400">Загрузка…</div>;
+
+  const fillFromPages = () => {
+    const pub = [...pages]
+      .filter((p) => p.is_published)
+      .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
+    setForm((prev) => ({
+      ...prev,
+      menu_items: pub.map((p, i) => ({
+        id:
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `m-${i}-${Date.now()}`,
+        label: p.title || "",
+        page_id: p.id,
+        order_index: i,
+        is_visible: true,
+      })),
+    }));
+  };
+
+  const addRow = () => {
+    const pub = pages.filter((p) => p.is_published);
+    const first = pub[0] || pages[0];
+    if (!first) return;
+    setForm((prev) => ({
+      ...prev,
+      menu_items: [
+        ...(prev.menu_items || []),
+        {
+          id:
+            typeof crypto !== "undefined" && crypto.randomUUID
+              ? crypto.randomUUID()
+              : `m-${Date.now()}`,
+          label: "Новый пункт",
+          page_id: first.id,
+          order_index: (prev.menu_items || []).length,
+          is_visible: true,
+        },
+      ],
+    }));
+  };
+
+  const removeRow = (id) => {
+    setForm((prev) => ({
+      ...prev,
+      menu_items: (prev.menu_items || []).filter((x) => x.id !== id),
+    }));
+  };
+
+  const updateRow = (id, patch) => {
+    setForm((prev) => ({
+      ...prev,
+      menu_items: (prev.menu_items || []).map((x) => (x.id === id ? { ...x, ...patch } : x)),
+    }));
+  };
+
+  const rows = [...(form.menu_items || [])].sort(
+    (a, b) => (Number(a.order_index) || 0) - (Number(b.order_index) || 0),
+  );
+
+  return (
+    <form onSubmit={onSave} className="space-y-4">
+      <p className="text-sm text-slate-400">
+        Пункты нижнего меню в Mini App: своя подпись, порядок и страница. Если меню пустое и так
+        сохранено — подписи и порядок совпадают с опубликованными страницами.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={fillFromPages}
+          disabled={!pages.some((p) => p.is_published)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+        >
+          Заполнить из страниц
+        </button>
+        <button
+          type="button"
+          onClick={addRow}
+          disabled={pages.length === 0}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-600 disabled:opacity-50"
+        >
+          <Plus className="h-3.5 w-3.5" aria-hidden />
+          Добавить пункт
+        </button>
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-slate-800">
+        <table className="min-w-full divide-y divide-slate-800 text-sm">
+          <thead className="bg-slate-900/70 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="w-20 px-3 py-2 text-left font-medium">Порядок</th>
+              <th className="px-3 py-2 text-left font-medium">Подпись в меню</th>
+              <th className="min-w-[180px] px-3 py-2 text-left font-medium">Страница</th>
+              <th className="w-28 px-3 py-2 text-left font-medium">В меню</th>
+              <th className="w-14 px-3 py-2 text-right font-medium" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800/60">
+            {rows.length === 0 ? (
+              <tr>
+                <td className="px-3 py-6 text-center text-slate-500" colSpan={5}>
+                  Пунктов нет — в Mini App будет автоматическое меню из опубликованных страниц.
+                </td>
+              </tr>
+            ) : (
+              rows.map((row) => (
+                <tr key={row.id} className="hover:bg-slate-800/40">
+                  <td className="px-3 py-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100000}
+                      value={row.order_index}
+                      onChange={(e) =>
+                        updateRow(row.id, { order_index: Math.max(0, Number(e.target.value) || 0) })
+                      }
+                      className="w-20 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <input
+                      type="text"
+                      value={row.label}
+                      onChange={(e) => updateRow(row.id, { label: e.target.value })}
+                      className="w-full min-w-[140px] rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      maxLength={128}
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <select
+                      value={row.page_id != null ? String(row.page_id) : ""}
+                      onChange={(e) => updateRow(row.id, { page_id: e.target.value })}
+                      className="w-full min-w-[160px] rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
+                    >
+                      {pages.map((p) => (
+                        <option key={p.id} value={String(p.id)}>
+                          {p.is_published ? "" : "⚠ "}
+                          {p.title} (/{p.slug})
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2">
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(row.is_visible)}
+                        onChange={(e) => updateRow(row.id, { is_visible: e.target.checked })}
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-emerald-500 focus:ring-emerald-500"
+                      />
+                      Да
+                    </label>
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => removeRow(row.id)}
+                      className="inline-flex rounded-lg border border-red-700/60 bg-red-900/30 p-1.5 text-red-200 hover:bg-red-900/60"
+                      title="Удалить пункт"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          type="submit"
+          disabled={saving}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+        >
+          <Save className="h-4 w-4" aria-hidden />
+          {saving ? "Сохранение…" : "Сохранить меню"}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -793,6 +1060,34 @@ function PageEditorTab({ page, form, setForm, onSave, saving, onDelete, onBackTo
 // Live-превью Mini App
 // ============================================================================
 
+/** Сборка пунктов Tabbar в том же порядке, что и на бэкенде (`nav_items_for_miniapp`). */
+function buildPreviewNav(menuItems, publishedPages) {
+  const sorted = [...publishedPages].sort(
+    (a, b) =>
+      (Number(a.order_index) || 0) - (Number(b.order_index) || 0) ||
+      String(a.title || "").localeCompare(String(b.title || "")),
+  );
+  if (!menuItems || menuItems.length === 0) {
+    return sorted.filter((p) => p.slug).map((p) => ({ label: p.title, slug: p.slug }));
+  }
+  const byId = Object.fromEntries(sorted.map((p) => [String(p.id), p]));
+  const ordered = [...menuItems].sort(
+    (a, b) => (Number(a.order_index) || 0) - (Number(b.order_index) || 0),
+  );
+  const out = [];
+  for (const it of ordered) {
+    if (it.is_visible === false) continue;
+    const p = byId[String(it.page_id)];
+    if (!p || !p.is_published) continue;
+    const label = (it.label || "").trim() || p.title;
+    if (p.slug) out.push({ label, slug: p.slug });
+  }
+  if (out.length === 0) {
+    return sorted.filter((p) => p.slug).map((p) => ({ label: p.title, slug: p.slug }));
+  }
+  return out;
+}
+
 /** Безопасный hex — для inline-стилей превью (защита от мусора в поле). */
 function sanitizeHex(hex, fallback = "#0f172a") {
   if (typeof hex !== "string") return fallback;
@@ -854,13 +1149,23 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm }) {
     [liveList],
   );
 
+  const nav = useMemo(
+    () => buildPreviewNav(form.menu_items, publishedPages),
+    [form.menu_items, publishedPages],
+  );
+
   const activePage = useMemo(() => {
     if (tab === "page-editor" && editingPageId) {
       const live = liveList.find((p) => p.id === editingPageId);
       if (live) return live;
     }
+    const firstSlug = nav[0]?.slug;
+    if (firstSlug) {
+      const hit = publishedPages.find((p) => p.slug === firstSlug);
+      if (hit) return hit;
+    }
     return publishedPages[0] || null;
-  }, [tab, editingPageId, liveList, publishedPages]);
+  }, [tab, editingPageId, liveList, publishedPages, nav]);
 
   const headerBackground = `linear-gradient(135deg, ${themeColor} 0%, ${themeColor}DD 100%)`;
 
@@ -931,16 +1236,16 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm }) {
             </div>
 
             <nav className="border-t border-slate-200 bg-white/95 backdrop-blur">
-              {publishedPages.length === 0 ? (
+              {nav.length === 0 ? (
                 <div className="px-3 py-2 text-center text-[11px] text-slate-400">
                   Меню появится после публикации хотя бы одной страницы
                 </div>
               ) : (
                 <ul className="flex items-stretch px-1 py-1">
-                  {publishedPages.map((p) => {
-                    const isActive = activePage && p.id === activePage.id;
+                  {nav.map((item) => {
+                    const isActive = activePage && activePage.slug === item.slug;
                     return (
-                      <li key={p.id} className="flex flex-1">
+                      <li key={item.slug} className="flex flex-1">
                         <div
                           className="flex w-full flex-col items-center justify-center gap-1 px-1 py-1.5 text-[11px] leading-tight"
                           style={{
@@ -957,9 +1262,9 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm }) {
                           />
                           <span
                             className="w-full truncate text-center"
-                            title={p.title}
+                            title={item.label}
                           >
-                            {p.title || "—"}
+                            {item.label || "—"}
                           </span>
                         </div>
                       </li>

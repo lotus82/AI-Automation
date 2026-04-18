@@ -1,0 +1,16 @@
+/* Контент страницы Mini App: переносы и ограничение ширины медиа (Quill / произвольный HTML). */
+.miniapp-page-content {
+  min-height: 1px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.miniapp-page-content img,
+.miniapp-page-content video {
+  max-width: 100%;
+  height: auto;
+}
+
+.miniapp-page-content a {
+  color: var(--max-color-link, var(--max-color-primary, #0066cc));
+}
