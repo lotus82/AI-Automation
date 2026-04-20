@@ -13,10 +13,12 @@ import { MiniAppStaffPanel } from "./MiniAppStaffPanel.jsx";
 import "./miniappPageContent.css";
 
 /**
- * Отступ снизу у области прокрутки: таббар `position: fixed` к нижнему краю WebView.
- * Увеличьте, если чипы меню стали выше (две строки + safe-area), см. MiniAppTabbar.
+ * Отступ снизу у области прокрутки: нижнее меню (`MiniAppTabbar`) с `position: fixed`
+ * не участвует в потоке — без достаточного padding последние блоки страницы оказываются под таббаром.
+ * ~48px одна строка чипов + запас на перенос на вторую строку + safe-area.
  */
-const MINIAPP_TABBAR_SCROLL_PAD = "calc(env(safe-area-inset-bottom, 0px) + 0px)";
+const MINIAPP_TABBAR_SCROLL_PAD =
+  "calc(env(safe-area-inset-bottom, 0px) + max(120px, min(28vh, 200px)))";
 
 /**
  * Извлекает строку ``init_data`` из параметров запуска Mini App мессенджера MAX.
@@ -634,13 +636,16 @@ export function MiniAppEntryPage() {
         themeColor={themeColor}
       />
       <div
+        className="miniapp-main-scroll"
         style={{
           flex: 1,
           minHeight: 0,
           overflowY: "auto",
+          overflowX: "hidden",
           overscrollBehavior: "contain",
           WebkitOverflowScrolling: "touch",
           paddingBottom: MINIAPP_TABBAR_SCROLL_PAD,
+          scrollPaddingBottom: MINIAPP_TABBAR_SCROLL_PAD,
           /* Явный светлый фон: в dark-схеме MAX UI иначе тело страницы может быть невидимо */
           background: "#ffffff",
           color: "#111827",
