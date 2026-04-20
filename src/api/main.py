@@ -14,6 +14,7 @@ from src.api.routers import (
     admin_logs,
     auth_portal,
     bitrix,
+    bookings,
     calls,
     chat,
     chats,
@@ -213,6 +214,8 @@ def create_app() -> FastAPI:
     application.include_router(sites.public_router, prefix="/api")
     application.include_router(chats.router, prefix="/api")
     application.include_router(schedules.router, prefix="/api")
+    application.include_router(bookings.router, prefix="/api")
+    application.include_router(bookings.public_router, prefix="/api")
     application.include_router(notifications.router, prefix="/api")
     application.include_router(voice.router, prefix="/voice", tags=["voice"])
 

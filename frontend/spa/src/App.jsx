@@ -8,6 +8,7 @@ import { Layout } from "./layouts/Layout.jsx";
 import { ScenariosIndexRedirect, ScenariosLayout } from "./layouts/ScenariosLayout.jsx";
 import { AITrainerPage } from "./pages/AITrainerPage.jsx";
 import { ApplicationsPage } from "./pages/ApplicationsPage.jsx";
+import { BookingsPage } from "./pages/bookings/BookingsPage.jsx";
 import { BotsPage } from "./pages/BotsPage.jsx";
 import { FormsPage } from "./pages/FormsPage.jsx";
 import { MiniAppLayout } from "./components/layout/MiniAppLayout.jsx";
@@ -94,6 +95,7 @@ export default function App() {
           <Route path="knowledge" element={<KnowledgePage />} />
           <Route path="bots" element={<BotsPage />} />
           <Route path="schedule" element={<SchedulePage />} />
+          <Route path="bookings" element={<BookingsPage />} />
           <Route path="questionnaires" element={<QuestionnairesPage />} />
           <Route path="forms" element={<FormsPage />} />
           <Route path="shops" element={<ShopsPage />} />

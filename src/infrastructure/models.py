@@ -1391,3 +1391,118 @@ class SitePageModel(Base):
     )
 
     site: Mapped["SiteModel"] = relationship("SiteModel", back_populates="pages")
+
+
+class BookingConfigModel(Base):
+    """Настройки онлайн-записи к сотруднику (рабочие часы, длительность приёма)."""
+
+    __tablename__ = "booking_configs"
+    __table_args__ = (UniqueConstraint("portal_user_id", "organization_id", name="uq_booking_configs_user_org"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    portal_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("portal_users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    working_hours: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sql_text("'{}'::jsonb"),
+    )
+    appointment_duration: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=sql_text("30"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    portal_user: Mapped["PortalUserModel"] = relationship("PortalUserModel")
+    organization: Mapped["OrganizationModel"] = relationship("OrganizationModel")
+
+
+class BusySlotModel(Base):
+    """Разовая блокировка интервала (недоступно для записи)."""
+
+    __tablename__ = "booking_busy_slots"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    portal_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("portal_users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    reason: Mapped[str] = mapped_column(String(512), nullable=False, server_default=sql_text("''"))
+
+    portal_user: Mapped["PortalUserModel"] = relationship("PortalUserModel")
+
+
+class AppointmentModel(Base):
+    """Запись клиента к сотруднику."""
+
+    __tablename__ = "booking_appointments"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    portal_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("portal_users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    client_info: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sql_text("'{}'::jsonb"),
+    )
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=sql_text("'pending'"))
+    service_price: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    portal_user: Mapped["PortalUserModel"] = relationship("PortalUserModel")
+    organization: Mapped["OrganizationModel"] = relationship("OrganizationModel")

@@ -68,6 +68,8 @@ def _is_public_path(path: str, method: str) -> bool:
         return True
     if method == "GET" and path.startswith("/api/public/miniapp/"):
         return True
+    if path.startswith("/api/public/bookings/"):
+        return True
     if method == "POST" and re.match(r"^/api/public/mis/patient/[^/]+/diary$", path):
         return True
     if path == "/api/public/mis/questionnaire-invite" and method == "GET":

@@ -2,6 +2,7 @@ import {
   Book,
   Building2,
   Calendar,
+  CalendarDays,
   ClipboardList,
   FileText,
   Globe,
@@ -49,6 +50,7 @@ const BASE_NAV = [
   { to: "/logs", section: "logs", label: "Логи", icon: ScrollText },
   { to: "/knowledge", section: "knowledge", label: "База знаний", icon: Book },
   { to: "/schedule", section: "schedule", label: "Расписание", icon: Calendar },
+  { to: "/bookings", section: "bookings", label: "Записи", icon: CalendarDays },
 ];
 
 function SidebarContent({ onNavigate, headerAction }) {
