@@ -23,11 +23,31 @@ import "react-easy-crop/react-easy-crop.css";
 import "react-quill/dist/quill.snow.css";
 import api from "../../api/client.js";
 import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
+import { MiniAppEmbedPlaceholder } from "../miniapp/MiniAppEmbedPlaceholder.jsx";
 import { useAuthStore } from "../../store/authStore.js";
 import { PAGE_SHELL, PAGE_TEXT, TAB_ROW, tabBtn } from "../../styles/pageLayout.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
 import { siteLogoImgSrc } from "../../utils/siteLogoUrl.js";
 import { buildSberQrDonationBlockHtml, SBER_DONATION_DEFAULT_HREF } from "../../utils/sberDonationBlockHtml";
+
+/** Ключи встраиваемых модулей Mini App (согласовано с backend). */
+const EMBED_MODULE_OPTIONS = [
+  { value: "", label: "Нет встроенного модуля" },
+  { value: "knowledge", label: "База знаний" },
+  { value: "roles", label: "Роли и промпты" },
+  { value: "questionnaires", label: "Опросники" },
+  { value: "forms", label: "Формы" },
+  { value: "shops", label: "Магазины" },
+  { value: "integrations", label: "Интеграции" },
+  { value: "schedule", label: "Расписание (сценарии)" },
+  { value: "bookings", label: "Записи (список/аналитика)" },
+  { value: "bots", label: "Боты и каналы" },
+  { value: "logs", label: "Логи" },
+  { value: "applications", label: "Приложения" },
+  { value: "sites", label: "Сайты" },
+  { value: "mis", label: "МИС" },
+  { value: "chats", label: "Чаты" },
+];
 
 /** Область кропа в пикселях исходного изображения (как в react-easy-crop). */
 function loadImage(src) {
@@ -155,8 +175,12 @@ export function SiteBuilderPage() {
     content: "",
     order_index: 0,
     is_published: true,
+    page_kind: "content",
+    booking_staff_user_id: "",
+    embed_module: "",
   });
   const [pageSaving, setPageSaving] = useState(false);
+  const [portalUsers, setPortalUsers] = useState([]);
 
   const editingPage = useMemo(
     () => pages.find((p) => p.id === editingPageId) || null,
@@ -209,12 +233,35 @@ export function SiteBuilderPage() {
     }
   }, [siteId]);
 
+  const loadPortalUsers = useCallback(async () => {
+    if (!site?.organization_id) {
+      setPortalUsers([]);
+      return;
+    }
+    try {
+      const params = {};
+      if (user?.role === "super_admin") {
+        params.organization_id = site.organization_id;
+      }
+      const { data } = await api.get("/portal/users", { params });
+      setPortalUsers(Array.isArray(data) ? data : []);
+    } catch {
+      setPortalUsers([]);
+    }
+  }, [site?.organization_id, user?.role]);
+
   useEffect(() => {
     if (canAccess) {
       loadSite();
       loadPages();
     }
   }, [canAccess, loadSite, loadPages]);
+
+  useEffect(() => {
+    if (canAccess && site?.organization_id && tab === "page-editor") {
+      loadPortalUsers();
+    }
+  }, [canAccess, site?.organization_id, tab, loadPortalUsers]);
 
   if (!user) return null;
   if (!canAccess) return <Navigate to="/scenarios/qa-analytics" replace />;
@@ -369,6 +416,9 @@ export function SiteBuilderPage() {
       content: p.content || "",
       order_index: p.order_index ?? 0,
       is_published: Boolean(p.is_published),
+      page_kind: (p.page_kind || "content").toLowerCase() === "booking" ? "booking" : "content",
+      booking_staff_user_id: p.booking_staff_user_id ? String(p.booking_staff_user_id) : "",
+      embed_module: p.embed_module ? String(p.embed_module) : "",
     });
     setTab("page-editor");
   };
@@ -379,12 +429,21 @@ export function SiteBuilderPage() {
     setPageSaving(true);
     setError("");
     try {
+      const pk = (pageForm.page_kind || "content").toLowerCase() === "booking" ? "booking" : "content";
+      const staffRaw = (pageForm.booking_staff_user_id || "").trim();
       const payload = {
         title: pageForm.title.trim(),
         slug: (pageForm.slug || "").trim().toLowerCase(),
         content: pageForm.content,
         order_index: Math.max(0, Number(pageForm.order_index) || 0),
         is_published: Boolean(pageForm.is_published),
+        page_kind: pk,
+        booking_staff_user_id:
+          pk === "booking" && staffRaw ? staffRaw : null,
+        embed_module:
+          pk === "content" && (pageForm.embed_module || "").trim()
+            ? String(pageForm.embed_module).trim()
+            : null,
       };
       const { data } = await api.put(`/sites/${siteId}/pages/${editingPageId}`, payload);
       setPages((prev) =>
@@ -524,6 +583,7 @@ export function SiteBuilderPage() {
                 page={editingPage}
                 form={pageForm}
                 setForm={setPageForm}
+                portalUsers={portalUsers}
                 paymentLinkDefault={(form.contacts?.payment_url || "").trim()}
                 onSave={onSavePage}
                 saving={pageSaving}
@@ -1134,7 +1194,7 @@ function PagesTab({ pages, loading, onCreate, onOpen, onDelete, onChangeOrder, o
   );
 }
 
-function PageEditorTab({ page, form, setForm, paymentLinkDefault, onSave, saving, onDelete, onBackToList }) {
+function PageEditorTab({ page, form, setForm, portalUsers, paymentLinkDefault, onSave, saving, onDelete, onBackToList }) {
   const [isHtmlMode, setIsHtmlMode] = useState(false);
 
   const insertSberDonationBlock = () => {
@@ -1234,9 +1294,77 @@ function PageEditorTab({ page, form, setForm, paymentLinkDefault, onSave, saving
         </Field>
       </div>
 
+      <div className="rounded-lg border border-slate-600 bg-slate-950/40 p-4">
+        <Field label="Тип страницы" hint="«Запись» — виджет выбора времени; расписание настраивается в разделе «Записи».">
+          <select
+            value={form.page_kind || "content"}
+            onChange={(e) => {
+              const v = e.target.value;
+              setForm((p) => ({
+                ...p,
+                page_kind: v,
+                booking_staff_user_id: v === "content" ? "" : p.booking_staff_user_id,
+                embed_module: v === "booking" ? "" : p.embed_module,
+              }));
+            }}
+            className={`${inputClass} max-w-md`}
+          >
+            <option value="content">Текст и медиа (как обычно)</option>
+            <option value="booking">Запись на приём к сотруднику</option>
+          </select>
+        </Field>
+        {(form.page_kind || "content") === "booking" ? (
+          <div className="mt-3">
+          <Field
+            label="Сотрудник"
+            hint="Пользователь панели организации. Ему нужно задать рабочие часы в «Записи»."
+          >
+            <select
+              value={form.booking_staff_user_id || ""}
+              onChange={(e) => setForm((p) => ({ ...p, booking_staff_user_id: e.target.value }))}
+              className={`${inputClass} max-w-md`}
+              required
+            >
+              <option value="">— выберите сотрудника —</option>
+              {(portalUsers || [])
+                .filter((u) => u.is_active !== false)
+                .map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {(u.display_name || u.username || "").trim() || u.id}
+                    {u.role ? ` (${u.role})` : ""}
+                  </option>
+                ))}
+            </select>
+          </Field>
+          </div>
+        ) : null}
+        {(form.page_kind || "content") === "content" ? (
+          <div className="mt-3">
+            <Field
+              label="Встроенный модуль платформы"
+              hint="Опционально: позже здесь откроется экран раздела (база знаний, формы и т.д.). Сейчас — заглушка в Mini App."
+            >
+              <select
+                value={form.embed_module || ""}
+                onChange={(e) => setForm((p) => ({ ...p, embed_module: e.target.value }))}
+                className={`${inputClass} max-w-xl`}
+              >
+                {EMBED_MODULE_OPTIONS.map((o) => (
+                  <option key={o.value || "none"} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        ) : null}
+      </div>
+
       <div className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <label className="block text-xs font-medium text-slate-300">Контент</label>
+          <label className="block text-xs font-medium text-slate-300">
+            {(form.page_kind || "content") === "booking" ? "Текст над формой записи (необязательно)" : "Контент"}
+          </label>
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -1386,6 +1514,17 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm }) {
               ? Number(pageForm.order_index)
               : p.order_index,
             is_published: Boolean(pageForm?.is_published ?? p.is_published),
+            page_kind: (pageForm?.page_kind || p.page_kind || "content").toLowerCase(),
+            booking_staff_user_id:
+              (pageForm?.page_kind || "").toLowerCase() === "booking" && pageForm?.booking_staff_user_id
+                ? pageForm.booking_staff_user_id
+                : (pageForm?.page_kind || "").toLowerCase() === "content"
+                  ? null
+                  : p.booking_staff_user_id,
+            embed_module:
+              (pageForm?.page_kind || p.page_kind || "content").toLowerCase() === "booking"
+                ? null
+                : (pageForm?.embed_module || "").trim() || null,
           }
         : p,
     );
@@ -1528,12 +1667,37 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm }) {
 
 function PagePreviewBody({ page }) {
   const previewContentRef = useMiniAppHtmlLinkDelegate(page?.content, { forceExternal: true });
+  const isBooking =
+    page &&
+    String(page.page_kind || "content").toLowerCase() === "booking" &&
+    page.booking_staff_user_id;
+  const embedKey =
+    page && !isBooking ? String(page.embed_module || "").trim() : "";
   return (
     <article className="text-slate-800">
       <h2 className="mb-2 text-lg font-semibold text-slate-900">
         {(page.title || "").trim() || "Без заголовка"}
       </h2>
-      {page.content ? (
+      {embedKey ? (
+        <div className="mb-3 [&_.max-ui-typography-title]:!text-[15px]">
+          <MiniAppEmbedPlaceholder moduleKey={embedKey} />
+        </div>
+      ) : null}
+      {isBooking ? (
+        <>
+          {page.content ? (
+            <div
+              ref={previewContentRef}
+              className="miniapp-preview-content mb-3 space-y-2 text-[14px] leading-relaxed"
+              dangerouslySetInnerHTML={{ __html: page.content }}
+            />
+          ) : null}
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-900">
+            Здесь в Mini App — выбор даты и свободного слота; запись попадает в расписание сотрудника в панели
+            («Записи»).
+          </div>
+        </>
+      ) : page.content ? (
         <div
           ref={previewContentRef}
           className="miniapp-preview-content space-y-2 text-[14px] leading-relaxed"

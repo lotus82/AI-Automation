@@ -618,6 +618,8 @@ class PortalUserModel(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: Идентификатор чата в MAX для сопоставления с Mini App (``mini_app_users.chat_id``).
+    miniapp_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     permissions: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
@@ -1375,6 +1377,17 @@ class SitePageModel(Base):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(128), nullable=False)
+    #: ``content`` — HTML из редактора; ``booking`` — в Mini App рендерится виджет записи к сотруднику.
+    page_kind: Mapped[str] = mapped_column(String(32), nullable=False, server_default=sql_text("'content'"))
+    #: Сотрудник (portal_users), к чьему расписанию привязана страница; только при ``page_kind == booking``.
+    booking_staff_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("portal_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    #: Встроенный модуль платформы (заглушка до отдельной реализации UI).
+    embed_module: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     content: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
     order_index: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=sql_text("0"))
     is_published: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=sql_text("true"))

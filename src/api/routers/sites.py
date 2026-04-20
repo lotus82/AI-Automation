@@ -17,7 +17,7 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from starlette.responses import FileResponse, Response
@@ -25,11 +25,12 @@ from starlette.responses import FileResponse, Response
 from src.api.dependencies import AsyncSessionDep, SettingsDep
 from src.api.dependencies_portal import PortalUserDep
 from src.api.org_scope import resolve_organization_scope
+from src.domain.miniapp_embed_modules import ALLOWED_EMBED_MODULE_KEYS
 from src.domain.portal_roles import ROLE_SUPER_ADMIN
 from src.domain.site_menu import nav_items_for_miniapp
 from src.core.config import Settings
 from src.domain.site_logo_url import normalize_site_logo_url, site_uploaded_logo_public_path
-from src.infrastructure.models import OrganizationModel, SiteModel, SitePageModel
+from src.infrastructure.models import OrganizationModel, PortalUserModel, SiteModel, SitePageModel
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +181,9 @@ class SitePageItem(BaseModel):
     site_id: UUID
     title: str
     slug: str
+    page_kind: str = "content"
+    booking_staff_user_id: UUID | None = None
+    embed_module: str | None = None
     content: str
     order_index: int
     is_published: bool
@@ -193,6 +197,19 @@ class SitePageCreateRequest(BaseModel):
     content: str = Field(default="", max_length=500_000)
     order_index: int = Field(default=0, ge=0, le=10_000)
     is_published: bool = True
+    page_kind: str = Field(default="content", max_length=32)
+    booking_staff_user_id: UUID | None = None
+    embed_module: str | None = Field(default=None, max_length=64)
+
+    @field_validator("embed_module")
+    @classmethod
+    def _embed_create(cls, v: str | None) -> str | None:
+        s = (v or "").strip()
+        if not s:
+            return None
+        if s not in ALLOWED_EMBED_MODULE_KEYS:
+            raise ValueError("Неизвестный ключ встраиваемого модуля")
+        return s
 
     @field_validator("slug")
     @classmethod
@@ -204,6 +221,22 @@ class SitePageCreateRequest(BaseModel):
             )
         return s
 
+    @field_validator("page_kind")
+    @classmethod
+    def _page_kind(cls, v: str) -> str:
+        s = (v or "content").strip().lower()
+        if s not in ("content", "booking"):
+            raise ValueError("page_kind: допустимо content или booking")
+        return s
+
+    @model_validator(mode="after")
+    def _booking_staff_required(self) -> SitePageCreateRequest:
+        if self.page_kind == "booking" and self.booking_staff_user_id is None:
+            raise ValueError("Для страницы записи укажите сотрудника (booking_staff_user_id)")
+        if self.page_kind == "booking" and self.embed_module:
+            raise ValueError("Для страницы записи встраиваемый модуль не используется (оставьте пустым)")
+        return self
+
 
 class SitePageUpdateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
@@ -211,6 +244,21 @@ class SitePageUpdateRequest(BaseModel):
     content: str | None = Field(default=None, max_length=500_000)
     order_index: int | None = Field(default=None, ge=0, le=10_000)
     is_published: bool | None = None
+    page_kind: str | None = Field(default=None, max_length=32)
+    booking_staff_user_id: UUID | None = None
+    embed_module: str | None = Field(default=None, max_length=64)
+
+    @field_validator("embed_module")
+    @classmethod
+    def _embed_upd(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        s = v.strip()
+        if not s:
+            return None
+        if s not in ALLOWED_EMBED_MODULE_KEYS:
+            raise ValueError("Неизвестный ключ встраиваемого модуля")
+        return s
 
     @field_validator("slug")
     @classmethod
@@ -224,6 +272,16 @@ class SitePageUpdateRequest(BaseModel):
             )
         return s
 
+    @field_validator("page_kind")
+    @classmethod
+    def _page_kind_upd(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        s = v.strip().lower()
+        if s not in ("content", "booking"):
+            raise ValueError("page_kind: допустимо content или booking")
+        return s
+
 
 class PublicSitePage(BaseModel):
     """Страница для публичного Mini App (без служебных полей и без черновиков)."""
@@ -231,6 +289,9 @@ class PublicSitePage(BaseModel):
     id: UUID
     title: str
     slug: str
+    page_kind: str = "content"
+    booking_staff_user_id: UUID | None = None
+    embed_module: str | None = None
     content: str
     order_index: int
 
@@ -317,17 +378,36 @@ def _site_to_list_item(row: SiteModel) -> SiteListItem:
 
 
 def _page_to_item(row: SitePageModel) -> SitePageItem:
+    em = (getattr(row, "embed_module", None) or "").strip() or None
     return SitePageItem(
         id=row.id,
         site_id=row.site_id,
         title=row.title,
         slug=row.slug,
+        page_kind=(row.page_kind or "content").strip() or "content",
+        booking_staff_user_id=row.booking_staff_user_id,
+        embed_module=em,
         content=row.content or "",
         order_index=int(row.order_index or 0),
         is_published=bool(row.is_published),
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
+
+
+async def _validate_booking_staff_for_site(
+    session: AsyncSessionDep,
+    site_org_id: UUID,
+    staff_id: UUID | None,
+) -> None:
+    if staff_id is None:
+        return
+    u = await session.get(PortalUserModel, staff_id)
+    if u is None or u.organization_id != site_org_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Указанный сотрудник не принадлежит организации этого сайта",
+        )
 
 
 def _resolve_site_org_scope(user, organization_id: UUID | None) -> UUID:
@@ -569,10 +649,18 @@ async def create_site_page(
 ) -> SitePageItem:
     scope = _resolve_site_org_scope(user, organization_id)
     await _get_site_for_user(session, site_id, scope)
+    pk = (body.page_kind or "content").strip().lower()
+    sid = body.booking_staff_user_id if pk == "booking" else None
+    if sid is not None:
+        await _validate_booking_staff_for_site(session, scope, sid)
+    embed = None if pk == "booking" else body.embed_module
     row = SitePageModel(
         site_id=site_id,
         title=body.title.strip(),
         slug=body.slug,
+        page_kind=pk,
+        booking_staff_user_id=sid,
+        embed_module=embed,
         content=body.content or "",
         order_index=body.order_index,
         is_published=body.is_published,
@@ -615,6 +703,25 @@ async def update_site_page(
         row.order_index = int(body.order_index)
     if body.is_published is not None:
         row.is_published = bool(body.is_published)
+    fs = body.model_fields_set
+    if body.page_kind is not None:
+        row.page_kind = body.page_kind.strip().lower()
+        if row.page_kind == "content":
+            row.booking_staff_user_id = None
+    if "booking_staff_user_id" in fs:
+        row.booking_staff_user_id = body.booking_staff_user_id
+    if "embed_module" in fs:
+        row.embed_module = body.embed_module
+
+    if (row.page_kind or "content") == "booking" and row.booking_staff_user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Для страницы записи укажите сотрудника (booking_staff_user_id)",
+        )
+    if row.booking_staff_user_id is not None:
+        await _validate_booking_staff_for_site(session, scope, row.booking_staff_user_id)
+    if (row.page_kind or "content") == "booking":
+        row.embed_module = None
 
     session.add(row)
     try:
@@ -700,6 +807,9 @@ async def get_public_site(site_id: UUID, session: AsyncSessionDep) -> PublicSite
                 id=p.id,
                 title=p.title,
                 slug=p.slug,
+                page_kind=(p.page_kind or "content").strip() or "content",
+                booking_staff_user_id=p.booking_staff_user_id,
+                embed_module=(getattr(p, "embed_module", None) or "").strip() or None,
                 content=p.content or "",
                 order_index=int(p.order_index or 0),
             )

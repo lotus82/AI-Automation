@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 from starlette.responses import Response
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from src.api.dependencies import AsyncSessionDep, SettingsDep
@@ -12,6 +13,7 @@ from src.api.dependencies_portal import PortalUserDep
 from src.api.schemas.portal import (
     PortalLoginRequest,
     PortalLoginResponse,
+    PortalMiniappChatPatch,
     PortalPasswordChangeRequest,
     PortalUserMe,
 )
@@ -102,7 +104,34 @@ async def portal_me(user: PortalUserDep, session: AsyncSessionDep) -> PortalUser
         permissions=user.permissions or {},
         sections=effective_sections(user),
         medical_doctor_id=medical_doctor_id,
+        miniapp_chat_id=(user.miniapp_chat_id or "").strip() or None,
     )
+
+
+@router.patch("/me/miniapp-chat", response_model=PortalUserMe)
+async def portal_patch_miniapp_chat(
+    body: PortalMiniappChatPatch,
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+) -> PortalUserMe:
+    """Сохраняет MAX chat_id для сопоставления с пользователем Mini App (режим сотрудника)."""
+    raw = body.miniapp_chat_id
+    if raw is None:
+        user.miniapp_chat_id = None
+    else:
+        s = raw.strip()
+        user.miniapp_chat_id = s if s else None
+    session.add(user)
+    try:
+        await session.commit()
+    except IntegrityError as e:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Этот chat_id уже привязан к другому сотруднику в организации",
+        ) from e
+    await session.refresh(user)
+    return await portal_me(user, session)
 
 
 @router.patch(

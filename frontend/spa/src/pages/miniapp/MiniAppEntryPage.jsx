@@ -7,6 +7,9 @@ import { useMiniAppConfigStore } from "../../store/miniAppConfigStore.js";
 import { useMiniAppThemeStore } from "../../store/miniAppThemeStore.js";
 import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
 import { siteLogoImgSrc } from "../../utils/siteLogoUrl.js";
+import { MiniAppBookingContent } from "./MiniAppBookingContent.jsx";
+import { MiniAppEmbedPlaceholder } from "./MiniAppEmbedPlaceholder.jsx";
+import { MiniAppStaffPanel } from "./MiniAppStaffPanel.jsx";
 import "./miniappPageContent.css";
 
 /**
@@ -343,8 +346,14 @@ function MiniAppHeader({ title, subtitle, logoUrl, themeColor }) {
  * компании (не UGC) и рендерится в нативном WebView мессенджера. Клики по ссылкам
  * ведут через WebApp.openLink (внешний браузер), см. useMiniAppHtmlLinkDelegate.
  */
-function MiniAppPageContent({ page }) {
+function MiniAppPageContent({ page, organizationId }) {
   const contentRef = useMiniAppHtmlLinkDelegate(page?.content);
+  const isBooking =
+    page &&
+    String(page.page_kind || "content").toLowerCase() === "booking" &&
+    page.booking_staff_user_id;
+  const embedKey =
+    page && !isBooking ? String(page.embed_module || "").trim() : "";
 
   if (!page) {
     return (
@@ -373,7 +382,35 @@ function MiniAppPageContent({ page }) {
       >
         {(page.title || "").trim() || "Страница"}
       </h2>
-      {page.content ? (
+      {isBooking && organizationId ? (
+        <MiniAppBookingContent
+          organizationId={organizationId}
+          staffUserId={page.booking_staff_user_id}
+          introHtml={(page.content || "").trim() ? page.content : undefined}
+        />
+      ) : isBooking && !organizationId ? (
+        <p style={{ margin: 0, fontSize: 15, color: "#b91c1c" }}>
+          Запись недоступна: нет данных организации.
+        </p>
+      ) : embedKey ? (
+        <>
+          <MiniAppEmbedPlaceholder moduleKey={embedKey} />
+          {page.content ? (
+            <div
+              ref={contentRef}
+              className="miniapp-page-content"
+              style={{
+                lineHeight: 1.55,
+                fontSize: 15,
+                color: "#1f2937",
+              }}
+              dangerouslySetInnerHTML={{ __html: page.content }}
+            />
+          ) : (
+            <p style={{ margin: 0, fontSize: 15, color: "#6b7280" }}>Раздел пока пуст.</p>
+          )}
+        </>
+      ) : page.content ? (
         <div
           ref={contentRef}
           className="miniapp-page-content"
@@ -403,6 +440,7 @@ export function MiniAppEntryPage() {
   const [searchParams] = useSearchParams();
   const setAuth = useMiniAppAuthStore((s) => s.setAuth);
   const clearAuth = useMiniAppAuthStore((s) => s.clearAuth);
+  const miniToken = useMiniAppAuthStore((s) => s.token);
 
   const config = useMiniAppConfigStore((s) => s.config);
   const setConfig = useMiniAppConfigStore((s) => s.setConfig);
@@ -414,6 +452,7 @@ export function MiniAppEntryPage() {
   const [errorTitle, setErrorTitle] = useState("");
   const [errorDetail, setErrorDetail] = useState("");
   const [activeSlug, setActiveSlug] = useState(null);
+  const [staffMenu, setStaffMenu] = useState(false);
   const startedRef = useRef(false);
 
   const initData = useMemo(() => extractInitData(searchParams), [searchParams]);
@@ -505,6 +544,27 @@ export function MiniAppEntryPage() {
     };
   }, [setThemeColor]);
 
+  useEffect(() => {
+    if (status !== "ready" || !miniToken) {
+      setStaffMenu(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await axios.get("/api/miniapp/staff/session", {
+          headers: { Authorization: `Bearer ${miniToken}` },
+        });
+        if (!cancelled) setStaffMenu(Boolean(data?.is_staff));
+      } catch {
+        if (!cancelled) setStaffMenu(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [status, miniToken]);
+
   // Важно: хуки только до любых return — иначе при смене status (loading → ready)
   // меняется число вызовов useMemo и React падает (часто — пустой тёмный экран в WebView).
   const pages = useMemo(
@@ -520,6 +580,27 @@ export function MiniAppEntryPage() {
     return pages.map((p) => ({ label: p.title, slug: p.slug }));
   }, [config?.nav_items, pages]);
 
+  const navItemsWithStaff = useMemo(() => {
+    if (!staffMenu) return navItems;
+    if (navItems.some((x) => x.slug === "__staff__")) return navItems;
+    return [...navItems, { label: "Управление", slug: "__staff__" }];
+  }, [navItems, staffMenu]);
+
+  useEffect(() => {
+    if (status !== "ready") return;
+    if (!staffMenu && activeSlug === "__staff__") {
+      const first = navItems[0]?.slug ?? pages[0]?.slug ?? null;
+      if (first) setActiveSlug(first);
+    }
+  }, [status, staffMenu, activeSlug, navItems, pages]);
+
+  useEffect(() => {
+    if (status !== "ready") return;
+    if (staffMenu && pages.length === 0 && activeSlug !== "__staff__") {
+      setActiveSlug("__staff__");
+    }
+  }, [status, staffMenu, pages.length, activeSlug]);
+
   if (status === "loading") {
     return <LoadingScreen label="Загружаем содержимое…" />;
   }
@@ -528,7 +609,9 @@ export function MiniAppEntryPage() {
   }
 
   const activePage =
-    pages.find((p) => p.slug === activeSlug) || (pages.length > 0 ? pages[0] : null);
+    activeSlug === "__staff__"
+      ? null
+      : pages.find((p) => p.slug === activeSlug) || (pages.length > 0 ? pages[0] : null);
   const themeColor = config?.theme_color || null;
 
   return (
@@ -563,7 +646,9 @@ export function MiniAppEntryPage() {
           color: "#111827",
         }}
       >
-        {pages.length === 0 ? (
+        {activeSlug === "__staff__" ? (
+          <MiniAppStaffPanel token={miniToken} />
+        ) : pages.length === 0 ? (
           <Flex
             direction="column"
             align="center"
@@ -576,12 +661,12 @@ export function MiniAppEntryPage() {
             </Typography.Body>
           </Flex>
         ) : (
-          <MiniAppPageContent page={activePage} />
+          <MiniAppPageContent page={activePage} organizationId={config?.organization_id} />
         )}
       </div>
       <MiniAppTabbar
-        items={navItems}
-        activeSlug={activePage?.slug || null}
+        items={navItemsWithStaff}
+        activeSlug={activeSlug === "__staff__" ? "__staff__" : activePage?.slug || null}
         onChange={setActiveSlug}
         themeColor={themeColor}
       />

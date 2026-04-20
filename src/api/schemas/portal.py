@@ -46,6 +46,21 @@ class PortalUserMe(BaseModel):
         default=None,
         description="Запись medical_doctors.id, если пользователь назначен врачом МИС",
     )
+    miniapp_chat_id: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Идентификатор чата MAX для связи с Mini App (совпадает с chat_id Web App)",
+    )
+
+
+class PortalMiniappChatPatch(BaseModel):
+    """Привязка профиля портала к чату MAX для режима сотрудника в Mini App."""
+
+    miniapp_chat_id: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Пусто или null — сброс привязки",
+    )
 
 
 class PortalPasswordChangeRequest(BaseModel):

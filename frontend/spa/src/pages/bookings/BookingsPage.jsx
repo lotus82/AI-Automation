@@ -49,6 +49,7 @@ function formatApiDetail(d) {
 
 export function BookingsPage() {
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const canAccess = useMemo(() => {
     if (!user) return false;
     if (["super_admin", "org_admin", "director"].includes(user.role)) return true;
@@ -82,6 +83,12 @@ export function BookingsPage() {
   const [statsTo, setStatsTo] = useState(() => toYmd(new Date()));
   const [stats, setStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
+
+  const [miniChatDraft, setMiniChatDraft] = useState("");
+  const [miniChatSaving, setMiniChatSaving] = useState(false);
+  useEffect(() => {
+    setMiniChatDraft((user?.miniapp_chat_id || "").trim());
+  }, [user?.miniapp_chat_id]);
 
   const rangeForView = useMemo(() => {
     if (calView === "day") {
@@ -193,6 +200,22 @@ export function BookingsPage() {
     }
   };
 
+  const saveMiniappChatId = async () => {
+    setMiniChatSaving(true);
+    setError("");
+    try {
+      await api.patch("/auth/me/miniapp-chat", {
+        miniapp_chat_id: miniChatDraft.trim() ? miniChatDraft.trim() : null,
+      });
+      const { data } = await api.get("/auth/me");
+      setUser(data);
+    } catch (e) {
+      setError(formatApiDetail(e?.response?.data?.detail) || e?.message || String(e));
+    } finally {
+      setMiniChatSaving(false);
+    }
+  };
+
   const cancelAppointment = async (id) => {
     setError("");
     try {
@@ -235,6 +258,37 @@ export function BookingsPage() {
         <CalendarDays className="h-8 w-8 text-emerald-400" strokeWidth={1.5} aria-hidden />
         <h1 className="text-2xl font-semibold text-white">Записи</h1>
       </header>
+
+      {user?.organization_id ? (
+        <div className="mb-6 max-w-2xl rounded-lg border border-slate-600 bg-slate-900/50 p-4">
+          <h2 className="mb-1 text-sm font-medium text-slate-200">Mini App (MAX): ваш chat_id</h2>
+          <p className="mb-3 text-xs text-slate-400">
+            Укажите тот же идентификатор чата, что у Web App в мессенджере — тогда в Mini App появится раздел «Управление»
+            (ваши записи и расписание). Значение должно совпадать с chat_id из авторизации Mini App.
+          </p>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="min-w-[200px] flex-1">
+              <span className="mb-1 block text-xs text-slate-500">MAX chat_id</span>
+              <input
+                type="text"
+                value={miniChatDraft}
+                onChange={(e) => setMiniChatDraft(e.target.value)}
+                maxLength={64}
+                placeholder="например, из отладки Web App"
+                className="w-full rounded border border-slate-600 bg-slate-800 px-2 py-1.5 text-sm text-white"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={miniChatSaving}
+              onClick={saveMiniappChatId}
+              className="rounded bg-slate-700 px-3 py-2 text-sm text-white hover:bg-slate-600 disabled:opacity-50"
+            >
+              {miniChatSaving ? "Сохранение…" : "Сохранить"}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-700 pb-2">
         {[

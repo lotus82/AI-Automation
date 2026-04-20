@@ -488,6 +488,9 @@ class MiniAppConfigPage(BaseModel):
     id: UUID
     title: str
     slug: str
+    page_kind: str = "content"
+    booking_staff_user_id: UUID | None = None
+    embed_module: str | None = None
     content: str
     order_index: int
 
@@ -611,6 +614,9 @@ async def get_miniapp_config(inn: str, session: AsyncSessionDep) -> MiniAppConfi
                 id=p.id,
                 title=p.title,
                 slug=p.slug,
+                page_kind=(getattr(p, "page_kind", None) or "content").strip() or "content",
+                booking_staff_user_id=getattr(p, "booking_staff_user_id", None),
+                embed_module=(getattr(p, "embed_module", None) or "").strip() or None,
                 content=p.content or "",
                 order_index=int(p.order_index or 0),
             )
@@ -688,3 +694,9 @@ async def miniapp_me(user: MiniAppUserDep) -> MiniAppMe:
         organization_name=org.name if org else "",
         organization_display_name=(org.display_name or "").strip() or None if org else None,
     )
+
+
+# Режим сотрудника (staff) — отдельный модуль, чтобы не раздувать этот файл.
+from src.api.routers.miniapp_staff_api import router as miniapp_staff_router  # noqa: E402
+
+router.include_router(miniapp_staff_router)
