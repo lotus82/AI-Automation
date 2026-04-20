@@ -20,6 +20,57 @@ function authHeaders(token) {
   return { Authorization: `Bearer ${t}` };
 }
 
+/** Поля из client_info (публичная запись / Mini App). */
+function parseClientInfo(ci) {
+  const o = ci && typeof ci === "object" && !Array.isArray(ci) ? ci : {};
+  const name = String(o.name ?? o.client_name ?? "").trim();
+  const phone = String(o.phone ?? o.tel ?? "").trim();
+  return {
+    name: name || "Клиент",
+    phone,
+  };
+}
+
+function getMaxWebApp() {
+  if (typeof window === "undefined") return null;
+  return window.WebApp ?? window.MaxWebApp ?? window.maxWebApp ?? null;
+}
+
+/**
+ * Диплинк «Отправить в MAX» с черновиком текста (см. dev.max.ru/help/deeplinks).
+ * Пользователь выбирает чат — подходит для ответа клиенту, с которым есть переписка.
+ */
+function openMaxShareDraft(text) {
+  const url = `https://max.ru/:share?text=${encodeURIComponent(text)}`;
+  const bridge = getMaxWebApp();
+  if (bridge?.openMaxLink) {
+    bridge.openMaxLink(url);
+  } else {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
+
+/** Ссылка tel: для мобильного звонка. */
+function telHref(phone) {
+  const raw = String(phone || "").trim();
+  if (!raw) return null;
+  const d = raw.replace(/[\s()-]/g, "");
+  if (!d) return null;
+  if (d.startsWith("+")) return `tel:${d}`;
+  if (/^8\d{10}$/.test(d)) return `tel:+7${d.slice(1)}`;
+  if (/^7\d{10}$/.test(d)) return `tel:+${d}`;
+  if (/^\d{10,15}$/.test(d)) return `tel:+${d}`;
+  return `tel:${raw}`;
+}
+
+function appointmentShareDraft(a, clientName) {
+  const st = formatDateTimeRu(a.start_time);
+  const en = formatDateTimeRu(a.end_time);
+  const hello =
+    clientName && clientName !== "Клиент" ? `Здравствуйте, ${clientName}! ` : "Здравствуйте! ";
+  return `${hello}По поводу записи на ${st} — ${en}.`;
+}
+
 /**
  * Панель сотрудника в Mini App: записи к специалисту и настройки расписания (тот же API, что «Записи» в портале).
  */
@@ -175,47 +226,87 @@ export function MiniAppStaffPanel({ token }) {
           {appointments.length === 0 ? (
             <Typography.Body style={{ color: "#6b7280" }}>Пока нет записей.</Typography.Body>
           ) : (
+            <>
+            <Typography.Body style={{ fontSize: 12, color: "#6b7280", marginBottom: 10, lineHeight: 1.4 }}>
+              «Написать» открывает экран отправки в MAX с текстом-черновиком — выберите чат с клиентом.
+            </Typography.Body>
             <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-              {appointments.map((a) => (
-                <li
-                  key={a.id}
-                  style={{
-                    border: "1px solid #e5e7eb",
-                    borderRadius: 12,
-                    padding: "12px 14px",
-                    background: "#fafafa",
-                  }}
-                >
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "#111827", marginBottom: 4 }}>
-                    {formatDateTimeRu(a.start_time)} — {formatDateTimeRu(a.end_time)}
-                  </div>
-                  <div style={{ fontSize: 13, color: "#4b5563", marginBottom: 8 }}>
-                    Статус: {a.status || "—"}
-                  </div>
-                  <pre
+              {appointments.map((a) => {
+                const { name: clientName, phone } = parseClientInfo(a.client_info);
+                const tel = telHref(phone);
+                return (
+                  <li
+                    key={a.id}
                     style={{
-                      fontSize: 12,
-                      margin: 0,
-                      padding: 8,
-                      borderRadius: 8,
-                      background: "#fff",
-                      overflow: "auto",
-                      maxHeight: 120,
                       border: "1px solid #e5e7eb",
+                      borderRadius: 12,
+                      padding: "12px 14px",
+                      background: "#fafafa",
                     }}
                   >
-                    {JSON.stringify(a.client_info || {}, null, 2)}
-                  </pre>
-                  {a.status !== "canceled" ? (
-                    <div style={{ marginTop: 10 }}>
-                      <Button mode="secondary" size="s" onClick={() => cancelAppointment(a.id)}>
-                        Отменить запись
-                      </Button>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "#111827", marginBottom: 6 }}>
+                      {formatDateTimeRu(a.start_time)} — {formatDateTimeRu(a.end_time)}
                     </div>
-                  ) : null}
-                </li>
-              ))}
+                    <div style={{ fontSize: 13, color: "#4b5563", marginBottom: 8 }}>
+                      Статус: {a.status || "—"}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: "#111827",
+                        marginBottom: 6,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                      }}
+                    >
+                      <div>
+                        <span style={{ color: "#6b7280", fontSize: 12 }}>Имя: </span>
+                        {clientName}
+                      </div>
+                      <div>
+                        <span style={{ color: "#6b7280", fontSize: 12 }}>Телефон: </span>
+                        {phone ? phone : "—"}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, alignItems: "center" }}>
+                      <Button
+                        mode="primary"
+                        size="s"
+                        onClick={() => openMaxShareDraft(appointmentShareDraft(a, clientName))}
+                      >
+                        Написать
+                      </Button>
+                      {tel ? (
+                        <a
+                          href={tel}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            padding: "6px 12px",
+                            borderRadius: 8,
+                            border: "1px solid #d1d5db",
+                            background: "#fff",
+                            color: "#374151",
+                            fontSize: 13,
+                            fontWeight: 600,
+                            textDecoration: "none",
+                          }}
+                        >
+                          Позвонить
+                        </a>
+                      ) : null}
+                      {a.status !== "canceled" ? (
+                        <Button mode="secondary" size="s" onClick={() => cancelAppointment(a.id)}>
+                          Отменить запись
+                        </Button>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
+            </>
           )}
         </div>
       ) : null}

@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
-from src.api.dependencies import AsyncSessionDep, SettingsDep
+from src.api.dependencies import AsyncSessionDep, RedisDep, SettingsDep
 from src.api.dependencies_portal import PortalUserDep
 from src.api.org_scope import resolve_organization_scope
 from src.api.schemas.bookings import (
@@ -30,6 +30,7 @@ from src.api.schemas.bookings import (
 )
 from src.core.config import Settings
 from src.infrastructure.models import AppointmentModel, BookingConfigModel, BusySlotModel, PortalUserModel
+from src.infrastructure.services.booking_max_notify import notify_staff_new_booking
 from src.infrastructure.services.booking_service import compute_available_slots
 
 logger = logging.getLogger(__name__)
@@ -428,6 +429,7 @@ async def public_create_appointment(
     body: PublicAppointmentCreate,
     session: AsyncSessionDep,
     settings: SettingsDep,
+    redis: RedisDep,
 ) -> AppointmentOut:
     staff = await session.get(PortalUserModel, body.staff_user_id)
     if staff is None or not staff.is_active:
@@ -464,4 +466,12 @@ async def public_create_appointment(
         logger.exception("public_create_appointment: commit failed")
         raise
     await session.refresh(row)
+    await notify_staff_new_booking(
+        session=session,
+        redis=redis,
+        settings=settings,
+        staff=staff,
+        appointment=row,
+        client_info=dict(body.client_info or {}),
+    )
     return _appointment_to_out(row)
