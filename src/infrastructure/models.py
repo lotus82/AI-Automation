@@ -1336,6 +1336,17 @@ class SiteModel(Base):
         nullable=False,
         server_default=sql_text("'[]'::jsonb"),
     )
+    #: Нижнее меню Mini App для МИС (site_kind=mis): отдельно «врач» и «пациент».
+    mis_menu_items_doctor: Mapped[list[Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sql_text("'[]'::jsonb"),
+    )
+    mis_menu_items_patient: Mapped[list[Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sql_text("'[]'::jsonb"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=sql_text("now()"),
@@ -1386,6 +1397,8 @@ class SitePageModel(Base):
     slug: Mapped[str] = mapped_column(String(128), nullable=False)
     #: ``content`` — HTML из редактора; ``booking`` — в Mini App рендерится виджет записи к сотруднику.
     page_kind: Mapped[str] = mapped_column(String(32), nullable=False, server_default=sql_text("'content'"))
+    #: Для МИС-сайта: ``doctor`` / ``patient`` — кому показывать страницу в Mini App.
+    mis_audience: Mapped[str | None] = mapped_column(String(16), nullable=True),
     #: Сотрудник (portal_users), к чьему расписанию привязана страница; только при ``page_kind == booking``.
     booking_staff_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

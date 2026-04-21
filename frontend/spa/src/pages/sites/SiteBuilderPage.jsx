@@ -122,6 +122,21 @@ function formatApiDetail(d) {
   return String(d);
 }
 
+function mapMenuItemsFromApi(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.map((m) => ({
+    id:
+      m.id ||
+      (typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : String(Math.random())),
+    label: m.label || "",
+    page_id: m.page_id,
+    order_index: m.order_index ?? 0,
+    is_visible: m.is_visible !== false,
+  }));
+}
+
 /** Вкладка «Карта пациента»: тема публичной карты (хранится в contacts.mis_patient_card_theme). */
 function PatientCardThemePanel({ form, setForm, onSave, saving }) {
   const raw = form.contacts?.mis_patient_card_theme;
@@ -321,6 +336,8 @@ export function SiteBuilderPage() {
   const canAccess = role === "super_admin" || role === "org_admin" || role === "director";
 
   const [tab, setTab] = useState("settings"); // settings | menu | pages | page-editor
+  /** Для МИС: какую роль редактируем (отдельные страницы и меню). */
+  const [misRoleTab, setMisRoleTab] = useState("doctor");
   const [site, setSite] = useState(null);
   const [loadingSite, setLoadingSite] = useState(true);
   const [error, setError] = useState("");
@@ -334,6 +351,8 @@ export function SiteBuilderPage() {
     theme_color: "#000000",
     contacts: EMPTY_CONTACTS,
     menu_items: [],
+    mis_menu_items_doctor: [],
+    mis_menu_items_patient: [],
   });
   const [savingSite, setSavingSite] = useState(false);
   const [savingMenu, setSavingMenu] = useState(false);
@@ -380,15 +399,9 @@ export function SiteBuilderPage() {
           mis_miniapp_audience:
             (data.contacts || {}).mis_miniapp_audience === "patient" ? "patient" : "doctor",
         },
-        menu_items: Array.isArray(data.menu_items)
-          ? data.menu_items.map((m) => ({
-              id: m.id || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Math.random())),
-              label: m.label || "",
-              page_id: m.page_id,
-              order_index: m.order_index ?? 0,
-              is_visible: m.is_visible !== false,
-            }))
-          : [],
+        menu_items: mapMenuItemsFromApi(data.menu_items),
+        mis_menu_items_doctor: mapMenuItemsFromApi(data.mis_menu_items_doctor),
+        mis_menu_items_patient: mapMenuItemsFromApi(data.mis_menu_items_patient),
       });
     } catch (e) {
       setError(formatApiDetail(e?.response?.data?.detail) || e?.message || String(e));
@@ -447,6 +460,16 @@ export function SiteBuilderPage() {
 
   const isMisSite = isMisBuilder || (site?.site_kind || "") === "mis";
 
+  const pagesForMisRole = (() => {
+    if (!isMisSite) return pages;
+    const aud = misRoleTab === "doctor" ? "doctor" : "patient";
+    return pages.filter((p) => {
+      const ma = String(p.mis_audience || "").toLowerCase();
+      if (!ma) return true;
+      return ma === aud;
+    });
+  })();
+
   // --- Настройки сайта -----------------------------------------------
 
   const setContactField = (key, value) => {
@@ -478,13 +501,9 @@ export function SiteBuilderPage() {
       if (Array.isArray(data.menu_items)) {
         setForm((prev) => ({
           ...prev,
-          menu_items: data.menu_items.map((m) => ({
-            id: m.id || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Math.random())),
-            label: m.label || "",
-            page_id: m.page_id,
-            order_index: m.order_index ?? 0,
-            is_visible: m.is_visible !== false,
-          })),
+          menu_items: mapMenuItemsFromApi(data.menu_items),
+          mis_menu_items_doctor: mapMenuItemsFromApi(data.mis_menu_items_doctor),
+          mis_menu_items_patient: mapMenuItemsFromApi(data.mis_menu_items_patient),
         }));
       }
       setSavedAt(new Date());
@@ -501,29 +520,40 @@ export function SiteBuilderPage() {
     setSavingMenu(true);
     setError("");
     try {
-      const payload = {
-        menu_items: (form.menu_items || []).map((it, idx) => ({
-          id: it.id,
-          label: (it.label || "").trim() || "Пункт",
-          page_id: it.page_id,
-          order_index: Math.max(0, Number(it.order_index) || idx),
-          is_visible: Boolean(it.is_visible),
-        })),
-      };
+      const payload = isMisSite
+        ? {
+            mis_menu_items_doctor: (form.mis_menu_items_doctor || []).map((it, idx) => ({
+              id: it.id,
+              label: (it.label || "").trim() || "Пункт",
+              page_id: it.page_id,
+              order_index: Math.max(0, Number(it.order_index) || idx),
+              is_visible: Boolean(it.is_visible),
+            })),
+            mis_menu_items_patient: (form.mis_menu_items_patient || []).map((it, idx) => ({
+              id: it.id,
+              label: (it.label || "").trim() || "Пункт",
+              page_id: it.page_id,
+              order_index: Math.max(0, Number(it.order_index) || idx),
+              is_visible: Boolean(it.is_visible),
+            })),
+          }
+        : {
+            menu_items: (form.menu_items || []).map((it, idx) => ({
+              id: it.id,
+              label: (it.label || "").trim() || "Пункт",
+              page_id: it.page_id,
+              order_index: Math.max(0, Number(it.order_index) || idx),
+              is_visible: Boolean(it.is_visible),
+            })),
+          };
       const { data } = await api.put(`/sites/${siteId}`, payload);
       setSite(data);
-      if (Array.isArray(data.menu_items)) {
-        setForm((prev) => ({
-          ...prev,
-          menu_items: data.menu_items.map((m) => ({
-            id: m.id || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Math.random())),
-            label: m.label || "",
-            page_id: m.page_id,
-            order_index: m.order_index ?? 0,
-            is_visible: m.is_visible !== false,
-          })),
-        }));
-      }
+      setForm((prev) => ({
+        ...prev,
+        menu_items: mapMenuItemsFromApi(data.menu_items),
+        mis_menu_items_doctor: mapMenuItemsFromApi(data.mis_menu_items_doctor),
+        mis_menu_items_patient: mapMenuItemsFromApi(data.mis_menu_items_patient),
+      }));
       setSavedAt(new Date());
     } catch (err) {
       setError(formatApiDetail(err?.response?.data?.detail) || err?.message || String(err));
@@ -561,12 +591,18 @@ export function SiteBuilderPage() {
   const onCreatePage = async () => {
     const base = { title: "Новая страница", slug: `page-${Date.now().toString(36)}`, content: "" };
     try {
+      const scope = isMisSite ? pagesForMisRole : pages;
       const nextOrder =
-        (pages.reduce((acc, p) => Math.max(acc, p.order_index || 0), -1) || 0) + 1;
+        (scope.reduce((acc, p) => Math.max(acc, p.order_index || 0), -1) || 0) + 1;
       const { data } = await api.post(`/sites/${siteId}/pages`, {
         ...base,
         order_index: nextOrder,
         is_published: true,
+        ...(isMisSite
+          ? {
+              page_kind: coerceMisPageKindForAudience("mis_patients", misRoleTab === "patient"),
+            }
+          : {}),
       });
       setPages((prev) => [...prev, data].sort((a, b) => a.order_index - b.order_index));
       openPageEditor(data);
@@ -591,7 +627,19 @@ export function SiteBuilderPage() {
 
   const openPageEditor = (p) => {
     setEditingPageId(p.id);
-    const audiencePatient = (form?.contacts?.mis_miniapp_audience === "patient");
+    if (isMisSite) {
+      const ma = String(p.mis_audience || "").toLowerCase();
+      if (ma === "patient") setMisRoleTab("patient");
+      else if (ma === "doctor") setMisRoleTab("doctor");
+    }
+    const audiencePatient = isMisSite
+      ? (() => {
+          const ma = String(p.mis_audience || "").toLowerCase();
+          if (ma === "patient") return true;
+          if (ma === "doctor") return false;
+          return misRoleTab === "patient";
+        })()
+      : form?.contacts?.mis_miniapp_audience === "patient";
     const pageKind = isMisSite
       ? coerceMisPageKindForAudience(p.page_kind, audiencePatient)
       : normalizeSitePageKind(p.page_kind);
@@ -766,21 +814,28 @@ export function SiteBuilderPage() {
                 form={form}
                 setForm={setForm}
                 pages={pages}
+                pagesForPicker={isMisSite ? pagesForMisRole : pages}
                 loading={loadingSite || loadingPages}
                 onSave={onSaveMenu}
                 saving={savingMenu}
+                isMisSite={isMisSite}
+                misRoleTab={misRoleTab}
+                setMisRoleTab={setMisRoleTab}
               />
             ) : null}
 
             {tab === "pages" ? (
               <PagesTab
-                pages={pages}
+                pages={isMisSite ? pagesForMisRole : pages}
                 loading={loadingPages}
                 onCreate={onCreatePage}
                 onOpen={openPageEditor}
                 onDelete={onDeletePage}
                 onChangeOrder={onChangePageOrder}
                 onTogglePublished={onTogglePublished}
+                isMisSite={isMisSite}
+                misRoleTab={misRoleTab}
+                setMisRoleTab={setMisRoleTab}
               />
             ) : null}
 
@@ -794,7 +849,7 @@ export function SiteBuilderPage() {
                 onSave={onSavePage}
                 saving={pageSaving}
                 isMisSite={isMisSite}
-                misAudiencePatient={form.contacts?.mis_miniapp_audience === "patient"}
+                misAudiencePatient={isMisSite ? misRoleTab === "patient" : form.contacts?.mis_miniapp_audience === "patient"}
                 onDelete={() =>
                   editingPage ? onDeletePage(editingPage.id, editingPage.title) : null
                 }
@@ -812,6 +867,8 @@ export function SiteBuilderPage() {
                 editingPageId={editingPageId}
                 pageForm={pageForm}
                 isMisSite={isMisSite}
+                misRoleTab={misRoleTab}
+                setMisRoleTab={setMisRoleTab}
               />
             </div>
           </aside>
@@ -824,16 +881,34 @@ export function SiteBuilderPage() {
 /**
  * Редактор нижнего меню Mini App: подпись пункта, порядок, привязка к странице, видимость.
  */
-function MenuTab({ form, setForm, pages, loading, onSave, saving }) {
+function MenuTab({
+  form,
+  setForm,
+  pages,
+  pagesForPicker,
+  loading,
+  onSave,
+  saving,
+  isMisSite = false,
+  misRoleTab = "doctor",
+  setMisRoleTab,
+}) {
+  const pickerPages = pagesForPicker ?? pages;
+  const menuKey = isMisSite
+    ? misRoleTab === "doctor"
+      ? "mis_menu_items_doctor"
+      : "mis_menu_items_patient"
+    : "menu_items";
+
   if (loading) return <div className="py-6 text-center text-slate-400">Загрузка…</div>;
 
   const fillFromPages = () => {
-    const pub = [...pages]
+    const pub = [...pickerPages]
       .filter((p) => p.is_published)
       .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
     setForm((prev) => ({
       ...prev,
-      menu_items: pub.map((p, i) => ({
+      [menuKey]: pub.map((p, i) => ({
         id:
           typeof crypto !== "undefined" && crypto.randomUUID
             ? crypto.randomUUID()
@@ -847,13 +922,13 @@ function MenuTab({ form, setForm, pages, loading, onSave, saving }) {
   };
 
   const addRow = () => {
-    const pub = pages.filter((p) => p.is_published);
-    const first = pub[0] || pages[0];
+    const pub = pickerPages.filter((p) => p.is_published);
+    const first = pub[0] || pickerPages[0];
     if (!first) return;
     setForm((prev) => ({
       ...prev,
-      menu_items: [
-        ...(prev.menu_items || []),
+      [menuKey]: [
+        ...(prev[menuKey] || []),
         {
           id:
             typeof crypto !== "undefined" && crypto.randomUUID
@@ -861,7 +936,7 @@ function MenuTab({ form, setForm, pages, loading, onSave, saving }) {
               : `m-${Date.now()}`,
           label: "Новый пункт",
           page_id: first.id,
-          order_index: (prev.menu_items || []).length,
+          order_index: (prev[menuKey] || []).length,
           is_visible: true,
         },
       ],
@@ -871,18 +946,18 @@ function MenuTab({ form, setForm, pages, loading, onSave, saving }) {
   const removeRow = (id) => {
     setForm((prev) => ({
       ...prev,
-      menu_items: (prev.menu_items || []).filter((x) => x.id !== id),
+      [menuKey]: (prev[menuKey] || []).filter((x) => x.id !== id),
     }));
   };
 
   const updateRow = (id, patch) => {
     setForm((prev) => ({
       ...prev,
-      menu_items: (prev.menu_items || []).map((x) => (x.id === id ? { ...x, ...patch } : x)),
+      [menuKey]: (prev[menuKey] || []).map((x) => (x.id === id ? { ...x, ...patch } : x)),
     }));
   };
 
-  const rows = [...(form.menu_items || [])].sort(
+  const rows = [...(form[menuKey] || [])].sort(
     (a, b) => (Number(a.order_index) || 0) - (Number(b.order_index) || 0),
   );
 
@@ -892,11 +967,43 @@ function MenuTab({ form, setForm, pages, loading, onSave, saving }) {
         Пункты нижнего меню в Mini App: своя подпись, порядок и страница. Если меню пустое и так
         сохранено — подписи и порядок совпадают с опубликованными страницами.
       </p>
+      {isMisSite ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2">
+          <span className="text-xs font-medium text-slate-400">Роль в Mini App:</span>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => setMisRoleTab?.("doctor")}
+              className={`rounded-md px-3 py-1 text-xs font-medium ${
+                misRoleTab === "doctor"
+                  ? "bg-emerald-600 text-white"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+            >
+              Врач
+            </button>
+            <button
+              type="button"
+              onClick={() => setMisRoleTab?.("patient")}
+              className={`rounded-md px-3 py-1 text-xs font-medium ${
+                misRoleTab === "patient"
+                  ? "bg-emerald-600 text-white"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+            >
+              Пациент
+            </button>
+          </div>
+          <span className="text-[11px] text-slate-500">
+            У каждой роли своё меню; сохранение отправляет оба набора на сервер.
+          </span>
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
           onClick={fillFromPages}
-          disabled={!pages.some((p) => p.is_published)}
+          disabled={!pickerPages.some((p) => p.is_published)}
           className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-50"
         >
           Заполнить из страниц
@@ -904,7 +1011,7 @@ function MenuTab({ form, setForm, pages, loading, onSave, saving }) {
         <button
           type="button"
           onClick={addRow}
-          disabled={pages.length === 0}
+          disabled={pickerPages.length === 0}
           className="inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-600 disabled:opacity-50"
         >
           <Plus className="h-3.5 w-3.5" aria-hidden />
@@ -960,7 +1067,7 @@ function MenuTab({ form, setForm, pages, loading, onSave, saving }) {
                       onChange={(e) => updateRow(row.id, { page_id: e.target.value })}
                       className="w-full min-w-[160px] rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
                     >
-                      {pages.map((p) => (
+                      {pickerPages.map((p) => (
                         <option key={p.id} value={String(p.id)}>
                           {p.is_published ? "" : "⚠ "}
                           {p.title} (/{p.slug})
@@ -1191,24 +1298,11 @@ function SettingsTab({
       <section className="space-y-4">
         <h2 className="text-sm font-semibold text-white">Общие</h2>
         {isMisSite ? (
-          <Field
-            label="Роль Mini App МИС"
-            hint="Определяет, какие типы страниц доступны в редакторе. Врач — список пациентов и подсказка к карте; пациент — разделы личной карты."
-          >
-            <select
-              value={form.contacts?.mis_miniapp_audience === "patient" ? "patient" : "doctor"}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  contacts: { ...prev.contacts, mis_miniapp_audience: e.target.value },
-                }))
-              }
-              className={inputClass}
-            >
-              <option value="doctor">Врач (Пациенты, Карта пациента)</option>
-              <option value="patient">Пациент (Карта, Профиль, Дневник здоровья, Полезные материалы)</option>
-            </select>
-          </Field>
+          <div className="rounded-lg border border-slate-700 bg-slate-950/40 px-3 py-2 text-xs text-slate-400">
+            Страницы и нижнее меню настраиваются{' '}
+            <strong className="text-slate-300">отдельно для врача и для пациента</strong> на вкладках «Страницы» и
+            «Меню» (переключатель роли). В Mini App пользователь видит только свой набор.
+          </div>
         ) : null}
         <Field label="Внутреннее название" hint="Видно только в админ-панели.">
           <input
@@ -1374,21 +1468,61 @@ function SettingsTab({
   );
 }
 
-function PagesTab({ pages, loading, onCreate, onOpen, onDelete, onChangeOrder, onTogglePublished }) {
+function PagesTab({
+  pages,
+  loading,
+  onCreate,
+  onOpen,
+  onDelete,
+  onChangeOrder,
+  onTogglePublished,
+  isMisSite = false,
+  misRoleTab = "doctor",
+  setMisRoleTab,
+}) {
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm text-slate-400">
           Порядок отображения задаётся полем «порядок» — меньше число, выше в меню.
         </div>
-        <button
-          type="button"
-          onClick={onCreate}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
-        >
-          <Plus className="h-3.5 w-3.5" aria-hidden />
-          Новая страница
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {isMisSite ? (
+            <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-700 bg-slate-950/50 px-2 py-1">
+              <span className="text-[11px] text-slate-500">Раздел:</span>
+              <button
+                type="button"
+                onClick={() => setMisRoleTab?.("doctor")}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                  misRoleTab === "doctor"
+                    ? "bg-emerald-600 text-white"
+                    : "text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                Врач
+              </button>
+              <button
+                type="button"
+                onClick={() => setMisRoleTab?.("patient")}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                  misRoleTab === "patient"
+                    ? "bg-emerald-600 text-white"
+                    : "text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                Пациент
+              </button>
+            </div>
+          ) : null}
+          <button
+            type="button"
+            onClick={onCreate}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+            Новая страница
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-800">
@@ -1873,7 +2007,16 @@ function sanitizeHex(hex, fallback = "#0f172a") {
  *  - Рендер HTML страницы — через ``dangerouslySetInnerHTML`` (контент вводится
  *    внутри компании, тот же способ использует публичный Mini App).
  */
-function MiniAppPreview({ tab, form, pages, editingPageId, pageForm, isMisSite = false }) {
+function MiniAppPreview({
+  tab,
+  form,
+  pages,
+  editingPageId,
+  pageForm,
+  isMisSite = false,
+  misRoleTab = "doctor",
+  setMisRoleTab,
+}) {
   const themeColor = sanitizeHex(form?.theme_color, "#0f172a");
   const title = (form?.title || "").trim() || (form?.name || "").trim() || "Mini App";
   const subtitle = (form?.subtitle || "").trim();
@@ -1918,23 +2061,40 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm, isMisSite =
     );
   }, [pages, tab, editingPageId, pageForm]);
 
-  const publishedPages = useMemo(
-    () =>
-      (liveList || [])
-        .filter((p) => p.is_published)
-        .slice()
-        .sort(
-          (a, b) =>
-            (Number(a.order_index) || 0) - (Number(b.order_index) || 0) ||
-            String(a.title).localeCompare(String(b.title)),
-        ),
-    [liveList],
-  );
+  const publishedPages = useMemo(() => {
+    const aud = misRoleTab === "patient" ? "patient" : "doctor";
+    const base = (liveList || [])
+      .filter((p) => p.is_published)
+      .filter((p) => {
+        if (!isMisSite) return true;
+        const ma = String(p.mis_audience || "").toLowerCase();
+        if (!ma) return true;
+        return ma === aud;
+      });
+    return base
+      .slice()
+      .sort(
+        (a, b) =>
+          (Number(a.order_index) || 0) - (Number(b.order_index) || 0) ||
+          String(a.title).localeCompare(String(b.title)),
+      );
+  }, [liveList, isMisSite, misRoleTab]);
 
-  const nav = useMemo(
-    () => buildPreviewNav(form.menu_items, publishedPages),
-    [form.menu_items, publishedPages],
-  );
+  const nav = useMemo(() => {
+    const menuItems = isMisSite
+      ? misRoleTab === "patient"
+        ? form.mis_menu_items_patient
+        : form.mis_menu_items_doctor
+      : form.menu_items;
+    return buildPreviewNav(menuItems, publishedPages);
+  }, [
+    form.menu_items,
+    form.mis_menu_items_doctor,
+    form.mis_menu_items_patient,
+    isMisSite,
+    misRoleTab,
+    publishedPages,
+  ]);
 
   const activePage = useMemo(() => {
     if (tab === "page-editor" && editingPageId) {
@@ -1953,12 +2113,34 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm, isMisSite =
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2 text-xs font-medium text-slate-300">
+      <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-300">
         <Smartphone className="h-4 w-4 text-slate-400" aria-hidden />
         Предпросмотр Mini App
         <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
           Live
         </span>
+        {isMisSite ? (
+          <span className="ml-auto flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setMisRoleTab?.("doctor")}
+              className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${
+                misRoleTab === "doctor" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-400"
+              }`}
+            >
+              Врач
+            </button>
+            <button
+              type="button"
+              onClick={() => setMisRoleTab?.("patient")}
+              className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${
+                misRoleTab === "patient" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-400"
+              }`}
+            >
+              Пациент
+            </button>
+          </span>
+        ) : null}
       </div>
 
       <div className="mx-auto w-full max-w-[340px]">

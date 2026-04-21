@@ -97,6 +97,20 @@ _PAGE_KINDS_MIS_SPECIAL = frozenset(
 _ALLOWED_PAGE_KINDS = frozenset({"content", "booking", *_PAGE_KINDS_MIS_SPECIAL})
 
 
+def _mis_audience_from_page_kind(pk: str) -> str | None:
+    s = (pk or "").strip().lower()
+    if s in ("mis_patients", "mis_doctor_card"):
+        return "doctor"
+    if s in (
+        "mis_patient_card",
+        "mis_patient_profile",
+        "mis_patient_diary",
+        "mis_patient_tips",
+    ):
+        return "patient"
+    return None
+
+
 # --- Схемы ---------------------------------------------------------------
 
 
@@ -167,6 +181,8 @@ class SiteListItem(BaseModel):
 class SiteDetail(SiteListItem):
     contacts: SiteContacts
     menu_items: list[SiteMenuItemPublic]
+    mis_menu_items_doctor: list[SiteMenuItemPublic] = Field(default_factory=list)
+    mis_menu_items_patient: list[SiteMenuItemPublic] = Field(default_factory=list)
 
 
 class SiteCreateRequest(BaseModel):
@@ -195,6 +211,14 @@ class SiteUpdateRequest(BaseModel):
     menu_items: list[SiteMenuItemInput] | None = Field(
         default=None,
         description="Полная замена меню Mini App; null — не менять",
+    )
+    mis_menu_items_doctor: list[SiteMenuItemInput] | None = Field(
+        default=None,
+        description="Меню Mini App для роли врача (site_kind=mis); null — не менять",
+    )
+    mis_menu_items_patient: list[SiteMenuItemInput] | None = Field(
+        default=None,
+        description="Меню Mini App для роли пациента (site_kind=mis); null — не менять",
     )
 
     @field_validator("theme_color")
@@ -226,6 +250,7 @@ class SitePageItem(BaseModel):
     title: str
     slug: str
     page_kind: str = "content"
+    mis_audience: str | None = None
     booking_staff_user_id: UUID | None = None
     embed_module: str | None = None
     content: str
@@ -343,6 +368,7 @@ class PublicSitePage(BaseModel):
     title: str
     slug: str
     page_kind: str = "content"
+    mis_audience: str | None = None
     booking_staff_user_id: UUID | None = None
     embed_module: str | None = None
     content: str
@@ -367,6 +393,8 @@ class PublicSiteResponse(BaseModel):
     contacts: SiteContacts
     pages: list[PublicSitePage]
     nav_items: list[PublicNavItem]
+    mis_nav_items_doctor: list[PublicNavItem] = Field(default_factory=list)
+    mis_nav_items_patient: list[PublicNavItem] = Field(default_factory=list)
 
 
 # --- Helpers -------------------------------------------------------------
@@ -419,6 +447,8 @@ def _site_to_detail(row: SiteModel) -> SiteDetail:
         logo_url=normalize_site_logo_url((row.logo_url or "").strip() or None),
         contacts=SiteContacts.model_validate(row.contacts or {}),
         menu_items=_menu_public_from_db(getattr(row, "menu_items", None)),
+        mis_menu_items_doctor=_menu_public_from_db(getattr(row, "mis_menu_items_doctor", None)),
+        mis_menu_items_patient=_menu_public_from_db(getattr(row, "mis_menu_items_patient", None)),
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -441,12 +471,17 @@ def _site_to_list_item(row: SiteModel) -> SiteListItem:
 
 def _page_to_item(row: SitePageModel) -> SitePageItem:
     em = (getattr(row, "embed_module", None) or "").strip() or None
+    ma_raw = getattr(row, "mis_audience", None)
+    ma = (str(ma_raw).strip().lower() if ma_raw else None) or None
+    if ma not in (None, "doctor", "patient"):
+        ma = None
     return SitePageItem(
         id=row.id,
         site_id=row.site_id,
         title=row.title,
         slug=row.slug,
         page_kind=(row.page_kind or "content").strip() or "content",
+        mis_audience=ma,
         booking_staff_user_id=row.booking_staff_user_id,
         embed_module=em,
         content=row.content or "",
@@ -470,6 +505,58 @@ async def _validate_booking_staff_for_site(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Указанный сотрудник не принадлежит организации этого сайта",
         )
+
+
+async def _validate_mis_menu_for_site(
+    session: AsyncSessionDep,
+    site_id: UUID,
+    items_in: list[SiteMenuItemInput],
+    audience: str,
+) -> list[dict]:
+    """Сохраняет JSON меню МИС; все ``page_id`` должны указывать на страницы с тем же ``mis_audience``."""
+    aud = audience.strip().lower()
+    if aud not in ("doctor", "patient"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Недопустимая роль меню МИС")
+    pids = [it.page_id for it in items_in]
+    if len(pids) != len(set(pids)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="В меню нельзя дважды привязать одну и ту же страницу",
+        )
+    if not pids:
+        return []
+    rows = (
+        await session.execute(
+            select(SitePageModel.id, SitePageModel.mis_audience).where(
+                SitePageModel.site_id == site_id,
+                SitePageModel.id.in_(pids),
+            )
+        )
+    ).all()
+    if len(rows) != len(pids):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="В меню указана страница, не принадлежащая этому сайту",
+        )
+    for _rid, rau in rows:
+        if (rau or "").strip().lower() != aud:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="В меню МИС можно указывать только страницы той же роли (врач или пациент)",
+            )
+    stored: list[dict] = []
+    for it in sorted(items_in, key=lambda x: (x.order_index, str(x.page_id))):
+        iid = (it.id or "").strip() or str(uuid.uuid4())
+        stored.append(
+            {
+                "id": iid,
+                "label": it.label.strip(),
+                "page_id": str(it.page_id),
+                "order_index": int(it.order_index),
+                "is_visible": bool(it.is_visible),
+            },
+        )
+    return stored
 
 
 def _resolve_site_org_scope(user, organization_id: UUID | None) -> UUID:
@@ -553,6 +640,8 @@ async def create_site(
         theme_color="#000000",
         contacts={},
         menu_items=[],
+        mis_menu_items_doctor=[],
+        mis_menu_items_patient=[],
     )
     session.add(row)
     await session.commit()
@@ -634,6 +723,21 @@ async def update_site(
                 },
             )
         row.menu_items = stored
+
+    if body.mis_menu_items_doctor is not None:
+        row.mis_menu_items_doctor = await _validate_mis_menu_for_site(
+            session,
+            site_id,
+            body.mis_menu_items_doctor,
+            "doctor",
+        )
+    if body.mis_menu_items_patient is not None:
+        row.mis_menu_items_patient = await _validate_mis_menu_for_site(
+            session,
+            site_id,
+            body.mis_menu_items_patient,
+            "patient",
+        )
 
     session.add(row)
     await session.commit()
@@ -720,17 +824,27 @@ async def create_site_page(
     organization_id: UUID | None = Query(default=None),
 ) -> SitePageItem:
     scope = _resolve_site_org_scope(user, organization_id)
-    await _get_site_for_user(session, site_id, scope)
+    site_row = await _get_site_for_user(session, site_id, scope)
     pk = (body.page_kind or "content").strip().lower()
     sid = body.booking_staff_user_id if pk == "booking" else None
     if sid is not None:
         await _validate_booking_staff_for_site(session, scope, sid)
     embed = body.embed_module if pk == "content" else None
+    sk = _site_kind_str(site_row)
+    mis_aud: str | None = None
+    if sk == "mis":
+        mis_aud = _mis_audience_from_page_kind(pk)
+        if mis_aud is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Для МИС-сайта создавайте только страницы разделов врача или пациента",
+            )
     row = SitePageModel(
         site_id=site_id,
         title=body.title.strip(),
         slug=body.slug,
         page_kind=pk,
+        mis_audience=mis_aud,
         booking_staff_user_id=sid,
         embed_module=embed,
         content=body.content or "",
@@ -760,7 +874,7 @@ async def update_site_page(
     organization_id: UUID | None = Query(default=None),
 ) -> SitePageItem:
     scope = _resolve_site_org_scope(user, organization_id)
-    await _get_site_for_user(session, site_id, scope)
+    site_row = await _get_site_for_user(session, site_id, scope)
     row = await session.get(SitePageModel, page_id)
     if row is None or row.site_id != site_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Страница не найдена")
@@ -800,6 +914,18 @@ async def update_site_page(
     else:
         row.embed_module = None
         row.booking_staff_user_id = None
+
+    sk = _site_kind_str(site_row)
+    if sk == "mis":
+        mis_aud = _mis_audience_from_page_kind(pkf)
+        if mis_aud is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Для МИС-сайта укажите тип страницы раздела врача или пациента",
+            )
+        row.mis_audience = mis_aud
+    else:
+        row.mis_audience = None
 
     session.add(row)
     try:
@@ -872,10 +998,33 @@ async def get_public_site(site_id: UUID, session: AsyncSessionDep) -> PublicSite
     menu_raw = site.menu_items if isinstance(site.menu_items, list) else None
     nav_dtos = nav_items_for_miniapp(menu_raw, pages_rows)
 
+    sk = _site_kind_str(site)
+    mis_nav_doctor: list = []
+    mis_nav_patient: list = []
+    if sk == "mis":
+        doc_raw = (
+            site.mis_menu_items_doctor if isinstance(getattr(site, "mis_menu_items_doctor", None), list) else None
+        )
+        pat_raw = (
+            site.mis_menu_items_patient if isinstance(getattr(site, "mis_menu_items_patient", None), list) else None
+        )
+
+        def _aud_pages(aud: str) -> list:
+            a = aud.strip().lower()
+            return [p for p in pages_rows if (getattr(p, "mis_audience", None) or "").strip().lower() == a]
+
+        mis_nav_doctor = nav_items_for_miniapp(doc_raw, _aud_pages("doctor"))
+        mis_nav_patient = nav_items_for_miniapp(pat_raw, _aud_pages("patient"))
+
+    def _pub_ma(p: SitePageModel) -> str | None:
+        raw = getattr(p, "mis_audience", None)
+        ma = (str(raw).strip().lower() if raw else None) or None
+        return ma if ma in ("doctor", "patient") else None
+
     return PublicSiteResponse(
         id=site.id,
         name=site.name,
-        site_kind=_site_kind_str(site),
+        site_kind=sk,
         title=site.title or "",
         subtitle=site.subtitle or "",
         logo_url=normalize_site_logo_url((site.logo_url or "").strip() or None),
@@ -887,6 +1036,7 @@ async def get_public_site(site_id: UUID, session: AsyncSessionDep) -> PublicSite
                 title=p.title,
                 slug=p.slug,
                 page_kind=(p.page_kind or "content").strip() or "content",
+                mis_audience=_pub_ma(p),
                 booking_staff_user_id=p.booking_staff_user_id,
                 embed_module=(getattr(p, "embed_module", None) or "").strip() or None,
                 content=p.content or "",
@@ -895,4 +1045,6 @@ async def get_public_site(site_id: UUID, session: AsyncSessionDep) -> PublicSite
             for p in pages_rows
         ],
         nav_items=[PublicNavItem(label=n.label, slug=n.slug) for n in nav_dtos],
+        mis_nav_items_doctor=[PublicNavItem(label=n.label, slug=n.slug) for n in mis_nav_doctor],
+        mis_nav_items_patient=[PublicNavItem(label=n.label, slug=n.slug) for n in mis_nav_patient],
     )

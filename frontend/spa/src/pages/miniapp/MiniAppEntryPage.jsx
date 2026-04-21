@@ -23,6 +23,18 @@ import {
 } from "../../utils/misMiniAppNav.js";
 import "./miniappPageContent.css";
 
+/** Нижнее меню МИС по роли (если в конфиге задано отдельно). */
+function pickMisNavForRole(cfg, role) {
+  if (!cfg || cfg.site_kind !== "mis" || !role) return null;
+  if (role === "doctor" && Array.isArray(cfg.mis_nav_items_doctor) && cfg.mis_nav_items_doctor.length > 0) {
+    return cfg.mis_nav_items_doctor;
+  }
+  if (role === "patient" && Array.isArray(cfg.mis_nav_items_patient) && cfg.mis_nav_items_patient.length > 0) {
+    return cfg.mis_nav_items_patient;
+  }
+  return null;
+}
+
 /**
  * Отступ снизу у области прокрутки: нижнее меню (`MiniAppTabbar`) с `position: fixed`
  * не участвует в потоке — без достаточного padding последние блоки страницы оказываются под таббаром.
@@ -615,8 +627,10 @@ export function MiniAppEntryPage() {
         }
       }
       const pgs = Array.isArray(cfg?.pages) ? cfg.pages : [];
-      const nav =
-        Array.isArray(cfg?.nav_items) && cfg.nav_items.length > 0
+      const misNavPick = pickMisNavForRole(cfg, misRoleFromSession);
+      const nav = misNavPick
+        ? misNavPick.filter((x) => x && x.slug)
+        : Array.isArray(cfg?.nav_items) && cfg.nav_items.length > 0
           ? cfg.nav_items.filter((x) => x && x.slug)
           : pgs.map((p) => ({ label: p.title, slug: p.slug }));
       const audience = getMisMiniappAudience(cfg?.contacts);
@@ -686,15 +700,17 @@ export function MiniAppEntryPage() {
 
   // Важно: хуки только до любых return — иначе при смене status (loading → ready)
   // меняется число вызовов useMemo и React падает (часто — пустой тёмный экран в WebView).
-  const pages = useMemo(
-    () => (Array.isArray(config?.pages) ? config.pages : []),
-    [config?.pages],
-  );
-
   const misAudience = useMemo(() => getMisMiniappAudience(config?.contacts), [config?.contacts]);
 
+  const pages = useMemo(() => {
+    const all = Array.isArray(config?.pages) ? config.pages : [];
+    if (config?.site_kind !== "mis" || !misSession?.role) return all;
+    return all.filter((p) => misSitePageVisibleInNav(p, misAudience, misSession.role));
+  }, [config?.pages, config?.site_kind, misSession?.role, misAudience]);
+
   const navItems = useMemo(() => {
-    const raw = config?.nav_items;
+    const misNav = pickMisNavForRole(config, misSession?.role);
+    const raw = misNav ?? config?.nav_items;
     const base =
       Array.isArray(raw) && raw.length > 0
         ? raw.filter((x) => x && x.slug)
@@ -707,7 +723,16 @@ export function MiniAppEntryPage() {
       }
       return misSitePageVisibleInNav(pg, misAudience, misSession?.role);
     });
-  }, [config?.nav_items, config?.site_kind, pages, misSession?.role, misAudience]);
+  }, [
+    config,
+    config?.nav_items,
+    config?.mis_nav_items_doctor,
+    config?.mis_nav_items_patient,
+    config?.site_kind,
+    pages,
+    misSession?.role,
+    misAudience,
+  ]);
 
   const navItemsWithStaff = useMemo(() => {
     if (!staffMenu) return navItems;

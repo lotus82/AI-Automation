@@ -489,6 +489,7 @@ class MiniAppConfigPage(BaseModel):
     title: str
     slug: str
     page_kind: str = "content"
+    mis_audience: str | None = None
     booking_staff_user_id: UUID | None = None
     embed_module: str | None = None
     content: str
@@ -525,6 +526,8 @@ class MiniAppConfigResponse(BaseModel):
     mis_patient_card_theme: dict[str, Any] | None = None
     pages: list[MiniAppConfigPage]
     nav_items: list[MiniAppNavItem]
+    mis_nav_items_doctor: list[MiniAppNavItem] = Field(default_factory=list)
+    mis_nav_items_patient: list[MiniAppNavItem] = Field(default_factory=list)
 
 
 # --- Схемы активного сайта (admin) --------------------------------------
@@ -605,6 +608,29 @@ async def get_miniapp_config(inn: str, session: AsyncSessionDep) -> MiniAppConfi
     site_kind = str(raw_site_kind).strip().lower()
     if site_kind not in ("standard", "mis"):
         site_kind = "standard"
+
+    mis_nav_doctor: list = []
+    mis_nav_patient: list = []
+    if site_kind == "mis":
+        doc_raw = (
+            site.mis_menu_items_doctor if isinstance(getattr(site, "mis_menu_items_doctor", None), list) else None
+        )
+        pat_raw = (
+            site.mis_menu_items_patient if isinstance(getattr(site, "mis_menu_items_patient", None), list) else None
+        )
+
+        def _aud_pages(aud: str) -> list:
+            a = aud.strip().lower()
+            return [p for p in pages_rows if (getattr(p, "mis_audience", None) or "").strip().lower() == a]
+
+        mis_nav_doctor = nav_items_for_miniapp(doc_raw, _aud_pages("doctor"))
+        mis_nav_patient = nav_items_for_miniapp(pat_raw, _aud_pages("patient"))
+
+    def _cfg_ma(p: SitePageModel) -> str | None:
+        raw = getattr(p, "mis_audience", None)
+        ma = (str(raw).strip().lower() if raw else None) or None
+        return ma if ma in ("doctor", "patient") else None
+
     contacts_raw = dict(site.contacts or {})
     theme_raw = contacts_raw.get("mis_patient_card_theme")
     mis_theme = theme_raw if isinstance(theme_raw, dict) else None
@@ -627,6 +653,7 @@ async def get_miniapp_config(inn: str, session: AsyncSessionDep) -> MiniAppConfi
                 title=p.title,
                 slug=p.slug,
                 page_kind=(getattr(p, "page_kind", None) or "content").strip() or "content",
+                mis_audience=_cfg_ma(p),
                 booking_staff_user_id=getattr(p, "booking_staff_user_id", None),
                 embed_module=(getattr(p, "embed_module", None) or "").strip() or None,
                 content=p.content or "",
@@ -635,6 +662,8 @@ async def get_miniapp_config(inn: str, session: AsyncSessionDep) -> MiniAppConfi
             for p in pages_rows
         ],
         nav_items=[MiniAppNavItem(label=n.label, slug=n.slug) for n in nav_dtos],
+        mis_nav_items_doctor=[MiniAppNavItem(label=n.label, slug=n.slug) for n in mis_nav_doctor],
+        mis_nav_items_patient=[MiniAppNavItem(label=n.label, slug=n.slug) for n in mis_nav_patient],
     )
 
 

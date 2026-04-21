@@ -21,17 +21,21 @@ export function getMisMiniappAudience(contacts) {
 
 /**
  * Показывать ли страницу в нижнем меню Mini App МИС.
- * @param {{ page_kind?: string }} page
- * @param {"doctor" | "patient"} audience — выбрано в конструкторе
+ * @param {{ page_kind?: string, mis_audience?: string | null }} page
+ * @param {"doctor" | "patient"} audience — legacy: из contacts (если у страницы нет mis_audience)
  * @param {string | null | undefined} misRole — doctor | patient | guest из /mis/session
  */
 export function misSitePageVisibleInNav(page, audience, misRole) {
+  const ma = String(page?.mis_audience || "").toLowerCase();
+  if (ma === "doctor" || ma === "patient") {
+    if (!misRole || misRole === "guest") return false;
+    return misRole === ma;
+  }
   const pk = String(page?.page_kind || "content").toLowerCase();
   if (audience === "patient") {
     if (!MIS_PATIENT_PAGE_KINDS.includes(pk)) return false;
     return misRole === "patient";
   }
-  // Целевой Mini App для врача
   if (!MIS_DOCTOR_PAGE_KINDS.includes(pk)) return false;
   return misRole === "doctor";
 }
