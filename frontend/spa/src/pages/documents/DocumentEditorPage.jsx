@@ -31,6 +31,19 @@ function flattenTree(nodes, depth = 0, acc = []) {
   return acc;
 }
 
+/** Все id узлов, у которых есть дети — для «Развернуть всё». */
+function collectExpandableIds(nodes, acc = new Set()) {
+  if (!Array.isArray(nodes)) return acc;
+  for (const n of nodes) {
+    if (!n?.id) continue;
+    if (n.children?.length) {
+      acc.add(n.id);
+      collectExpandableIds(n.children, acc);
+    }
+  }
+  return acc;
+}
+
 function NodeTreeItem({ node, depth, expanded, toggle, selectedId, onSelect }) {
   const hasKids = Array.isArray(node.children) && node.children.length > 0;
   const isOpen = expanded.has(node.id);
@@ -150,6 +163,14 @@ export function DocumentEditorPage() {
     });
   }, []);
 
+  const collapseAllTree = useCallback(() => {
+    setExpanded(new Set());
+  }, []);
+
+  const expandAllTree = useCallback(() => {
+    setExpanded(collectExpandableIds(tree));
+  }, [tree]);
+
   const onSave = async (e) => {
     e.preventDefault();
     if (!selected?.id || !documentId) return;
@@ -200,8 +221,28 @@ export function DocumentEditorPage() {
 
       <div className="grid min-h-[480px] gap-4 lg:grid-cols-2">
         <div className="flex flex-col rounded-xl border border-slate-800 bg-slate-900/40">
-          <div className="border-b border-slate-800 px-3 py-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-            Структура ({flat.length} узлов)
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Структура ({flat.length} узлов)
+            </div>
+            {!loading && tree.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={collapseAllTree}
+                  className="rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-700"
+                >
+                  Свернуть всё
+                </button>
+                <button
+                  type="button"
+                  onClick={expandAllTree}
+                  className="rounded-md border border-slate-600 bg-slate-800/80 px-2 py-1 text-[11px] font-medium text-slate-200 hover:bg-slate-700"
+                >
+                  Развернуть всё
+                </button>
+              </div>
+            ) : null}
           </div>
           <div className="flex-1 overflow-y-auto p-1">
             {loading ? (

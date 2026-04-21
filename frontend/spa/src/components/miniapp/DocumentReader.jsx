@@ -1,5 +1,6 @@
 import axios from "axios";
 import { Button, Flex, Panel, Spinner, Typography } from "@maxhub/max-ui";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 /**
@@ -13,6 +14,9 @@ export function DocumentReader({ documentId, pageTitle, introHtml, themeColor })
   const [bundle, setBundle] = useState(null);
   const [tocOpen, setTocOpen] = useState(false);
   const [activeChapter, setActiveChapter] = useState(null);
+  /** Аккордеон оглавления: одна раскрытая книга, одна «открытая» глава внутри неё */
+  const [tocExpandedBookId, setTocExpandedBookId] = useState(null);
+  const [tocExpandedChapterId, setTocExpandedChapterId] = useState(null);
 
   const load = useCallback(async () => {
     if (!documentId) return;
@@ -69,7 +73,15 @@ export function DocumentReader({ documentId, pageTitle, introHtml, themeColor })
       <div style={{ padding: "12px 16px 8px", borderBottom: "1px solid #e5e7eb" }}>
         <Flex justify="space-between" align="center" gap={8}>
           <Typography.Title style={{ margin: 0, fontSize: 18, lineHeight: 1.3 }}>{docTitle}</Typography.Title>
-          <Button size="s" mode="secondary" onClick={() => setTocOpen(true)}>
+          <Button
+            size="s"
+            mode="secondary"
+            onClick={() => {
+              setTocExpandedBookId(null);
+              setTocExpandedChapterId(null);
+              setTocOpen(true);
+            }}
+          >
             Оглавление
           </Button>
         </Flex>
@@ -163,11 +175,19 @@ export function DocumentReader({ documentId, pageTitle, introHtml, themeColor })
             <div style={{ padding: "8px 0 16px" }}>
               <TocTree
                 nodes={bundle?.tree || []}
+                expandedBookId={tocExpandedBookId}
+                expandedChapterId={tocExpandedChapterId}
+                activeChapterId={activeChapter?.id || null}
+                accent={accent}
+                onToggleBook={(bookId) => {
+                  setTocExpandedBookId((prev) => (prev === bookId ? null : bookId));
+                  setTocExpandedChapterId(null);
+                }}
                 onPickChapter={(ch) => {
+                  setTocExpandedChapterId(ch.id);
                   setActiveChapter(ch);
                   setTocOpen(false);
                 }}
-                accent={accent}
               />
             </div>
           </Panel>
@@ -186,50 +206,89 @@ function findFirstChapter(tree) {
   return null;
 }
 
-function TocTree({ nodes, onPickChapter, accent }) {
+function TocTree({
+  nodes,
+  expandedBookId,
+  expandedChapterId,
+  activeChapterId,
+  accent,
+  onToggleBook,
+  onPickChapter,
+}) {
+  const list = nodes || [];
   return (
     <Flex direction="column" gap={0}>
-      {(nodes || []).map((book) => (
-        <div key={book.id} style={{ marginBottom: 8 }}>
-          <div
-            style={{
-              padding: "8px 16px",
-              fontWeight: 600,
-              fontSize: 14,
-              color: "#374151",
-              background: "#f9fafb",
-            }}
-          >
-            {book.title}
+      {list.map((book) => {
+        const bookOpen = expandedBookId === book.id;
+        const chapters = (book.children || []).filter((n) => n.node_type === "chapter");
+        return (
+          <div key={book.id} style={{ marginBottom: 4, borderBottom: "1px solid #f3f4f6" }}>
+            <button
+              type="button"
+              onClick={() => onToggleBook(book.id)}
+              style={{
+                display: "flex",
+                width: "100%",
+                alignItems: "center",
+                gap: 8,
+                padding: "10px 12px 10px 14px",
+                border: "none",
+                background: bookOpen ? "#f0fdf4" : "#f9fafb",
+                fontWeight: 600,
+                fontSize: 14,
+                color: "#374151",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <span style={{ display: "flex", color: accent, flexShrink: 0 }} aria-hidden>
+                {bookOpen ? <ChevronDown size={18} strokeWidth={2} /> : <ChevronRight size={18} strokeWidth={2} />}
+              </span>
+              <span style={{ flex: 1, minWidth: 0 }}>{book.title}</span>
+            </button>
+            {bookOpen ? (
+              <Flex direction="column" gap={0} style={{ background: "#fff" }}>
+                {chapters.map((ch) => {
+                  const chOpen = expandedChapterId === ch.id;
+                  const isActive = activeChapterId === ch.id;
+                  const compact = expandedChapterId != null && !chOpen;
+                  return (
+                    <button
+                      key={ch.id}
+                      type="button"
+                      onClick={() => onPickChapter(ch)}
+                      style={{
+                        display: "flex",
+                        width: "100%",
+                        alignItems: "center",
+                        gap: 6,
+                        textAlign: "left",
+                        padding: compact ? "6px 14px 6px 36px" : "10px 14px 10px 36px",
+                        border: "none",
+                        borderTop: "1px solid #f3f4f6",
+                        background: chOpen || isActive ? "rgba(79, 70, 229, 0.06)" : "#fff",
+                        fontSize: compact ? 13 : 15,
+                        fontWeight: chOpen || isActive ? 600 : 500,
+                        color: compact ? "#6b7280" : "#111827",
+                        cursor: "pointer",
+                        lineHeight: compact ? 1.25 : 1.35,
+                        WebkitTapHighlightColor: "transparent",
+                      }}
+                    >
+                      <span style={{ color: accent, fontWeight: 700, flexShrink: 0, fontSize: compact ? 12 : 13 }}>
+                        {chOpen || isActive ? "▾" : "›"}
+                      </span>
+                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {ch.title}
+                      </span>
+                    </button>
+                  );
+                })}
+              </Flex>
+            ) : null}
           </div>
-          <Flex direction="column" gap={0}>
-            {(book.children || [])
-              .filter((n) => n.node_type === "chapter")
-              .map((ch) => (
-                <button
-                  key={ch.id}
-                  type="button"
-                  onClick={() => onPickChapter(ch)}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "10px 16px 10px 20px",
-                    border: "none",
-                    borderBottom: "1px solid #f3f4f6",
-                    background: "#fff",
-                    fontSize: 15,
-                    color: "#111827",
-                    cursor: "pointer",
-                  }}
-                >
-                  <span style={{ color: accent, fontWeight: 600, marginRight: 8 }}>›</span>
-                  {ch.title}
-                </button>
-              ))}
-          </Flex>
-        </div>
-      ))}
+        );
+      })}
     </Flex>
   );
 }
