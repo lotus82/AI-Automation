@@ -12,15 +12,20 @@ from src.infrastructure.models import DocumentNodeModel
 # Главу проверять раньше книги: строка «=== 1 ===» тоже начинается с «==», иначе
 # паттерн книги ошибочно даёт лишний узел book с заголовком «= 1».
 _BOOK_RE = re.compile(r"^==(?!=)\s*(.+?)\s*==$")
+# Том / раздел верхнего уровня: «= Ветхий завет =» (один знак =), не путать с «== книга ==».
+_TOME_RE = re.compile(r"^=\s*(.+?)\s*=$")
 _CHAPTER_RE = re.compile(r"^===\s*(.+?)\s*===$")
 _VERSE_RE = re.compile(r"^(\d+)\s+(.+)$")
 
 
 @dataclass
 class ParseState:
+    #: Последний узел «= том =» — родитель для следующих «== книга ==»
+    current_tome_id: uuid.UUID | None = None
     current_book_id: uuid.UUID | None = None
     current_chapter_id: uuid.UUID | None = None
     order_book: int = 0
+    order_nested_book: int = 0
     order_chapter: int = 0
     order_verse: int = 0
     order_text: int = 0
@@ -67,7 +72,13 @@ class DocumentParserService:
 
             m_book = _BOOK_RE.match(s)
             if m_book:
-                state.order_book += 1
+                parent_id = state.current_tome_id
+                if parent_id:
+                    state.order_nested_book += 1
+                    book_oi = state.order_nested_book
+                else:
+                    state.order_book += 1
+                    book_oi = state.order_book
                 state.order_chapter = 0
                 state.order_verse = 0
                 state.order_text = 0
@@ -78,8 +89,33 @@ class DocumentParserService:
                     DocumentNodeModel(
                         id=bid,
                         document_id=document_id,
-                        parent_id=None,
+                        parent_id=parent_id,
                         title=m_book.group(1).strip(),
+                        content=None,
+                        node_type="book",
+                        order_index=book_oi,
+                    ),
+                )
+                continue
+
+            # «= Название тома =» — только если строка не начинается с «==» (уже разобрано выше).
+            m_tome = _TOME_RE.match(s) if s.startswith("=") and not s.startswith("==") else None
+            if m_tome:
+                state.order_book += 1
+                state.order_nested_book = 0
+                state.order_chapter = 0
+                state.order_verse = 0
+                state.order_text = 0
+                tid = uuid.uuid4()
+                state.current_tome_id = tid
+                state.current_book_id = None
+                state.current_chapter_id = None
+                nodes.append(
+                    DocumentNodeModel(
+                        id=tid,
+                        document_id=document_id,
+                        parent_id=None,
+                        title=m_tome.group(1).strip(),
                         content=None,
                         node_type="book",
                         order_index=state.order_book,
@@ -126,10 +162,12 @@ class DocumentParserService:
                 )
                 continue
 
-            # Прочий текст без распознанного паттерна — узел type=text под текущей главой или книгой
-            parent = state.current_chapter_id or state.current_book_id
+            # Прочий текст — под главой, книгой или томом «= … =»
+            parent = state.current_chapter_id or state.current_book_id or state.current_tome_id
             if parent is None:
-                msg = "Произвольный текст допустим только после книги (== … ==) или главы (=== … ===)"
+                msg = (
+                    "Произвольный текст допустим только после тома (= … =), книги (== … ==) или главы (=== … ===)"
+                )
                 raise ValueError(msg)
             state.order_text += 1
             tid = uuid.uuid4()
@@ -146,6 +184,9 @@ class DocumentParserService:
             )
 
         if not nodes:
-            msg = "Файл не содержит распознанных блоков (ожидаются строки «== книга ==», «=== глава ===», стихи «1 текст…»)"
+            msg = (
+                "Файл не содержит распознанных блоков (ожидаются «= том =», «== книга ==», "
+                "«=== глава ===», стихи «1 текст…»)"
+            )
             raise ValueError(msg)
         return nodes

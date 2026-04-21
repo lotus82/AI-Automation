@@ -14,8 +14,8 @@ export function DocumentReader({ documentId, pageTitle, introHtml, themeColor })
   const [bundle, setBundle] = useState(null);
   const [tocOpen, setTocOpen] = useState(false);
   const [activeChapter, setActiveChapter] = useState(null);
-  /** Аккордеон оглавления: одна раскрытая книга, одна «открытая» глава внутри неё */
-  const [tocExpandedBookId, setTocExpandedBookId] = useState(null);
+  /** Какие узлы book (том / книга) раскрыты в оглавлении — поддержка вложенности */
+  const [tocExpandedBookIds, setTocExpandedBookIds] = useState(() => new Set());
   const [tocExpandedChapterId, setTocExpandedChapterId] = useState(null);
 
   const load = useCallback(async () => {
@@ -77,7 +77,7 @@ export function DocumentReader({ documentId, pageTitle, introHtml, themeColor })
             size="s"
             mode="secondary"
             onClick={() => {
-              setTocExpandedBookId(null);
+              setTocExpandedBookIds(new Set());
               setTocExpandedChapterId(null);
               setTocOpen(true);
             }}
@@ -175,12 +175,17 @@ export function DocumentReader({ documentId, pageTitle, introHtml, themeColor })
             <div style={{ padding: "8px 0 16px" }}>
               <TocTree
                 nodes={bundle?.tree || []}
-                expandedBookId={tocExpandedBookId}
+                expandedBookIds={tocExpandedBookIds}
                 expandedChapterId={tocExpandedChapterId}
                 activeChapterId={activeChapter?.id || null}
                 accent={accent}
                 onToggleBook={(bookId) => {
-                  setTocExpandedBookId((prev) => (prev === bookId ? null : bookId));
+                  setTocExpandedBookIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(bookId)) next.delete(bookId);
+                    else next.add(bookId);
+                    return next;
+                  });
                   setTocExpandedChapterId(null);
                 }}
                 onPickChapter={(ch) => {
@@ -197,98 +202,149 @@ export function DocumentReader({ documentId, pageTitle, introHtml, themeColor })
   );
 }
 
-function findFirstChapter(tree) {
-  for (const book of tree || []) {
-    for (const ch of book.children || []) {
-      if (ch.node_type === "chapter") return ch;
-    }
+function findFirstChapter(nodes) {
+  if (!nodes?.length) return null;
+  for (const n of nodes) {
+    if (n.node_type === "chapter") return n;
+    const hit = findFirstChapter(n.children || []);
+    if (hit) return hit;
   }
   return null;
 }
 
 function TocTree({
   nodes,
-  expandedBookId,
+  expandedBookIds,
   expandedChapterId,
   activeChapterId,
   accent,
   onToggleBook,
   onPickChapter,
 }) {
-  const list = nodes || [];
+  const list = (nodes || []).filter((n) => n && n.node_type === "book");
   return (
     <Flex direction="column" gap={0}>
-      {list.map((book) => {
-        const bookOpen = expandedBookId === book.id;
-        const chapters = (book.children || []).filter((n) => n.node_type === "chapter");
-        return (
-          <div key={book.id} style={{ marginBottom: 4, borderBottom: "1px solid #f3f4f6" }}>
-            <button
-              type="button"
-              onClick={() => onToggleBook(book.id)}
-              style={{
-                display: "flex",
-                width: "100%",
-                alignItems: "center",
-                gap: 8,
-                padding: "10px 12px 10px 14px",
-                border: "none",
-                background: bookOpen ? "#f0fdf4" : "#f9fafb",
-                fontWeight: 600,
-                fontSize: 14,
-                color: "#374151",
-                cursor: "pointer",
-                textAlign: "left",
-              }}
-            >
-              <span style={{ display: "flex", color: accent, flexShrink: 0 }} aria-hidden>
-                {bookOpen ? <ChevronDown size={18} strokeWidth={2} /> : <ChevronRight size={18} strokeWidth={2} />}
-              </span>
-              <span style={{ flex: 1, minWidth: 0 }}>{book.title}</span>
-            </button>
-            {bookOpen ? (
-              <Flex direction="column" gap={0} style={{ background: "#fff" }}>
-                {chapters.map((ch) => {
-                  const chOpen = expandedChapterId === ch.id;
-                  const isActive = activeChapterId === ch.id;
-                  const compact = expandedChapterId != null && !chOpen;
-                  return (
-                    <button
-                      key={ch.id}
-                      type="button"
-                      onClick={() => onPickChapter(ch)}
-                      style={{
-                        display: "flex",
-                        width: "100%",
-                        alignItems: "center",
-                        gap: 6,
-                        textAlign: "left",
-                        padding: compact ? "6px 14px 6px 36px" : "10px 14px 10px 36px",
-                        border: "none",
-                        borderTop: "1px solid #f3f4f6",
-                        background: chOpen || isActive ? "rgba(79, 70, 229, 0.06)" : "#fff",
-                        fontSize: compact ? 13 : 15,
-                        fontWeight: chOpen || isActive ? 600 : 500,
-                        color: compact ? "#6b7280" : "#111827",
-                        cursor: "pointer",
-                        lineHeight: compact ? 1.25 : 1.35,
-                        WebkitTapHighlightColor: "transparent",
-                      }}
-                    >
-                      <span style={{ color: accent, fontWeight: 700, flexShrink: 0, fontSize: compact ? 12 : 13 }}>
-                        {chOpen || isActive ? "▾" : "›"}
-                      </span>
-                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {ch.title}
-                      </span>
-                    </button>
-                  );
-                })}
-              </Flex>
-            ) : null}
-          </div>
-        );
-      })}
+      {list.map((book) => (
+        <TocBranch
+          key={book.id}
+          node={book}
+          depth={0}
+          expandedBookIds={expandedBookIds}
+          expandedChapterId={expandedChapterId}
+          activeChapterId={activeChapterId}
+          accent={accent}
+          onToggleBook={onToggleBook}
+          onPickChapter={onPickChapter}
+        />
+      ))}
     </Flex>
+  );
+}
+
+function TocBranch({
+  node,
+  depth,
+  expandedBookIds,
+  expandedChapterId,
+  activeChapterId,
+  accent,
+  onToggleBook,
+  onPickChapter,
+}) {
+  const bookOpen = expandedBookIds.has(node.id);
+  const children = node.children || [];
+  const childBooks = children.filter((n) => n.node_type === "book");
+  const chapters = children.filter((n) => n.node_type === "chapter");
+  const headerPad = 10 + depth * 12;
+  const chapterPad = 22 + depth * 12;
+
+  return (
+    <div
+      style={{
+        marginBottom: depth === 0 ? 4 : 0,
+        borderBottom: depth === 0 ? "1px solid #f3f4f6" : undefined,
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => onToggleBook(node.id)}
+        style={{
+          display: "flex",
+          width: "100%",
+          alignItems: "center",
+          gap: 8,
+          padding: `10px 12px 10px ${headerPad}px`,
+          border: "none",
+          background: bookOpen ? "#f0fdf4" : "#f9fafb",
+          fontWeight: 600,
+          fontSize: depth === 0 ? 14 : 13,
+          color: "#374151",
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        <span style={{ display: "flex", color: accent, flexShrink: 0 }} aria-hidden>
+          {bookOpen ? <ChevronDown size={18} strokeWidth={2} /> : <ChevronRight size={18} strokeWidth={2} />}
+        </span>
+        <span style={{ flex: 1, minWidth: 0 }}>{node.title}</span>
+      </button>
+      {bookOpen ? (
+        <div style={{ background: "#fff" }}>
+          {childBooks.map((b) => (
+            <TocBranch
+              key={b.id}
+              node={b}
+              depth={depth + 1}
+              expandedBookIds={expandedBookIds}
+              expandedChapterId={expandedChapterId}
+              activeChapterId={activeChapterId}
+              accent={accent}
+              onToggleBook={onToggleBook}
+              onPickChapter={onPickChapter}
+            />
+          ))}
+          <Flex direction="column" gap={0}>
+            {chapters.map((ch) => {
+              const chOpen = expandedChapterId === ch.id;
+              const isActive = activeChapterId === ch.id;
+              const compact = expandedChapterId != null && !chOpen;
+              return (
+                <button
+                  key={ch.id}
+                  type="button"
+                  onClick={() => onPickChapter(ch)}
+                  style={{
+                    display: "flex",
+                    width: "100%",
+                    alignItems: "center",
+                    gap: 6,
+                    textAlign: "left",
+                    padding: compact
+                      ? `6px 14px 6px ${chapterPad + 14}px`
+                      : `10px 14px 10px ${chapterPad + 14}px`,
+                    border: "none",
+                    borderTop: "1px solid #f3f4f6",
+                    background: chOpen || isActive ? "rgba(79, 70, 229, 0.06)" : "#fff",
+                    fontSize: compact ? 13 : 15,
+                    fontWeight: chOpen || isActive ? 600 : 500,
+                    color: compact ? "#6b7280" : "#111827",
+                    cursor: "pointer",
+                    lineHeight: compact ? 1.25 : 1.35,
+                    WebkitTapHighlightColor: "transparent",
+                  }}
+                >
+                  <span style={{ color: accent, fontWeight: 700, flexShrink: 0, fontSize: compact ? 12 : 13 }}>
+                    {chOpen || isActive ? "▾" : "›"}
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {ch.title}
+                  </span>
+                </button>
+              );
+            })}
+          </Flex>
+        </div>
+      ) : null}
+    </div>
   );
 }
