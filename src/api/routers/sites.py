@@ -507,6 +507,23 @@ async def _validate_booking_staff_for_site(
         )
 
 
+def _menu_item_sort_key(x: SiteMenuItemInput) -> tuple[int, str]:
+    """Безопасный ключ сортировки: ``None`` в order_index не должен ломать ``sorted`` (TypeError)."""
+    try:
+        oi = int(x.order_index) if x.order_index is not None else 0
+    except (TypeError, ValueError):
+        oi = 0
+    return (oi, str(x.page_id))
+
+
+def _effective_mis_audience_for_page(mis_audience_raw: object, page_kind: str) -> str | None:
+    """Эффективная аудитория страницы: колонка ``mis_audience`` или вывод из ``page_kind`` (legacy без backfill)."""
+    s = str(mis_audience_raw or "").strip().lower()
+    if s in ("doctor", "patient"):
+        return s
+    return _mis_audience_from_page_kind(page_kind)
+
+
 async def _validate_mis_menu_for_site(
     session: AsyncSessionDep,
     site_id: UUID,
@@ -527,7 +544,7 @@ async def _validate_mis_menu_for_site(
         return []
     rows = (
         await session.execute(
-            select(SitePageModel.id, SitePageModel.mis_audience).where(
+            select(SitePageModel.id, SitePageModel.mis_audience, SitePageModel.page_kind).where(
                 SitePageModel.site_id == site_id,
                 SitePageModel.id.in_(pids),
             )
@@ -538,19 +555,21 @@ async def _validate_mis_menu_for_site(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="В меню указана страница, не принадлежащая этому сайту",
         )
-    for _rid, rau in rows:
-        if (rau or "").strip().lower() != aud:
+    for _rid, rau, pk in rows:
+        pk_norm = (pk or "content").strip().lower()
+        effective = _effective_mis_audience_for_page(rau, pk_norm)
+        if effective != aud:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="В меню МИС можно указывать только страницы той же роли (врач или пациент)",
             )
     stored: list[dict] = []
-    for it in sorted(items_in, key=lambda x: (x.order_index, str(x.page_id))):
+    for it in sorted(items_in, key=_menu_item_sort_key):
         iid = (it.id or "").strip() or str(uuid.uuid4())
         stored.append(
             {
                 "id": iid,
-                "label": it.label.strip(),
+                "label": (it.label or "").strip() or "Пункт",
                 "page_id": str(it.page_id),
                 "order_index": int(it.order_index),
                 "is_visible": bool(it.is_visible),
@@ -711,7 +730,7 @@ async def update_site(
                     detail="В меню указана страница, не принадлежащая этому сайту",
                 )
         stored: list[dict] = []
-        for it in sorted(body.menu_items, key=lambda x: (x.order_index, str(x.page_id))):
+        for it in sorted(body.menu_items, key=_menu_item_sort_key):
             iid = (it.id or "").strip() or str(uuid.uuid4())
             stored.append(
                 {
