@@ -32,6 +32,8 @@ export function DocumentsListPage() {
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [uploadTargetId, setUploadTargetId] = useState(null);
+  /** Прогресс отправки файла на сервер (0–100), null — загрузки нет */
+  const [uploadProgress, setUploadProgress] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -103,15 +105,24 @@ export function DocumentsListPage() {
       return;
     }
     setError("");
+    setUploadProgress(0);
     try {
       const fd = new FormData();
       fd.append("file", file);
       await api.post(`/documents/${target}/upload`, fd, {
         headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (evt) => {
+          if (evt.total && evt.total > 0) {
+            setUploadProgress(Math.min(100, Math.round((100 * evt.loaded) / evt.total)));
+          }
+        },
       });
+      setUploadProgress(100);
       await load();
     } catch (err) {
       setError(formatApiDetail(err?.response?.data?.detail) || err?.message || String(err));
+    } finally {
+      setUploadProgress(null);
     }
   };
 
@@ -157,6 +168,23 @@ export function DocumentsListPage() {
           </button>
         </div>
       </header>
+
+      {uploadProgress !== null ? (
+        <div className="mb-4 rounded-lg border border-slate-600 bg-slate-900/80 p-3">
+          <div className="mb-1.5 text-xs font-medium text-slate-300">Загрузка файла на сервер…</div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+            <div
+              className="h-full rounded-full bg-emerald-500 transition-[width] duration-150 ease-out"
+              style={{ width: `${uploadProgress}%` }}
+              role="progressbar"
+              aria-valuenow={uploadProgress}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            />
+          </div>
+          <div className="mt-1 text-[11px] text-slate-500">{uploadProgress}%</div>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="mb-4 rounded-lg border border-red-600/40 bg-red-600/10 p-3 text-sm text-red-200">{error}</div>
@@ -234,8 +262,9 @@ export function DocumentsListPage() {
                     <div className="flex flex-wrap justify-end gap-2">
                       <button
                         type="button"
+                        disabled={uploadProgress !== null}
                         onClick={() => onPickUpload(r.id)}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-600 bg-slate-800/80 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700"
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-600 bg-slate-800/80 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Upload className="h-3.5 w-3.5" aria-hidden />
                         Загрузить TXT

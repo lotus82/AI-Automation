@@ -17,6 +17,7 @@ from src.api.org_scope import resolve_organization_scope
 from src.domain.portal_roles import ROLE_SUPER_ADMIN
 from src.infrastructure.models import DocumentModel, DocumentNodeModel, OrganizationModel
 from src.infrastructure.services.document_parser_service import DocumentParserService
+from src.infrastructure.services.text_file_decoding import decode_txt_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -316,7 +317,7 @@ async def upload_document_txt(
     raw = await file.read()
     if len(raw) > _MAX_TXT_BYTES:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Файл больше 40 МБ")
-    text = raw.decode("utf-8", errors="replace")
+    text = decode_txt_bytes(raw)
     try:
         nodes = DocumentParserService.parse_text(document_id, text)
     except ValueError as e:
