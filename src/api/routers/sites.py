@@ -83,6 +83,19 @@ public_router = APIRouter(prefix="/public/sites", tags=["sites-public"])
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\-]{0,126}[a-z0-9]$|^[a-z0-9]$")
 
+# Типы страниц Mini App для МИС: без сотрудника записи и без встраиваемого модуля.
+_PAGE_KINDS_MIS_SPECIAL = frozenset(
+    {
+        "mis_patients",
+        "mis_doctor_card",
+        "mis_patient_card",
+        "mis_patient_profile",
+        "mis_patient_diary",
+        "mis_patient_tips",
+    },
+)
+_ALLOWED_PAGE_KINDS = frozenset({"content", "booking", *_PAGE_KINDS_MIS_SPECIAL})
+
 
 # --- Схемы ---------------------------------------------------------------
 
@@ -256,8 +269,10 @@ class SitePageCreateRequest(BaseModel):
     @classmethod
     def _page_kind(cls, v: str) -> str:
         s = (v or "content").strip().lower()
-        if s not in ("content", "booking", "mis_patients"):
-            raise ValueError("page_kind: допустимо content, booking или mis_patients")
+        if s not in _ALLOWED_PAGE_KINDS:
+            raise ValueError(
+                "page_kind: допустимо content, booking или спец-страницы МИС (mis_patients, mis_doctor_card, …)",
+            )
         return s
 
     @model_validator(mode="after")
@@ -266,11 +281,11 @@ class SitePageCreateRequest(BaseModel):
             raise ValueError("Для страницы записи укажите сотрудника (booking_staff_user_id)")
         if self.page_kind == "booking" and self.embed_module:
             raise ValueError("Для страницы записи встраиваемый модуль не используется (оставьте пустым)")
-        if self.page_kind == "mis_patients":
+        if self.page_kind in _PAGE_KINDS_MIS_SPECIAL:
             if self.embed_module:
-                raise ValueError("Для страницы «Пациенты» встраиваемый модуль не используется")
+                raise ValueError("Для спец-страницы МИС встраиваемый модуль не используется")
             if self.booking_staff_user_id is not None:
-                raise ValueError("Для страницы «Пациенты» не указывайте сотрудника записи")
+                raise ValueError("Для спец-страницы МИС не указывайте сотрудника записи")
         return self
 
 
@@ -314,8 +329,10 @@ class SitePageUpdateRequest(BaseModel):
         if v is None:
             return v
         s = v.strip().lower()
-        if s not in ("content", "booking", "mis_patients"):
-            raise ValueError("page_kind: допустимо content, booking или mis_patients")
+        if s not in _ALLOWED_PAGE_KINDS:
+            raise ValueError(
+                "page_kind: допустимо content, booking или спец-страницы МИС (mis_patients, mis_doctor_card, …)",
+            )
         return s
 
 
@@ -708,7 +725,7 @@ async def create_site_page(
     sid = body.booking_staff_user_id if pk == "booking" else None
     if sid is not None:
         await _validate_booking_staff_for_site(session, scope, sid)
-    embed = None if pk in ("booking", "mis_patients") else body.embed_module
+    embed = body.embed_module if pk == "content" else None
     row = SitePageModel(
         site_id=site_id,
         title=body.title.strip(),
@@ -761,7 +778,7 @@ async def update_site_page(
     fs = body.model_fields_set
     if body.page_kind is not None:
         row.page_kind = body.page_kind.strip().lower()
-        if row.page_kind in ("content", "mis_patients"):
+        if row.page_kind != "booking":
             row.booking_staff_user_id = None
     if "booking_staff_user_id" in fs:
         row.booking_staff_user_id = body.booking_staff_user_id
@@ -775,9 +792,12 @@ async def update_site_page(
         )
     if row.booking_staff_user_id is not None:
         await _validate_booking_staff_for_site(session, scope, row.booking_staff_user_id)
-    if (row.page_kind or "content") == "booking":
+    pkf = (row.page_kind or "content").strip().lower()
+    if pkf == "booking":
         row.embed_module = None
-    if (row.page_kind or "content") == "mis_patients":
+    elif pkf == "content":
+        row.booking_staff_user_id = None
+    else:
         row.embed_module = None
         row.booking_staff_user_id = None
 

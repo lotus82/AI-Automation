@@ -42,6 +42,7 @@ import {
   PATIENT_PUBLIC_SECTION_LABELS,
   normalizePublicSectionOrder,
 } from "../../utils/patientPublicCardLayout.js";
+import { MIS_DOCTOR_PAGE_KINDS, MIS_PATIENT_PAGE_KINDS } from "../../utils/misMiniAppNav.js";
 
 /** Ключи встраиваемых модулей Mini App (согласовано с backend). */
 const EMBED_MODULE_OPTIONS = [
@@ -373,7 +374,12 @@ export function SiteBuilderPage() {
         subtitle: data.subtitle || "",
         logo_url: data.logo_url || "",
         theme_color: data.theme_color || "#000000",
-        contacts: { ...EMPTY_CONTACTS, ...(data.contacts || {}) },
+        contacts: {
+          ...EMPTY_CONTACTS,
+          ...(data.contacts || {}),
+          mis_miniapp_audience:
+            (data.contacts || {}).mis_miniapp_audience === "patient" ? "patient" : "doctor",
+        },
         menu_items: Array.isArray(data.menu_items)
           ? data.menu_items.map((m) => ({
               id: m.id || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Math.random())),
@@ -585,9 +591,10 @@ export function SiteBuilderPage() {
 
   const openPageEditor = (p) => {
     setEditingPageId(p.id);
-    const pkRaw = (p.page_kind || "content").toLowerCase();
-    const pageKind =
-      pkRaw === "booking" ? "booking" : pkRaw === "mis_patients" ? "mis_patients" : "content";
+    const audiencePatient = (form?.contacts?.mis_miniapp_audience === "patient");
+    const pageKind = isMisSite
+      ? coerceMisPageKindForAudience(p.page_kind, audiencePatient)
+      : normalizeSitePageKind(p.page_kind);
     setPageForm({
       title: p.title || "",
       slug: p.slug || "",
@@ -607,9 +614,7 @@ export function SiteBuilderPage() {
     setPageSaving(true);
     setError("");
     try {
-      const rawPk = (pageForm.page_kind || "content").toLowerCase();
-      const pk =
-        rawPk === "booking" ? "booking" : rawPk === "mis_patients" ? "mis_patients" : "content";
+      const pk = normalizeSitePageKind(pageForm.page_kind);
       const staffRaw = (pageForm.booking_staff_user_id || "").trim();
       const payload = {
         title: pageForm.title.trim(),
@@ -789,6 +794,7 @@ export function SiteBuilderPage() {
                 onSave={onSavePage}
                 saving={pageSaving}
                 isMisSite={isMisSite}
+                misAudiencePatient={form.contacts?.mis_miniapp_audience === "patient"}
                 onDelete={() =>
                   editingPage ? onDeletePage(editingPage.id, editingPage.title) : null
                 }
@@ -1017,6 +1023,24 @@ function Field({ label, hint, children }) {
 const inputClass =
   "mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none";
 
+const ALL_MIS_PAGE_KINDS = [...MIS_DOCTOR_PAGE_KINDS, ...MIS_PATIENT_PAGE_KINDS];
+
+function normalizeSitePageKind(raw) {
+  const s = String(raw || "content").toLowerCase();
+  if (ALL_MIS_PAGE_KINDS.includes(s) || s === "booking" || s === "content") return s;
+  return "content";
+}
+
+function coerceMisPageKindForAudience(kind, audienceIsPatient) {
+  const k = normalizeSitePageKind(kind);
+  const doctor = new Set(MIS_DOCTOR_PAGE_KINDS);
+  const patient = new Set(MIS_PATIENT_PAGE_KINDS);
+  if (audienceIsPatient) {
+    return patient.has(k) ? k : "mis_patient_card";
+  }
+  return doctor.has(k) ? k : "mis_patients";
+}
+
 function SettingsTab({
   siteId,
   form,
@@ -1166,6 +1190,26 @@ function SettingsTab({
 
       <section className="space-y-4">
         <h2 className="text-sm font-semibold text-white">Общие</h2>
+        {isMisSite ? (
+          <Field
+            label="Роль Mini App МИС"
+            hint="Определяет, какие типы страниц доступны в редакторе. Врач — список пациентов и подсказка к карте; пациент — разделы личной карты."
+          >
+            <select
+              value={form.contacts?.mis_miniapp_audience === "patient" ? "patient" : "doctor"}
+              onChange={(e) =>
+                setForm((prev) => ({
+                  ...prev,
+                  contacts: { ...prev.contacts, mis_miniapp_audience: e.target.value },
+                }))
+              }
+              className={inputClass}
+            >
+              <option value="doctor">Врач (Пациенты, Карта пациента)</option>
+              <option value="patient">Пациент (Карта, Профиль, Дневник здоровья, Полезные материалы)</option>
+            </select>
+          </Field>
+        ) : null}
         <Field label="Внутреннее название" hint="Видно только в админ-панели.">
           <input
             type="text"
@@ -1452,6 +1496,37 @@ function PagesTab({ pages, loading, onCreate, onOpen, onDelete, onChangeOrder, o
   );
 }
 
+function MisPageKindHints({ pageKind }) {
+  const pk = String(pageKind || "").toLowerCase();
+  const text =
+    pk === "mis_patients"
+      ? "В Mini App — список пациентов врача при совпадении chat_id с профилем. Ниже — вступительный HTML над списком."
+      : pk === "mis_doctor_card"
+        ? "Подсказка врачу: полный доступ к карте — например через раздел «Пациенты». Ниже — необязательное HTML-вступление."
+        : pk === "mis_patient_card"
+          ? "Сводка по карте: ФИО, контакты, последние обследования. HTML — над блоком."
+          : pk === "mis_patient_profile"
+            ? "Редактирование профиля пациента при входе по MAX. HTML — над формой."
+            : pk === "mis_patient_diary"
+              ? "Дневник показателей (отправка врачу). HTML — над формой."
+              : pk === "mis_patient_tips"
+                ? "Статические рекомендации; HTML — над списком."
+                : null;
+  if (!text) return null;
+  return <p className="mt-3 text-[12px] leading-snug text-slate-400">{text}</p>;
+}
+
+function misPageEditorContentLabel(pageKind, isMisSite, misAudiencePatient) {
+  if (!isMisSite) {
+    const pk = String(pageKind || "").toLowerCase();
+    return pk === "booking" ? "Текст над формой записи (необязательно)" : "Контент";
+  }
+  const pk = coerceMisPageKindForAudience(pageKind, misAudiencePatient);
+  if (pk === "mis_patients") return "Вступительный текст (HTML) над списком пациентов";
+  if (pk === "mis_doctor_card") return "Вступительный текст (HTML) для экрана «Карта пациента»";
+  return "Вступительный текст (HTML) над разделом";
+}
+
 function PageEditorTab({
   page,
   form,
@@ -1463,6 +1538,7 @@ function PageEditorTab({
   onDelete,
   onBackToList,
   isMisSite = false,
+  misAudiencePatient = false,
 }) {
   const [isHtmlMode, setIsHtmlMode] = useState(false);
 
@@ -1564,87 +1640,115 @@ function PageEditorTab({
       </div>
 
       <div className="rounded-lg border border-slate-600 bg-slate-950/40 p-4">
-        <Field label="Тип страницы" hint="«Запись» — виджет выбора времени; расписание настраивается в разделе «Записи».">
-          <select
-            value={form.page_kind || "content"}
-            onChange={(e) => {
-              const v = e.target.value;
-              setForm((p) => ({
-                ...p,
-                page_kind: v,
-                booking_staff_user_id: v === "booking" ? p.booking_staff_user_id : "",
-                embed_module: v === "content" ? p.embed_module : "",
-              }));
-            }}
-            className={`${inputClass} max-w-md`}
-          >
-            <option value="content">Текст и медиа (как обычно)</option>
-            <option value="booking">Запись на приём к сотруднику</option>
-            {isMisSite ? <option value="mis_patients">Пациенты (только врач в Mini App)</option> : null}
-          </select>
-        </Field>
-        {(form.page_kind || "content") === "booking" ? (
-          <div className="mt-3">
-          <Field
-            label="Сотрудник"
-            hint="Пользователь панели организации. Ему нужно задать рабочие часы в «Записи»."
-          >
-            <select
-              value={form.booking_staff_user_id || ""}
-              onChange={(e) => setForm((p) => ({ ...p, booking_staff_user_id: e.target.value }))}
-              className={`${inputClass} max-w-md`}
-              required
-            >
-              <option value="">— выберите сотрудника —</option>
-              {(portalUsers || [])
-                .filter((u) => u.is_active !== false)
-                .map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {(u.display_name || u.username || "").trim() || u.id}
-                    {u.role ? ` (${u.role})` : ""}
-                  </option>
-                ))}
-            </select>
-          </Field>
-          </div>
-        ) : null}
-        {(form.page_kind || "content") === "content" ? (
-          <div className="mt-3">
+        {isMisSite ? (
+          <>
             <Field
-              label="Встроенный модуль платформы"
-              hint="Опционально: позже здесь откроется экран раздела (база знаний, формы и т.д.). Сейчас — заглушка в Mini App."
+              label="Тип страницы"
+              hint="Соответствует выбранной роли МИС в настройках сайта (вкладка «Настройки»)."
             >
               <select
-                value={form.embed_module || ""}
-                onChange={(e) => setForm((p) => ({ ...p, embed_module: e.target.value }))}
-                className={`${inputClass} max-w-xl`}
+                value={coerceMisPageKindForAudience(form.page_kind, misAudiencePatient)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setForm((p) => ({
+                    ...p,
+                    page_kind: v,
+                    booking_staff_user_id: "",
+                    embed_module: "",
+                  }));
+                }}
+                className={`${inputClass} max-w-lg`}
               >
-                {EMBED_MODULE_OPTIONS.map((o) => (
-                  <option key={o.value || "none"} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
+                {misAudiencePatient ? (
+                  <>
+                    <option value="mis_patient_card">Карта</option>
+                    <option value="mis_patient_profile">Профиль</option>
+                    <option value="mis_patient_diary">Дневник здоровья</option>
+                    <option value="mis_patient_tips">Полезные материалы</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="mis_patients">Пациенты</option>
+                    <option value="mis_doctor_card">Карта пациента</option>
+                  </>
+                )}
               </select>
             </Field>
-          </div>
-        ) : null}
-        {(form.page_kind || "content") === "mis_patients" ? (
-          <p className="mt-3 text-[12px] leading-snug text-slate-400">
-            В Mini App список карт виден только если <strong className="font-medium text-slate-300">chat_id</strong>{" "}
-            мессенджера совпадает с полем в профиле врача в панели («МИС — список пациентов» → сохранение chat_id).
-            Контент страницы ниже — вступительный HTML над списком.
-          </p>
-        ) : null}
+            <MisPageKindHints pageKind={coerceMisPageKindForAudience(form.page_kind, misAudiencePatient)} />
+          </>
+        ) : (
+          <>
+            <Field label="Тип страницы" hint="«Запись» — виджет выбора времени; расписание настраивается в разделе «Записи».">
+              <select
+                value={form.page_kind || "content"}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setForm((p) => ({
+                    ...p,
+                    page_kind: v,
+                    booking_staff_user_id: v === "booking" ? p.booking_staff_user_id : "",
+                    embed_module: v === "content" ? p.embed_module : "",
+                  }));
+                }}
+                className={`${inputClass} max-w-md`}
+              >
+                <option value="content">Текст и медиа (как обычно)</option>
+                <option value="booking">Запись на приём к сотруднику</option>
+              </select>
+            </Field>
+            {(form.page_kind || "content") === "booking" ? (
+              <div className="mt-3">
+                <Field
+                  label="Сотрудник"
+                  hint="Пользователь панели организации. Ему нужно задать рабочие часы в «Записи»."
+                >
+                  <select
+                    value={form.booking_staff_user_id || ""}
+                    onChange={(e) => setForm((p) => ({ ...p, booking_staff_user_id: e.target.value }))}
+                    className={`${inputClass} max-w-md`}
+                    required
+                  >
+                    <option value="">— выберите сотрудника —</option>
+                    {(portalUsers || [])
+                      .filter((u) => u.is_active !== false)
+                      .map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {(u.display_name || u.username || "").trim() || u.id}
+                          {u.role ? ` (${u.role})` : ""}
+                        </option>
+                      ))}
+                  </select>
+                </Field>
+              </div>
+            ) : null}
+            {(form.page_kind || "content") === "content" ? (
+              <div className="mt-3">
+                <Field
+                  label="Встроенный модуль платформы"
+                  hint="Опционально: позже здесь откроется экран раздела (база знаний, формы и т.д.). Сейчас — заглушка в Mini App."
+                >
+                  <select
+                    value={form.embed_module || ""}
+                    onChange={(e) => setForm((p) => ({ ...p, embed_module: e.target.value }))}
+                    className={`${inputClass} max-w-xl`}
+                  >
+                    {EMBED_MODULE_OPTIONS.map((o) => (
+                      <option key={o.value || "none"} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
 
       <div className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <label className="block text-xs font-medium text-slate-300">
-            {(form.page_kind || "content") === "booking"
-              ? "Текст над формой записи (необязательно)"
-              : (form.page_kind || "content") === "mis_patients"
-                ? "Вступительный текст (HTML) над списком пациентов"
-                : "Контент"}
+            {misPageEditorContentLabel(form.page_kind, isMisSite, misAudiencePatient)}
           </label>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -1806,7 +1910,7 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm, isMisSite =
                   : p.booking_staff_user_id,
             embed_module: (() => {
               const k = (pageForm?.page_kind || p.page_kind || "content").toLowerCase();
-              if (k === "booking" || k === "mis_patients") return null;
+              if (k === "booking" || k.startsWith("mis_")) return null;
               return (pageForm?.embed_module || "").trim() || null;
             })(),
           }
@@ -1964,7 +2068,7 @@ function PagePreviewBody({ page }) {
     pk === "booking" &&
     page.booking_staff_user_id;
   const embedKey =
-    page && !isBooking && pk !== "mis_patients" ? String(page.embed_module || "").trim() : "";
+    page && !isBooking && !pk.startsWith("mis_") ? String(page.embed_module || "").trim() : "";
 
   if (pk === "mis_patients") {
     return (
@@ -1982,6 +2086,52 @@ function PagePreviewBody({ page }) {
         <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-[13px] text-teal-900">
           Здесь в Mini App — список пациентов врача (доступ только при совпадении{" "}
           <span className="font-medium">chat_id</span> с профилем врача).
+        </div>
+      </article>
+    );
+  }
+
+  if (pk === "mis_doctor_card") {
+    return (
+      <article className="text-slate-800">
+        <h2 className="mb-2 text-lg font-semibold text-slate-900">
+          {(page.title || "").trim() || "Карта пациента"}
+        </h2>
+        {page.content ? (
+          <div
+            ref={previewContentRef}
+            className="miniapp-preview-content mb-3 space-y-2 text-[14px] leading-relaxed"
+            dangerouslySetInnerHTML={{ __html: page.content }}
+          />
+        ) : null}
+        <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[13px] text-sky-950">
+          Экран подсказки врачу: открыть карты через раздел «Пациенты» или веб-МИС.
+        </div>
+      </article>
+    );
+  }
+
+  if (["mis_patient_card", "mis_patient_profile", "mis_patient_diary", "mis_patient_tips"].includes(pk)) {
+    const hint =
+      pk === "mis_patient_card"
+        ? "Сводка карты (контакты, обследования)."
+        : pk === "mis_patient_profile"
+          ? "Профиль пациента."
+          : pk === "mis_patient_diary"
+            ? "Дневник показателей."
+            : "Полезные материалы.";
+    return (
+      <article className="text-slate-800">
+        <h2 className="mb-2 text-lg font-semibold text-slate-900">{(page.title || "").trim() || "Раздел"}</h2>
+        {page.content ? (
+          <div
+            ref={previewContentRef}
+            className="miniapp-preview-content mb-3 space-y-2 text-[14px] leading-relaxed"
+            dangerouslySetInnerHTML={{ __html: page.content }}
+          />
+        ) : null}
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-950">
+          {hint} Доступ при роли <span className="font-medium">пациент</span> в Mini App.
         </div>
       </article>
     );

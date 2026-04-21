@@ -13,7 +13,14 @@ import { isValidMisLogoIconKey, MisLogoIcon } from "../../utils/misMedicalBrandi
 import { MiniAppBookingContent } from "./MiniAppBookingContent.jsx";
 import { MiniAppEmbedPlaceholder } from "./MiniAppEmbedPlaceholder.jsx";
 import { MiniAppMisPatientsContent } from "./MiniAppMisPatientsContent.jsx";
+import { MiniAppMisDoctorCardContent } from "./MiniAppMisDoctorCardContent.jsx";
+import { MiniAppMisPatientScreens } from "./MiniAppMisPatientScreens.jsx";
 import { MiniAppStaffPanel } from "./MiniAppStaffPanel.jsx";
+import {
+  getMisMiniappAudience,
+  legacyMisPatientsSlugAllowed,
+  misSitePageVisibleInNav,
+} from "../../utils/misMiniAppNav.js";
 import "./miniappPageContent.css";
 
 /**
@@ -375,8 +382,12 @@ function MiniAppPageContent({ page, organizationId, miniToken, misRole, themeCol
   const pk = page ? String(page.page_kind || "content").toLowerCase() : "";
   const isBooking =
     page && pk === "booking" && page.booking_staff_user_id;
+  const isMisBuiltIn =
+    pk === "mis_patients" ||
+    pk === "mis_doctor_card" ||
+    pk.startsWith("mis_patient_");
   const embedKey =
-    page && !isBooking && pk !== "mis_patients" ? String(page.embed_module || "").trim() : "";
+    page && !isBooking && !isMisBuiltIn ? String(page.embed_module || "").trim() : "";
 
   if (!page) {
     return (
@@ -394,6 +405,28 @@ function MiniAppPageContent({ page, organizationId, miniToken, misRole, themeCol
       <MiniAppMisPatientsContent
         miniToken={miniToken}
         misRole={misRole}
+        pageTitle={page.title}
+        introHtml={page.content}
+        themeColor={themeColor}
+      />
+    );
+  }
+
+  if (pk === "mis_doctor_card") {
+    return (
+      <MiniAppMisDoctorCardContent pageTitle={page.title} introHtml={page.content} themeColor={themeColor} />
+    );
+  }
+
+  if (
+    pk === "mis_patient_card" ||
+    pk === "mis_patient_profile" ||
+    pk === "mis_patient_diary" ||
+    pk === "mis_patient_tips"
+  ) {
+    return (
+      <MiniAppMisPatientScreens
+        pageKind={pk}
         pageTitle={page.title}
         introHtml={page.content}
         themeColor={themeColor}
@@ -586,15 +619,24 @@ export function MiniAppEntryPage() {
         Array.isArray(cfg?.nav_items) && cfg.nav_items.length > 0
           ? cfg.nav_items.filter((x) => x && x.slug)
           : pgs.map((p) => ({ label: p.title, slug: p.slug }));
-      const isMisPatientsOnlyPage = (slug) => {
-        const pg = pgs.find((p) => p.slug === slug);
-        return pg && String(pg.page_kind || "").toLowerCase() === "mis_patients";
-      };
-      const navForUser =
-        misRoleFromSession === "doctor"
-          ? nav
-          : nav.filter((it) => !isMisPatientsOnlyPage(it.slug));
-      const firstSlug = navForUser[0]?.slug ?? pgs.find((p) => !isMisPatientsOnlyPage(p.slug))?.slug ?? pgs[0]?.slug ?? null;
+      const audience = getMisMiniappAudience(cfg?.contacts);
+      const navForUser = nav.filter((it) => {
+        const pg = pgs.find((p) => p.slug === it.slug);
+        if (!pg) return false;
+        if (cfg?.site_kind !== "mis") {
+          return legacyMisPatientsSlugAllowed(pg, misRoleFromSession);
+        }
+        return misSitePageVisibleInNav(pg, audience, misRoleFromSession);
+      });
+      const firstSlug =
+        navForUser[0]?.slug ??
+        pgs.find((p) =>
+          cfg?.site_kind === "mis"
+            ? misSitePageVisibleInNav(p, audience, misRoleFromSession)
+            : legacyMisPatientsSlugAllowed(p, misRoleFromSession),
+        )?.slug ??
+        pgs[0]?.slug ??
+        null;
       setActiveSlug(firstSlug);
       setStatus("ready");
     } catch (e) {
@@ -649,19 +691,23 @@ export function MiniAppEntryPage() {
     [config?.pages],
   );
 
+  const misAudience = useMemo(() => getMisMiniappAudience(config?.contacts), [config?.contacts]);
+
   const navItems = useMemo(() => {
     const raw = config?.nav_items;
     const base =
       Array.isArray(raw) && raw.length > 0
         ? raw.filter((x) => x && x.slug)
         : pages.map((p) => ({ label: p.title, slug: p.slug }));
-    const isMisPatientsOnlySlug = (slug) => {
-      const pg = pages.find((p) => p.slug === slug);
-      return pg && String(pg.page_kind || "").toLowerCase() === "mis_patients";
-    };
-    if (misSession?.role === "doctor") return base;
-    return base.filter((it) => !isMisPatientsOnlySlug(it.slug));
-  }, [config?.nav_items, pages, misSession?.role]);
+    return base.filter((it) => {
+      const pg = pages.find((p) => p.slug === it.slug);
+      if (!pg) return false;
+      if (config?.site_kind !== "mis") {
+        return legacyMisPatientsSlugAllowed(pg, misSession?.role);
+      }
+      return misSitePageVisibleInNav(pg, misAudience, misSession?.role);
+    });
+  }, [config?.nav_items, config?.site_kind, pages, misSession?.role, misAudience]);
 
   const navItemsWithStaff = useMemo(() => {
     if (!staffMenu) return navItems;
