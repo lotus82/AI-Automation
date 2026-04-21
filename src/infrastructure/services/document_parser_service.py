@@ -87,9 +87,27 @@ class DocumentParserService:
 
             m_ver = _VERSE_RE.match(s)
             if m_ver:
-                if state.current_chapter_id is None:
-                    msg = "Стих «число текст» должен идти после главы «=== … ===»"
+                if state.current_book_id is None:
+                    msg = "Сначала укажите книгу строкой вида «== Название ==»"
                     raise ValueError(msg)
+                # Стихи часто идут сразу после «== книга ==» без «=== глава ===» — создаём неявную главу.
+                if state.current_chapter_id is None:
+                    state.order_chapter += 1
+                    state.order_verse = 0
+                    state.order_text = 0
+                    cid = uuid.uuid4()
+                    state.current_chapter_id = cid
+                    nodes.append(
+                        DocumentNodeModel(
+                            id=cid,
+                            document_id=document_id,
+                            parent_id=state.current_book_id,
+                            title="Глава 1",
+                            content=None,
+                            node_type="chapter",
+                            order_index=state.order_chapter,
+                        ),
+                    )
                 state.order_verse += 1
                 num, rest = m_ver.group(1), m_ver.group(2).strip()
                 vid = uuid.uuid4()
