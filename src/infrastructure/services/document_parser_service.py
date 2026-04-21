@@ -9,7 +9,9 @@ from dataclasses import dataclass
 from src.infrastructure.models import DocumentNodeModel
 
 
-_BOOK_RE = re.compile(r"^==\s*(.+?)\s*==$")
+# Главу проверять раньше книги: строка «=== 1 ===» тоже начинается с «==», иначе
+# паттерн книги ошибочно даёт лишний узел book с заголовком «= 1».
+_BOOK_RE = re.compile(r"^==(?!=)\s*(.+?)\s*==$")
 _CHAPTER_RE = re.compile(r"^===\s*(.+?)\s*===$")
 _VERSE_RE = re.compile(r"^(\d+)\s+(.+)$")
 
@@ -38,28 +40,6 @@ class DocumentParserService:
             if not s:
                 continue
 
-            m_book = _BOOK_RE.match(s)
-            if m_book:
-                state.order_book += 1
-                state.order_chapter = 0
-                state.order_verse = 0
-                state.order_text = 0
-                bid = uuid.uuid4()
-                state.current_book_id = bid
-                state.current_chapter_id = None
-                nodes.append(
-                    DocumentNodeModel(
-                        id=bid,
-                        document_id=document_id,
-                        parent_id=None,
-                        title=m_book.group(1).strip(),
-                        content=None,
-                        node_type="book",
-                        order_index=state.order_book,
-                    ),
-                )
-                continue
-
             m_ch = _CHAPTER_RE.match(s)
             if m_ch:
                 if state.current_book_id is None:
@@ -81,6 +61,28 @@ class DocumentParserService:
                         content=None,
                         node_type="chapter",
                         order_index=state.order_chapter,
+                    ),
+                )
+                continue
+
+            m_book = _BOOK_RE.match(s)
+            if m_book:
+                state.order_book += 1
+                state.order_chapter = 0
+                state.order_verse = 0
+                state.order_text = 0
+                bid = uuid.uuid4()
+                state.current_book_id = bid
+                state.current_chapter_id = None
+                nodes.append(
+                    DocumentNodeModel(
+                        id=bid,
+                        document_id=document_id,
+                        parent_id=None,
+                        title=m_book.group(1).strip(),
+                        content=None,
+                        node_type="book",
+                        order_index=state.order_book,
                     ),
                 )
                 continue
