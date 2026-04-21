@@ -542,22 +542,33 @@ async def _validate_mis_menu_for_site(
         )
     if not pids:
         return []
-    # Через ``__table__.c``: иначе в select() отклоняется ``SitePageModel.page_kind`` (MappedColumn, не ColumnElement).
-    sp = SitePageModel.__table__.c
-    rows = (
-        await session.execute(
-            select(sp.id, sp.mis_audience, sp.page_kind).where(
-                sp.site_id == site_id,
-                sp.id.in_(pids),
-            )
+    # Колонка ``mis_audience`` есть после миграции 050; в старых образах/БД её может не быть в метаданных — не падаем.
+    tbl = SitePageModel.__table__
+    c = tbl.c
+    has_mis_audience_col = "mis_audience" in tbl.columns.keys()
+    stmt = (
+        select(c.id, c.mis_audience, c.page_kind).where(
+            c.site_id == site_id,
+            c.id.in_(pids),
         )
-    ).all()
+        if has_mis_audience_col
+        else select(c.id, c.page_kind).where(
+            c.site_id == site_id,
+            c.id.in_(pids),
+        )
+    )
+    rows = (await session.execute(stmt)).all()
     if len(rows) != len(pids):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="В меню указана страница, не принадлежащая этому сайту",
         )
-    for _rid, rau, pk in rows:
+    for row in rows:
+        if has_mis_audience_col:
+            _rid, rau, pk = row
+        else:
+            _rid, pk = row
+            rau = None
         pk_norm = (pk or "content").strip().lower()
         effective = _effective_mis_audience_for_page(rau, pk_norm)
         if effective != aud:
