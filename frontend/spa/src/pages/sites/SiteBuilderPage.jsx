@@ -371,9 +371,12 @@ export function SiteBuilderPage() {
     page_kind: "content",
     booking_staff_user_id: "",
     embed_module: "",
+    linked_document_id: "",
+    mis_audience: "doctor",
   });
   const [pageSaving, setPageSaving] = useState(false);
   const [portalUsers, setPortalUsers] = useState([]);
+  const [documentsList, setDocumentsList] = useState([]);
 
   const editingPage = useMemo(
     () => pages.find((p) => p.id === editingPageId) || null,
@@ -410,6 +413,20 @@ export function SiteBuilderPage() {
       setLoadingSite(false);
     }
   }, [siteId]);
+
+  const loadDocumentsForPicker = useCallback(async () => {
+    if (!canAccess) return;
+    try {
+      const { data } = await api.get("/documents");
+      setDocumentsList(Array.isArray(data) ? data : []);
+    } catch {
+      setDocumentsList([]);
+    }
+  }, [canAccess]);
+
+  useEffect(() => {
+    loadDocumentsForPicker();
+  }, [loadDocumentsForPicker]);
 
   const loadPages = useCallback(async () => {
     if (!siteId) return;
@@ -652,6 +669,8 @@ export function SiteBuilderPage() {
       page_kind: pageKind,
       booking_staff_user_id: p.booking_staff_user_id ? String(p.booking_staff_user_id) : "",
       embed_module: p.embed_module ? String(p.embed_module) : "",
+      linked_document_id: p.linked_document_id ? String(p.linked_document_id) : "",
+      mis_audience: String(p.mis_audience || "").toLowerCase() === "patient" ? "patient" : "doctor",
     });
     setTab("page-editor");
   };
@@ -664,6 +683,7 @@ export function SiteBuilderPage() {
     try {
       const pk = normalizeSitePageKind(pageForm.page_kind);
       const staffRaw = (pageForm.booking_staff_user_id || "").trim();
+      const docRaw = (pageForm.linked_document_id || "").trim();
       const payload = {
         title: pageForm.title.trim(),
         slug: (pageForm.slug || "").trim().toLowerCase(),
@@ -677,7 +697,11 @@ export function SiteBuilderPage() {
           pk === "content" && (pageForm.embed_module || "").trim()
             ? String(pageForm.embed_module).trim()
             : null,
+        linked_document_id: pk === "document_reader" && docRaw ? docRaw : null,
       };
+      if (isMisSite && pk === "document_reader") {
+        payload.mis_audience = pageForm.mis_audience === "patient" ? "patient" : "doctor";
+      }
       const { data } = await api.put(`/sites/${siteId}/pages/${editingPageId}`, payload);
       setPages((prev) =>
         prev
@@ -845,6 +869,7 @@ export function SiteBuilderPage() {
                 form={pageForm}
                 setForm={setPageForm}
                 portalUsers={portalUsers}
+                documentsList={documentsList}
                 paymentLinkDefault={(form.contacts?.payment_url || "").trim()}
                 onSave={onSavePage}
                 saving={pageSaving}
@@ -1134,12 +1159,13 @@ const ALL_MIS_PAGE_KINDS = [...MIS_DOCTOR_PAGE_KINDS, ...MIS_PATIENT_PAGE_KINDS]
 
 function normalizeSitePageKind(raw) {
   const s = String(raw || "content").toLowerCase();
-  if (ALL_MIS_PAGE_KINDS.includes(s) || s === "booking" || s === "content") return s;
+  if (ALL_MIS_PAGE_KINDS.includes(s) || s === "booking" || s === "content" || s === "document_reader") return s;
   return "content";
 }
 
 function coerceMisPageKindForAudience(kind, audienceIsPatient) {
   const k = normalizeSitePageKind(kind);
+  if (k === "document_reader") return "document_reader";
   const doctor = new Set(MIS_DOCTOR_PAGE_KINDS);
   const patient = new Set(MIS_PATIENT_PAGE_KINDS);
   if (audienceIsPatient) {
@@ -1633,7 +1659,9 @@ function PagesTab({
 function MisPageKindHints({ pageKind }) {
   const pk = String(pageKind || "").toLowerCase();
   const text =
-    pk === "mis_patients"
+    pk === "document_reader"
+      ? "Текст из модуля «Читатель» (книги, главы, стихи). Ниже — необязательное HTML-вступление."
+      : pk === "mis_patients"
       ? "В Mini App — список пациентов врача при совпадении chat_id с профилем. Ниже — вступительный HTML над списком."
       : pk === "mis_doctor_card"
         ? "Подсказка врачу: полный доступ к карте — например через раздел «Пациенты». Ниже — необязательное HTML-вступление."
@@ -1653,9 +1681,12 @@ function MisPageKindHints({ pageKind }) {
 function misPageEditorContentLabel(pageKind, isMisSite, misAudiencePatient) {
   if (!isMisSite) {
     const pk = String(pageKind || "").toLowerCase();
-    return pk === "booking" ? "Текст над формой записи (необязательно)" : "Контент";
+    if (pk === "booking") return "Текст над формой записи (необязательно)";
+    if (pk === "document_reader") return "Вступление (HTML) над текстом читалки (необязательно)";
+    return "Контент";
   }
   const pk = coerceMisPageKindForAudience(pageKind, misAudiencePatient);
+  if (pk === "document_reader") return "Вступление (HTML) над читалкой (необязательно)";
   if (pk === "mis_patients") return "Вступительный текст (HTML) над списком пациентов";
   if (pk === "mis_doctor_card") return "Вступительный текст (HTML) для экрана «Карта пациента»";
   return "Вступительный текст (HTML) над разделом";
@@ -1666,6 +1697,7 @@ function PageEditorTab({
   form,
   setForm,
   portalUsers,
+  documentsList = [],
   paymentLinkDefault,
   onSave,
   saving,
@@ -1789,6 +1821,13 @@ function PageEditorTab({
                     page_kind: v,
                     booking_staff_user_id: "",
                     embed_module: "",
+                    linked_document_id: v === "document_reader" ? p.linked_document_id : "",
+                    mis_audience:
+                      v === "document_reader"
+                        ? misAudiencePatient
+                          ? "patient"
+                          : "doctor"
+                        : p.mis_audience,
                   }));
                 }}
                 className={`${inputClass} max-w-lg`}
@@ -1799,20 +1838,59 @@ function PageEditorTab({
                     <option value="mis_patient_profile">Профиль</option>
                     <option value="mis_patient_diary">Дневник здоровья</option>
                     <option value="mis_patient_tips">Полезные материалы</option>
+                    <option value="document_reader">Читатель (документ)</option>
                   </>
                 ) : (
                   <>
                     <option value="mis_patients">Пациенты</option>
                     <option value="mis_doctor_card">Карта пациента</option>
+                    <option value="document_reader">Читатель (документ)</option>
                   </>
                 )}
               </select>
             </Field>
             <MisPageKindHints pageKind={coerceMisPageKindForAudience(form.page_kind, misAudiencePatient)} />
+            {(form.page_kind || "").toLowerCase() === "document_reader" ? (
+              <div className="mt-3 space-y-3">
+                <Field
+                  label="Документ из модуля «Читатель»"
+                  hint="Создайте документ и загрузите .txt в разделе панели «Читатель»."
+                >
+                  <select
+                    value={form.linked_document_id || ""}
+                    onChange={(e) => setForm((p) => ({ ...p, linked_document_id: e.target.value }))}
+                    className={`${inputClass} max-w-lg`}
+                    required
+                  >
+                    <option value="">— выберите документ —</option>
+                    {(documentsList || []).map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.title}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Аудитория Mini App" hint="Врач или пациент — кто видит пункт меню с этой страницей.">
+                  <select
+                    value={form.mis_audience === "patient" ? "patient" : "doctor"}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        mis_audience: e.target.value === "patient" ? "patient" : "doctor",
+                      }))
+                    }
+                    className={`${inputClass} max-w-md`}
+                  >
+                    <option value="doctor">Врач</option>
+                    <option value="patient">Пациент</option>
+                  </select>
+                </Field>
+              </div>
+            ) : null}
           </>
         ) : (
           <>
-            <Field label="Тип страницы" hint="«Запись» — виджет выбора времени; расписание настраивается в разделе «Записи».">
+            <Field label="Тип страницы" hint="«Запись» — виджет выбора времени; «Читатель» — длинный текст из модуля документов.">
               <select
                 value={form.page_kind || "content"}
                 onChange={(e) => {
@@ -1822,14 +1900,38 @@ function PageEditorTab({
                     page_kind: v,
                     booking_staff_user_id: v === "booking" ? p.booking_staff_user_id : "",
                     embed_module: v === "content" ? p.embed_module : "",
+                    linked_document_id: v === "document_reader" ? p.linked_document_id : "",
                   }));
                 }}
                 className={`${inputClass} max-w-md`}
               >
                 <option value="content">Текст и медиа (как обычно)</option>
                 <option value="booking">Запись на приём к сотруднику</option>
+                <option value="document_reader">Читатель (документ)</option>
               </select>
             </Field>
+            {(form.page_kind || "content") === "document_reader" ? (
+              <div className="mt-3">
+                <Field
+                  label="Документ из модуля «Читатель»"
+                  hint="Создайте документ и загрузите .txt в разделе панели «Читатель»."
+                >
+                  <select
+                    value={form.linked_document_id || ""}
+                    onChange={(e) => setForm((p) => ({ ...p, linked_document_id: e.target.value }))}
+                    className={`${inputClass} max-w-lg`}
+                    required
+                  >
+                    <option value="">— выберите документ —</option>
+                    {(documentsList || []).map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.title}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+            ) : null}
             {(form.page_kind || "content") === "booking" ? (
               <div className="mt-3">
                 <Field
@@ -2053,8 +2155,19 @@ function MiniAppPreview({
                   : p.booking_staff_user_id,
             embed_module: (() => {
               const k = (pageForm?.page_kind || p.page_kind || "content").toLowerCase();
-              if (k === "booking" || k.startsWith("mis_")) return null;
+              if (k === "booking" || k.startsWith("mis_") || k === "document_reader") return null;
               return (pageForm?.embed_module || "").trim() || null;
+            })(),
+            linked_document_id: (() => {
+              const k = (pageForm?.page_kind || p.page_kind || "content").toLowerCase();
+              if (k !== "document_reader") return null;
+              const raw = (pageForm?.linked_document_id || "").trim();
+              return raw || p.linked_document_id || null;
+            })(),
+            mis_audience: (() => {
+              const k = (pageForm?.page_kind || p.page_kind || "content").toLowerCase();
+              if (k !== "document_reader") return p.mis_audience ?? null;
+              return pageForm?.mis_audience === "patient" ? "patient" : "doctor";
             })(),
           }
         : p,
@@ -2314,6 +2427,26 @@ function PagePreviewBody({ page }) {
         ) : null}
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-950">
           {hint} Доступ при роли <span className="font-medium">пациент</span> в Mini App.
+        </div>
+      </article>
+    );
+  }
+
+  if (pk === "document_reader") {
+    return (
+      <article className="text-slate-800">
+        <h2 className="mb-2 text-lg font-semibold text-slate-900">{(page.title || "").trim() || "Читатель"}</h2>
+        {page.content ? (
+          <div
+            ref={previewContentRef}
+            className="miniapp-preview-content mb-3 space-y-2 text-[14px] leading-relaxed"
+            dangerouslySetInnerHTML={{ __html: page.content }}
+          />
+        ) : null}
+        <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-[13px] text-violet-950">
+          {page.linked_document_id
+            ? "В Mini App — читалка с оглавлением (книги → главы → стихи)."
+            : "Выберите документ в модуле «Читатель»."}
         </div>
       </article>
     );

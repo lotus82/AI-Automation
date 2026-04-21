@@ -16,6 +16,7 @@ import { MiniAppMisPatientsContent } from "./MiniAppMisPatientsContent.jsx";
 import { MiniAppMisDoctorCardContent } from "./MiniAppMisDoctorCardContent.jsx";
 import { MiniAppMisPatientScreens } from "./MiniAppMisPatientScreens.jsx";
 import { MiniAppStaffPanel } from "./MiniAppStaffPanel.jsx";
+import { DocumentReader } from "../../components/miniapp/DocumentReader.jsx";
 import {
   getMisMiniappAudience,
   legacyMisPatientsSlugAllowed,
@@ -441,6 +442,26 @@ function MiniAppPageContent({ page, organizationId, miniToken, misRole, themeCol
         pageKind={pk}
         pageTitle={page.title}
         introHtml={page.content}
+        themeColor={themeColor}
+      />
+    );
+  }
+
+  if (pk === "document_reader") {
+    if (!page.linked_document_id) {
+      return (
+        <div style={{ padding: "24px 16px" }}>
+          <Typography.Body style={{ color: "#b91c1c" }}>
+            Страница «Читатель» без привязанного документа. Укажите документ в конструкторе сайта.
+          </Typography.Body>
+        </div>
+      );
+    }
+    return (
+      <DocumentReader
+        documentId={page.linked_document_id}
+        pageTitle={page.title}
+        introHtml={(page.content || "").trim() ? page.content : undefined}
         themeColor={themeColor}
       />
     );

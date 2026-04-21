@@ -28,6 +28,7 @@ apiClient.interceptors.request.use(
                 urlPath.includes('/questionnaires') ||
                 urlPath.includes('/chats') ||
                 urlPath.includes('/sites') ||
+                urlPath.includes('/documents') ||
                 urlPath.includes('/bookings'));
         if (needsOrg) {
             const params = { ...(config.params || {}), organization_id: orgScope };

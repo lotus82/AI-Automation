@@ -1,5 +1,6 @@
 import {
   Book,
+  BookOpen,
   Building2,
   Calendar,
   CalendarDays,
@@ -44,6 +45,7 @@ const BASE_NAV = [
   { to: "/mis", section: "mis", label: "МИС", icon: Stethoscope },
   { to: "/applications", section: "applications", label: "Приложения", icon: LayoutGrid, managerOnly: true },
   { to: "/sites", section: "sites", label: "Сайты", icon: Globe, managerOnly: true },
+  { to: "/documents", section: "documents", label: "Читатель", icon: BookOpen, managerOnly: true },
   { to: "/integrations", section: "integrations", label: "Интеграции", icon: Plug },
   { to: "/roles", section: "roles", label: "Роли", icon: UsersRound },
   { to: "/settings", section: "settings", label: "Настройки", icon: Settings },
@@ -109,12 +111,13 @@ function SidebarContent({ onNavigate, headerAction }) {
           const { to, label, icon: Icon, scenariosGroup, end } = item;
           const scenariosActive = Boolean(scenariosGroup && pathname.startsWith("/scenarios"));
           const misActive = Boolean(item.section === "mis" && pathname.startsWith("/mis"));
+          const documentsActive = Boolean(item.section === "documents" && pathname.startsWith("/documents"));
           return (
             <NavLink
               key={to}
               to={to}
               className={({ isActive }) =>
-                linkClass({ isActive: isActive || scenariosActive || misActive })
+                linkClass({ isActive: isActive || scenariosActive || misActive || documentsActive })
               }
               end={Boolean(end) && !scenariosGroup}
               onClick={() => onNavigate?.()}

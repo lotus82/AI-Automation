@@ -492,6 +492,7 @@ class MiniAppConfigPage(BaseModel):
     mis_audience: str | None = None
     booking_staff_user_id: UUID | None = None
     embed_module: str | None = None
+    linked_document_id: UUID | None = None
     content: str
     order_index: int
 
@@ -656,6 +657,7 @@ async def get_miniapp_config(inn: str, session: AsyncSessionDep) -> MiniAppConfi
                 mis_audience=_cfg_ma(p),
                 booking_staff_user_id=getattr(p, "booking_staff_user_id", None),
                 embed_module=(getattr(p, "embed_module", None) or "").strip() or None,
+                linked_document_id=getattr(p, "linked_document_id", None),
                 content=p.content or "",
                 order_index=int(p.order_index or 0),
             )

@@ -31,7 +31,13 @@ from src.domain.portal_roles import ROLE_SUPER_ADMIN
 from src.domain.site_menu import nav_items_for_miniapp
 from src.core.config import Settings
 from src.domain.site_logo_url import normalize_site_logo_url, site_uploaded_logo_public_path
-from src.infrastructure.models import OrganizationModel, PortalUserModel, SiteModel, SitePageModel
+from src.infrastructure.models import (
+    DocumentModel,
+    OrganizationModel,
+    PortalUserModel,
+    SiteModel,
+    SitePageModel,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +100,7 @@ _PAGE_KINDS_MIS_SPECIAL = frozenset(
         "mis_patient_tips",
     },
 )
-_ALLOWED_PAGE_KINDS = frozenset({"content", "booking", *_PAGE_KINDS_MIS_SPECIAL})
+_ALLOWED_PAGE_KINDS = frozenset({"content", "booking", "document_reader", *_PAGE_KINDS_MIS_SPECIAL})
 
 
 def _mis_audience_from_page_kind(pk: str) -> str | None:
@@ -253,6 +259,7 @@ class SitePageItem(BaseModel):
     mis_audience: str | None = None
     booking_staff_user_id: UUID | None = None
     embed_module: str | None = None
+    linked_document_id: UUID | None = None
     content: str
     order_index: int
     is_published: bool
@@ -269,6 +276,10 @@ class SitePageCreateRequest(BaseModel):
     page_kind: str = Field(default="content", max_length=32)
     booking_staff_user_id: UUID | None = None
     embed_module: str | None = Field(default=None, max_length=64)
+    #: Для ``page_kind=document_reader`` — документ из модуля «Читатель».
+    linked_document_id: UUID | None = None
+    #: Для МИС-сайта и ``document_reader``: ``doctor`` | ``patient``.
+    mis_audience: str | None = Field(default=None, max_length=16)
 
     @field_validator("embed_module")
     @classmethod
@@ -311,6 +322,13 @@ class SitePageCreateRequest(BaseModel):
                 raise ValueError("Для спец-страницы МИС встраиваемый модуль не используется")
             if self.booking_staff_user_id is not None:
                 raise ValueError("Для спец-страницы МИС не указывайте сотрудника записи")
+        if self.page_kind == "document_reader":
+            if not self.linked_document_id:
+                raise ValueError("Для страницы «Читатель» укажите linked_document_id")
+            if self.embed_module:
+                raise ValueError("Для страницы «Читатель» встраиваемый модуль не используется")
+            if self.booking_staff_user_id is not None:
+                raise ValueError("Для страницы «Читатель» не указывайте сотрудника записи")
         return self
 
 
@@ -323,6 +341,8 @@ class SitePageUpdateRequest(BaseModel):
     page_kind: str | None = Field(default=None, max_length=32)
     booking_staff_user_id: UUID | None = None
     embed_module: str | None = Field(default=None, max_length=64)
+    linked_document_id: UUID | None = None
+    mis_audience: str | None = Field(default=None, max_length=16)
 
     @field_validator("embed_module")
     @classmethod
@@ -371,6 +391,7 @@ class PublicSitePage(BaseModel):
     mis_audience: str | None = None
     booking_staff_user_id: UUID | None = None
     embed_module: str | None = None
+    linked_document_id: UUID | None = None
     content: str
     order_index: int
 
@@ -484,12 +505,28 @@ def _page_to_item(row: SitePageModel) -> SitePageItem:
         mis_audience=ma,
         booking_staff_user_id=row.booking_staff_user_id,
         embed_module=em,
+        linked_document_id=getattr(row, "linked_document_id", None),
         content=row.content or "",
         order_index=int(row.order_index or 0),
         is_published=bool(row.is_published),
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
+
+
+async def _validate_linked_document_for_site(
+    session: AsyncSessionDep,
+    site_org_id: UUID,
+    doc_id: UUID | None,
+) -> None:
+    if doc_id is None:
+        return
+    d = await session.get(DocumentModel, doc_id)
+    if d is None or d.organization_id != site_org_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Документ не найден или не принадлежит организации этого сайта",
+        )
 
 
 async def _validate_booking_staff_for_site(
@@ -865,12 +902,24 @@ async def create_site_page(
     sk = _site_kind_str(site_row)
     mis_aud: str | None = None
     if sk == "mis":
-        mis_aud = _mis_audience_from_page_kind(pk)
-        if mis_aud is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Для МИС-сайта создавайте только страницы разделов врача или пациента",
-            )
+        if pk == "document_reader":
+            ma = (body.mis_audience or "").strip().lower()
+            if ma not in ("doctor", "patient"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Для страницы «Читатель» на МИС-сайте укажите mis_audience: doctor или patient",
+                )
+            mis_aud = ma
+        else:
+            mis_aud = _mis_audience_from_page_kind(pk)
+            if mis_aud is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Для МИС-сайта создавайте только страницы разделов врача или пациента",
+                )
+    linked_id = body.linked_document_id if pk == "document_reader" else None
+    if pk == "document_reader":
+        await _validate_linked_document_for_site(session, scope, linked_id)
     row = SitePageModel(
         site_id=site_id,
         title=body.title.strip(),
@@ -879,6 +928,7 @@ async def create_site_page(
         mis_audience=mis_aud,
         booking_staff_user_id=sid,
         embed_module=embed,
+        linked_document_id=linked_id,
         content=body.content or "",
         order_index=body.order_index,
         is_published=body.is_published,
@@ -930,6 +980,8 @@ async def update_site_page(
         row.booking_staff_user_id = body.booking_staff_user_id
     if "embed_module" in fs:
         row.embed_module = body.embed_module
+    if "linked_document_id" in fs:
+        row.linked_document_id = body.linked_document_id
 
     if (row.page_kind or "content") == "booking" and row.booking_staff_user_id is None:
         raise HTTPException(
@@ -941,21 +993,45 @@ async def update_site_page(
     pkf = (row.page_kind or "content").strip().lower()
     if pkf == "booking":
         row.embed_module = None
+        row.linked_document_id = None
     elif pkf == "content":
         row.booking_staff_user_id = None
+        row.linked_document_id = None
+    elif pkf == "document_reader":
+        row.booking_staff_user_id = None
+        row.embed_module = None
     else:
         row.embed_module = None
         row.booking_staff_user_id = None
+        row.linked_document_id = None
+
+    if pkf == "document_reader":
+        if row.linked_document_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Укажите linked_document_id для страницы «Читатель»",
+            )
+        await _validate_linked_document_for_site(session, scope, row.linked_document_id)
 
     sk = _site_kind_str(site_row)
     if sk == "mis":
-        mis_aud = _mis_audience_from_page_kind(pkf)
-        if mis_aud is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Для МИС-сайта укажите тип страницы раздела врача или пациента",
-            )
-        row.mis_audience = mis_aud
+        if pkf == "document_reader":
+            ma_src = body.mis_audience if "mis_audience" in fs else row.mis_audience
+            ma = (str(ma_src or "").strip().lower() or None)
+            if ma not in ("doctor", "patient"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Для страницы «Читатель» на МИС-сайте укажите mis_audience: doctor или patient",
+                )
+            row.mis_audience = ma
+        else:
+            mis_aud = _mis_audience_from_page_kind(pkf)
+            if mis_aud is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Для МИС-сайта укажите тип страницы раздела врача или пациента",
+                )
+            row.mis_audience = mis_aud
     else:
         row.mis_audience = None
 
@@ -1071,6 +1147,7 @@ async def get_public_site(site_id: UUID, session: AsyncSessionDep) -> PublicSite
                 mis_audience=_pub_ma(p),
                 booking_staff_user_id=p.booking_staff_user_id,
                 embed_module=(getattr(p, "embed_module", None) or "").strip() or None,
+                linked_document_id=getattr(p, "linked_document_id", None),
                 content=p.content or "",
                 order_index=int(p.order_index or 0),
             )

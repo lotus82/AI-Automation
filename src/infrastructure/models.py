@@ -1374,6 +1374,90 @@ class SiteModel(Base):
     )
 
 
+class DocumentModel(Base):
+    """Текст для модуля «Читатель» (Библия и др.): загрузка и разбор на иерархию узлов."""
+
+    __tablename__ = "documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    author: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    organization: Mapped["OrganizationModel"] = relationship("OrganizationModel")
+    nodes: Mapped[list["DocumentNodeModel"]] = relationship(
+        "DocumentNodeModel",
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )
+    linked_pages: Mapped[list["SitePageModel"]] = relationship(
+        "SitePageModel",
+        back_populates="linked_document",
+    )
+
+
+class DocumentNodeModel(Base):
+    """Узел дерева документа: книга → глава → стих (или произвольный текст)."""
+
+    __tablename__ = "document_nodes"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("document_nodes.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    content: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    #: ``book`` | ``chapter`` | ``verse`` | ``text``
+    node_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    order_index: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=sql_text("0"))
+
+    document: Mapped["DocumentModel"] = relationship("DocumentModel", back_populates="nodes")
+    parent: Mapped["DocumentNodeModel | None"] = relationship(
+        "DocumentNodeModel",
+        remote_side=[id],
+        back_populates="children",
+    )
+    children: Mapped[list["DocumentNodeModel"]] = relationship(
+        "DocumentNodeModel",
+        back_populates="parent",
+        cascade="all, delete-orphan",
+    )
+
+
 class SitePageModel(Base):
     """Страница сайта Mini App: slug уникален в рамках сайта."""
 
@@ -1398,7 +1482,7 @@ class SitePageModel(Base):
     #: ``content`` — HTML из редактора; ``booking`` — в Mini App рендерится виджет записи к сотруднику.
     page_kind: Mapped[str] = mapped_column(String(32), nullable=False, server_default=sql_text("'content'"))
     #: Для МИС-сайта: ``doctor`` / ``patient`` — кому показывать страницу в Mini App.
-    mis_audience: Mapped[str | None] = mapped_column(String(16), nullable=True),
+    mis_audience: Mapped[str | None] = mapped_column(String(16), nullable=True)
     #: Сотрудник (portal_users), к чьему расписанию привязана страница; только при ``page_kind == booking``.
     booking_staff_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -1408,6 +1492,13 @@ class SitePageModel(Base):
     )
     #: Встроенный модуль платформы (заглушка до отдельной реализации UI).
     embed_module: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    #: Страница ``page_kind=document_reader`` — связь с загруженным текстом «Читатель».
+    linked_document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("documents.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     content: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
     order_index: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=sql_text("0"))
     is_published: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=sql_text("true"))
@@ -1424,6 +1515,10 @@ class SitePageModel(Base):
     )
 
     site: Mapped["SiteModel"] = relationship("SiteModel", back_populates="pages")
+    linked_document: Mapped["DocumentModel | None"] = relationship(
+        "DocumentModel",
+        back_populates="linked_pages",
+    )
 
 
 class BookingConfigModel(Base):

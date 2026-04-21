@@ -40,6 +40,8 @@ import { ShopConstructorPage } from "./pages/ShopConstructorPage.jsx";
 import { ShopsPage } from "./pages/ShopsPage.jsx";
 import { SiteBuilderPage } from "./pages/sites/SiteBuilderPage.jsx";
 import { SitesListPage } from "./pages/sites/SitesListPage.jsx";
+import { DocumentsListPage } from "./pages/documents/DocumentsListPage.jsx";
+import { DocumentEditorPage } from "./pages/documents/DocumentEditorPage.jsx";
 import { TesterPage } from "./pages/TesterPage.jsx";
 
 export default function App() {
@@ -107,6 +109,8 @@ export default function App() {
           <Route path="applications" element={<ApplicationsPage />} />
           <Route path="sites" element={<SitesListPage />} />
           <Route path="sites/:id" element={<SiteBuilderPage />} />
+          <Route path="documents" element={<DocumentsListPage />} />
+          <Route path="documents/:id" element={<DocumentEditorPage />} />
           <Route path="portal/organizations" element={<OrganizationsPage />} />
           <Route path="portal/users" element={<OrgUsersPage />} />
         </Route>

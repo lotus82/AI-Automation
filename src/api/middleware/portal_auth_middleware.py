@@ -66,6 +66,8 @@ def _is_public_path(path: str, method: str) -> bool:
         return True
     if method == "GET" and path.startswith("/api/public/sites/"):
         return True
+    if method == "GET" and path.startswith("/api/public/documents/"):
+        return True
     if method == "GET" and path.startswith("/api/public/miniapp/"):
         return True
     if path.startswith("/api/public/bookings/"):
