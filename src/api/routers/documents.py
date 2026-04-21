@@ -9,6 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select, update
+from starlette.responses import Response
 
 from src.api.dependencies import AsyncSessionDep
 from src.api.dependencies_portal import PortalUserDep
@@ -217,11 +218,12 @@ async def delete_document(
     user: PortalUserDep,
     session: AsyncSessionDep,
     organization_id: UUID | None = Query(default=None),
-) -> None:
+) -> Response:
     org_id = _resolve_org_scope(user, organization_id)
     row = await _get_document_org(session, document_id, org_id)
     await session.delete(row)
     await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # --- Узлы --------------------------------------------------------------------
