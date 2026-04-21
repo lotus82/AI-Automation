@@ -46,6 +46,11 @@ export function DocumentReader({ documentId, pageTitle, introHtml, themeColor })
     return activeChapter.children.filter((n) => n && (n.node_type === "verse" || n.node_type === "text"));
   }, [activeChapter]);
 
+  const chapterBreadcrumb = useMemo(() => {
+    const titles = buildChapterBreadcrumbTitles(bundle?.tree, activeChapter?.id);
+    return titles.length ? titles.join("/") : "";
+  }, [bundle?.tree, activeChapter?.id]);
+
   if (loading) {
     return (
       <Flex direction="column" align="center" gap={12} style={{ padding: 32 }}>
@@ -86,6 +91,22 @@ export function DocumentReader({ documentId, pageTitle, introHtml, themeColor })
           </Button>
         </Flex>
       </div>
+
+      {chapterBreadcrumb ? (
+        <div
+          style={{
+            padding: "6px 16px 10px",
+            fontSize: 13,
+            lineHeight: 1.45,
+            color: "#6b7280",
+            borderBottom: "1px solid #f3f4f6",
+            overflowWrap: "anywhere",
+            wordBreak: "break-word",
+          }}
+        >
+          <span style={{ fontWeight: 600, color: accent }}>{chapterBreadcrumb}</span>
+        </div>
+      ) : null}
 
       {introHtml ? (
         <div
@@ -210,6 +231,35 @@ function findFirstChapter(nodes) {
     if (hit) return hit;
   }
   return null;
+}
+
+/**
+ * Цепочка заголовков от корня до главы: том / книга / … / глава (для строки пути в шапке).
+ */
+function buildChapterBreadcrumbTitles(tree, chapterId) {
+  if (!chapterId || !Array.isArray(tree)) return [];
+
+  function dfs(nodes, bookTitles) {
+    for (const n of nodes) {
+      if (!n) continue;
+      if (n.node_type === "chapter" && n.id === chapterId) {
+        const tail = n.title ? String(n.title).trim() : "";
+        const parts = [...bookTitles, tail].filter(Boolean);
+        return parts;
+      }
+      if (n.node_type === "book") {
+        const nextTitles = [...bookTitles, n.title ? String(n.title).trim() : ""].filter(Boolean);
+        const found = dfs(n.children || [], nextTitles);
+        if (found) return found;
+      } else {
+        const found = dfs(n.children || [], bookTitles);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  return dfs(tree, []) || [];
 }
 
 function TocTree({
