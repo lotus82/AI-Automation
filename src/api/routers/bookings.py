@@ -30,7 +30,10 @@ from src.api.schemas.bookings import (
 )
 from src.core.config import Settings
 from src.infrastructure.models import AppointmentModel, BookingConfigModel, BusySlotModel, PortalUserModel
-from src.infrastructure.services.booking_max_notify import notify_staff_new_booking
+from src.infrastructure.services.booking_max_notify import (
+    notify_client_booking_canceled,
+    notify_staff_new_booking,
+)
 from src.infrastructure.services.booking_service import compute_available_slots
 
 logger = logging.getLogger(__name__)
@@ -247,6 +250,8 @@ async def cancel_appointment(
     appointment_id: UUID,
     user: PortalUserDep,
     session: AsyncSessionDep,
+    settings: SettingsDep,
+    redis: RedisDep,
     organization_id: UUID | None = Query(None),
 ) -> AppointmentOut:
     oid = _org_id(user, organization_id)
@@ -261,6 +266,14 @@ async def cancel_appointment(
     row.status = "canceled"
     await session.commit()
     await session.refresh(row)
+    await notify_client_booking_canceled(
+        session=session,
+        redis=redis,
+        settings=settings,
+        organization_id=oid,
+        appointment=row,
+        client_info=dict(row.client_info or {}),
+    )
     return _appointment_to_out(row)
 
 

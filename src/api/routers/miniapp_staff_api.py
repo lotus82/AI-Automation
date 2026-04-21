@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from starlette.responses import Response
 
-from src.api.dependencies import AsyncSessionDep, SettingsDep
+from src.api.dependencies import AsyncSessionDep, RedisDep, SettingsDep
 from src.api.routers.bookings import _appointment_to_out, _day_bounds_utc
 from src.api.routers.miniapp import MiniAppUserDep
 from src.api.schemas.bookings import (
@@ -30,6 +30,7 @@ from src.infrastructure.models import (
     BusySlotModel,
     PortalUserModel,
 )
+from src.infrastructure.services.booking_max_notify import notify_client_booking_canceled
 
 router = APIRouter(prefix="/staff", tags=["miniapp-staff"])
 
@@ -259,6 +260,8 @@ async def staff_cancel_appointment(
     appointment_id: UUID,
     staff: StaffPortalDep,
     session: AsyncSessionDep,
+    settings: SettingsDep,
+    redis: RedisDep,
 ) -> AppointmentOut:
     oid = _staff_org_id(staff)
     stmt = select(AppointmentModel).where(
@@ -272,4 +275,12 @@ async def staff_cancel_appointment(
     row.status = "canceled"
     await session.commit()
     await session.refresh(row)
+    await notify_client_booking_canceled(
+        session=session,
+        redis=redis,
+        settings=settings,
+        organization_id=oid,
+        appointment=row,
+        client_info=dict(row.client_info or {}),
+    )
     return _appointment_to_out(row)

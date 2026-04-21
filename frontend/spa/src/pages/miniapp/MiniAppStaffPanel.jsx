@@ -1,7 +1,6 @@
 import { Button, Flex, Spinner, Typography } from "@maxhub/max-ui";
 import axios from "axios";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
 
 const dayKeyOrder = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 const dayLabels = {
@@ -12,6 +11,48 @@ const dayLabels = {
   friday: "Пт",
   saturday: "Сб",
   sunday: "Вс",
+};
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+/** Начало календарного дня (локально) в мс */
+function dayStartMs(d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x.getTime();
+}
+
+/**
+ * Запись в формате «дд.мм.гггг чч:мм - чч:мм» (локальное время браузера).
+ */
+function formatAppointmentRangeRu(isoStart, isoEnd) {
+  const s = new Date(isoStart);
+  const e = new Date(isoEnd);
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return "—";
+  const dateStr = `${pad2(s.getDate())}.${pad2(s.getMonth() + 1)}.${s.getFullYear()}`;
+  const t1 = `${pad2(s.getHours())}:${pad2(s.getMinutes())}`;
+  const t2 = `${pad2(e.getHours())}:${pad2(e.getMinutes())}`;
+  return `${dateStr} ${t1} - ${t2}`;
+}
+
+/** Единый стиль кнопок-действий (как «Позвонить»). */
+const actionOutlineStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "6px 12px",
+  borderRadius: 8,
+  border: "1px solid #d1d5db",
+  background: "#fff",
+  color: "#374151",
+  fontSize: 13,
+  fontWeight: 600,
+  textDecoration: "none",
+  cursor: "pointer",
+  fontFamily: "inherit",
+  boxSizing: "border-box",
 };
 
 function authHeaders(token) {
@@ -64,11 +105,10 @@ function telHref(phone) {
 }
 
 function appointmentShareDraft(a, clientName) {
-  const st = formatDateTimeRu(a.start_time);
-  const en = formatDateTimeRu(a.end_time);
+  const range = formatAppointmentRangeRu(a.start_time, a.end_time);
   const hello =
     clientName && clientName !== "Клиент" ? `Здравствуйте, ${clientName}! ` : "Здравствуйте! ";
-  return `${hello}По поводу записи на ${st} — ${en}.`;
+  return `${hello}По поводу записи: ${range}.`;
 }
 
 /**
@@ -151,6 +191,28 @@ export function MiniAppStaffPanel({ token }) {
     }
   };
 
+  const upcomingAppointments = useMemo(() => {
+    const t0 = dayStartMs(new Date());
+    return (appointments || [])
+      .filter((a) => {
+        const st = new Date(a.start_time);
+        if (Number.isNaN(st.getTime())) return false;
+        return dayStartMs(st) >= t0;
+      })
+      .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+  }, [appointments]);
+
+  const archiveAppointments = useMemo(() => {
+    const t0 = dayStartMs(new Date());
+    return (appointments || [])
+      .filter((a) => {
+        const st = new Date(a.start_time);
+        if (Number.isNaN(st.getTime())) return false;
+        return dayStartMs(st) < t0;
+      })
+      .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+  }, [appointments]);
+
   if (!token) {
     return (
       <div style={{ padding: "24px 16px" }}>
@@ -185,6 +247,7 @@ export function MiniAppStaffPanel({ token }) {
         {[
           { id: "appointments", label: "Записи ко мне" },
           { id: "schedule", label: "Расписание" },
+          { id: "archive", label: "Архив" },
         ].map((x) => (
           <button
             key={x.id}
@@ -223,15 +286,94 @@ export function MiniAppStaffPanel({ token }) {
 
       {tab === "appointments" ? (
         <div>
-          {appointments.length === 0 ? (
-            <Typography.Body style={{ color: "#6b7280" }}>Пока нет записей.</Typography.Body>
+          {upcomingAppointments.length === 0 ? (
+            <Typography.Body style={{ color: "#6b7280" }}>
+              Нет актуальных записей (сегодня и позже).
+            </Typography.Body>
           ) : (
             <>
-            <Typography.Body style={{ fontSize: 12, color: "#6b7280", marginBottom: 10, lineHeight: 1.4 }}>
-              «Написать» открывает экран отправки в MAX с текстом-черновиком — выберите чат с клиентом.
-            </Typography.Body>
-            <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-              {appointments.map((a) => {
+              <Typography.Body style={{ fontSize: 12, color: "#6b7280", marginBottom: 10, lineHeight: 1.4 }}>
+                «Написать» открывает отправку в MAX с черновиком текста — выберите чат с клиентом.
+              </Typography.Body>
+              <ul
+                style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}
+              >
+                {upcomingAppointments.map((a) => {
+                  const { name: clientName, phone } = parseClientInfo(a.client_info);
+                  const tel = telHref(phone);
+                  return (
+                    <li
+                      key={a.id}
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        borderRadius: 12,
+                        padding: "12px 14px",
+                        background: "#fafafa",
+                      }}
+                    >
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "#111827", marginBottom: 6 }}>
+                        {formatAppointmentRangeRu(a.start_time, a.end_time)}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          color: "#111827",
+                          marginBottom: 6,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 4,
+                        }}
+                      >
+                        <div>
+                          <span style={{ color: "#6b7280", fontSize: 12 }}>Имя: </span>
+                          {clientName}
+                        </div>
+                        <div>
+                          <span style={{ color: "#6b7280", fontSize: 12 }}>Телефон: </span>
+                          {phone ? phone : "—"}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, alignItems: "center" }}>
+                        <button
+                          type="button"
+                          style={actionOutlineStyle}
+                          onClick={() => openMaxShareDraft(appointmentShareDraft(a, clientName))}
+                        >
+                          Написать
+                        </button>
+                        {tel ? (
+                          <a href={tel} style={actionOutlineStyle}>
+                            Позвонить
+                          </a>
+                        ) : null}
+                        {a.status !== "canceled" ? (
+                          <button
+                            type="button"
+                            style={actionOutlineStyle}
+                            onClick={() => cancelAppointment(a.id)}
+                          >
+                            Отменить
+                          </button>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
+        </div>
+      ) : null}
+
+      {tab === "archive" ? (
+        <div>
+          {archiveAppointments.length === 0 ? (
+            <Typography.Body style={{ color: "#6b7280" }}>В архиве пока пусто.</Typography.Body>
+          ) : (
+            <ul
+              style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}
+            >
+              {archiveAppointments.map((a) => {
                 const { name: clientName, phone } = parseClientInfo(a.client_info);
                 const tel = telHref(phone);
                 return (
@@ -241,14 +383,12 @@ export function MiniAppStaffPanel({ token }) {
                       border: "1px solid #e5e7eb",
                       borderRadius: 12,
                       padding: "12px 14px",
-                      background: "#fafafa",
+                      background: "#f9fafb",
+                      opacity: 0.95,
                     }}
                   >
                     <div style={{ fontSize: 14, fontWeight: 600, color: "#111827", marginBottom: 6 }}>
-                      {formatDateTimeRu(a.start_time)} — {formatDateTimeRu(a.end_time)}
-                    </div>
-                    <div style={{ fontSize: 13, color: "#4b5563", marginBottom: 8 }}>
-                      Статус: {a.status || "—"}
+                      {formatAppointmentRangeRu(a.start_time, a.end_time)}
                     </div>
                     <div
                       style={{
@@ -268,45 +408,29 @@ export function MiniAppStaffPanel({ token }) {
                         <span style={{ color: "#6b7280", fontSize: 12 }}>Телефон: </span>
                         {phone ? phone : "—"}
                       </div>
+                      <div>
+                        <span style={{ color: "#6b7280", fontSize: 12 }}>Статус: </span>
+                        {a.status || "—"}
+                      </div>
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, alignItems: "center" }}>
-                      <Button
-                        mode="primary"
-                        size="s"
+                      <button
+                        type="button"
+                        style={actionOutlineStyle}
                         onClick={() => openMaxShareDraft(appointmentShareDraft(a, clientName))}
                       >
                         Написать
-                      </Button>
+                      </button>
                       {tel ? (
-                        <a
-                          href={tel}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            padding: "6px 12px",
-                            borderRadius: 8,
-                            border: "1px solid #d1d5db",
-                            background: "#fff",
-                            color: "#374151",
-                            fontSize: 13,
-                            fontWeight: 600,
-                            textDecoration: "none",
-                          }}
-                        >
+                        <a href={tel} style={actionOutlineStyle}>
                           Позвонить
                         </a>
-                      ) : null}
-                      {a.status !== "canceled" ? (
-                        <Button mode="secondary" size="s" onClick={() => cancelAppointment(a.id)}>
-                          Отменить запись
-                        </Button>
                       ) : null}
                     </div>
                   </li>
                 );
               })}
             </ul>
-            </>
           )}
         </div>
       ) : null}
