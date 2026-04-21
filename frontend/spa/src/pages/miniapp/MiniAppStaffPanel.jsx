@@ -292,9 +292,6 @@ export function MiniAppStaffPanel({ token }) {
             </Typography.Body>
           ) : (
             <>
-              <Typography.Body style={{ fontSize: 12, color: "#6b7280", marginBottom: 10, lineHeight: 1.4 }}>
-                «Написать» открывает отправку в MAX с черновиком текста — выберите чат с клиентом.
-              </Typography.Body>
               <ul
                 style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}
               >
@@ -339,11 +336,11 @@ export function MiniAppStaffPanel({ token }) {
                           style={actionOutlineStyle}
                           onClick={() => openMaxShareDraft(appointmentShareDraft(a, clientName))}
                         >
-                          Написать
+                          ✍️ Написать
                         </button>
                         {tel ? (
                           <a href={tel} style={actionOutlineStyle}>
-                            Позвонить
+                            📞 Позвонить
                           </a>
                         ) : null}
                         {a.status !== "canceled" ? (
@@ -352,7 +349,7 @@ export function MiniAppStaffPanel({ token }) {
                             style={actionOutlineStyle}
                             onClick={() => cancelAppointment(a.id)}
                           >
-                            Отменить
+                           ❌ Отменить
                           </button>
                         ) : null}
                       </div>
