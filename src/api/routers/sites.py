@@ -111,6 +111,11 @@ class SiteContacts(BaseModel):
         default=None,
         description="Тема публичной карты пациента (МИС-сайт): accent_color, card_radius и т.д.",
     )
+    mis_logo_icon: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Ключ иконки Lucide для логотипа в шапке Mini App (МИС), например stethoscope",
+    )
 
 
 class SiteMenuItemInput(BaseModel):

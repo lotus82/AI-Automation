@@ -9,6 +9,7 @@ import { setPatientSession } from "../../utils/patientMisAuth.js";
 import { useMiniAppThemeStore } from "../../store/miniAppThemeStore.js";
 import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
 import { siteLogoImgSrc } from "../../utils/siteLogoUrl.js";
+import { isValidMisLogoIconKey, MisLogoIcon } from "../../utils/misMedicalBranding.jsx";
 import { MiniAppBookingContent } from "./MiniAppBookingContent.jsx";
 import { MiniAppEmbedPlaceholder } from "./MiniAppEmbedPlaceholder.jsx";
 import { MiniAppStaffPanel } from "./MiniAppStaffPanel.jsx";
@@ -261,7 +262,9 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
 /**
  * Шапка Mini App. Заголовок и подзаголовок — из конфига сайта, акцент — theme_color.
  */
-function MiniAppHeader({ title, subtitle, logoUrl, themeColor }) {
+function MiniAppHeader({ title, subtitle, logoUrl, themeColor, logoIconKey }) {
+  const rawIcon = typeof logoIconKey === "string" ? logoIconKey.trim() : "";
+  const showMisIcon = isValidMisLogoIconKey(rawIcon);
   const logoSrc = useMemo(() => siteLogoImgSrc(logoUrl), [logoUrl]);
   const [logoBroken, setLogoBroken] = useState(false);
   useEffect(() => {
@@ -285,7 +288,23 @@ function MiniAppHeader({ title, subtitle, logoUrl, themeColor }) {
       }}
     >
       <Flex align="center" gap={12}>
-        {logoSrc && !logoBroken ? (
+        {showMisIcon ? (
+          <div
+            aria-hidden
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              background: "rgba(255,255,255,0.2)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#fff",
+            }}
+          >
+            <MisLogoIcon iconKey={rawIcon} size={26} strokeWidth={1.75} />
+          </div>
+        ) : logoSrc && !logoBroken ? (
           <img
             src={logoSrc}
             alt=""
@@ -667,6 +686,7 @@ export function MiniAppEntryPage() {
         subtitle={config?.subtitle}
         logoUrl={config?.logo_url}
         themeColor={themeColor}
+        logoIconKey={config?.contacts?.mis_logo_icon}
       />
       {config?.site_kind === "mis" && misSession?.role ? (
         <div

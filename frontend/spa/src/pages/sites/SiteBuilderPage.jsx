@@ -29,6 +29,12 @@ import { useAuthStore } from "../../store/authStore.js";
 import { PAGE_SHELL, PAGE_TEXT, TAB_ROW, tabBtn } from "../../styles/pageLayout.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
 import { siteLogoImgSrc } from "../../utils/siteLogoUrl.js";
+import {
+  isValidMisLogoIconKey,
+  MedicalColorPresetRow,
+  MisLogoIcon,
+  MIS_LOGO_ICON_OPTIONS,
+} from "../../utils/misMedicalBranding.jsx";
 import { buildSberQrDonationBlockHtml, SBER_DONATION_DEFAULT_HREF } from "../../utils/sberDonationBlockHtml";
 
 /** Ключи встраиваемых модулей Mini App (согласовано с backend). */
@@ -141,6 +147,13 @@ function PatientCardThemePanel({ form, setForm, onSave, saving }) {
           className="mt-1 h-10 w-full max-w-[120px] cursor-pointer rounded border border-slate-700 bg-slate-950"
         />
       </label>
+      <div className="space-y-1.5">
+        <div className="text-xs text-slate-500">Медицинская палитра</div>
+        <MedicalColorPresetRow
+          value={typeof theme.accent_color === "string" ? theme.accent_color : "#0ea5e9"}
+          onChange={(hex) => setTheme({ accent_color: hex })}
+        />
+      </div>
       <label className="block text-xs font-medium text-slate-300">
         Скругление карточек (px)
         <input
@@ -638,6 +651,7 @@ export function SiteBuilderPage() {
                 onSave={onSaveSite}
                 saving={savingSite}
                 loading={loadingSite}
+                isMisSite={isMisSite}
               />
             ) : null}
 
@@ -693,6 +707,7 @@ export function SiteBuilderPage() {
                 pages={pages}
                 editingPageId={editingPageId}
                 pageForm={pageForm}
+                isMisSite={isMisSite}
               />
             </div>
           </aside>
@@ -904,7 +919,18 @@ function Field({ label, hint, children }) {
 const inputClass =
   "mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none";
 
-function SettingsTab({ siteId, form, setForm, setSite, setContactField, setError, onSave, saving, loading }) {
+function SettingsTab({
+  siteId,
+  form,
+  setForm,
+  setSite,
+  setContactField,
+  setError,
+  onSave,
+  saving,
+  loading,
+  isMisSite = false,
+}) {
   const fileInputRef = useRef(null);
   const [cropOpen, setCropOpen] = useState(false);
   const [imageSrc, setImageSrc] = useState(null);
@@ -1096,22 +1122,66 @@ function SettingsTab({ siteId, form, setForm, setSite, setContactField, setError
             </button>
           </div>
         </Field>
+        {isMisSite ? (
+          <div className="rounded-xl border border-slate-700/80 bg-slate-950/40 p-3">
+            <div className="text-xs font-medium text-slate-300">Иконка логотипа (медицинская)</div>
+            <p className="mt-1 text-[11px] leading-snug text-slate-500">
+              Если выбрана иконка, в Mini App в шапке показывается она (приоритетнее картинки по URL). Нажмите снова для сброса.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {MIS_LOGO_ICON_OPTIONS.map(({ id, label }) => {
+                const selected = (form.contacts?.mis_logo_icon || "").trim() === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    title={label}
+                    onClick={() => {
+                      if (selected) setContactField("mis_logo_icon", "");
+                      else setContactField("mis_logo_icon", id);
+                    }}
+                    className={[
+                      "inline-flex h-11 w-11 items-center justify-center rounded-xl border transition-colors",
+                      selected
+                        ? "border-emerald-500 bg-emerald-600/20 text-emerald-200"
+                        : "border-slate-600 bg-slate-800/80 text-slate-300 hover:border-slate-500 hover:bg-slate-800",
+                    ].join(" ")}
+                  >
+                    <MisLogoIcon iconKey={id} size={22} className="shrink-0" />
+                    <span className="sr-only">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
         <Field label="Цвет темы" hint="HEX-код, используется как акцент в Mini App.">
-          <div className="mt-1 flex items-center gap-3">
-            <input
-              type="color"
-              value={/^#[0-9a-fA-F]{6}$/.test(form.theme_color) ? form.theme_color : "#000000"}
-              onChange={(e) => setForm((p) => ({ ...p, theme_color: e.target.value }))}
-              className="h-9 w-12 cursor-pointer rounded-lg border border-slate-700 bg-slate-950"
-            />
-            <input
-              type="text"
-              value={form.theme_color}
-              onChange={(e) => setForm((p) => ({ ...p, theme_color: e.target.value }))}
-              className={`${inputClass} !mt-0 flex-1 font-mono`}
-              maxLength={16}
-              placeholder="#000000"
-            />
+          <div className="mt-1 flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                value={/^#[0-9a-fA-F]{6}$/.test(form.theme_color) ? form.theme_color : "#000000"}
+                onChange={(e) => setForm((p) => ({ ...p, theme_color: e.target.value }))}
+                className="h-9 w-12 cursor-pointer rounded-lg border border-slate-700 bg-slate-950"
+              />
+              <input
+                type="text"
+                value={form.theme_color}
+                onChange={(e) => setForm((p) => ({ ...p, theme_color: e.target.value }))}
+                className={`${inputClass} !mt-0 flex-1 font-mono`}
+                maxLength={16}
+                placeholder="#000000"
+              />
+            </div>
+            {isMisSite ? (
+              <div className="space-y-1.5">
+                <div className="text-xs text-slate-500">Медицинская палитра</div>
+                <MedicalColorPresetRow
+                  value={form.theme_color}
+                  onChange={(hex) => setForm((p) => ({ ...p, theme_color: hex }))}
+                />
+              </div>
+            ) : null}
           </div>
         </Field>
         <Field
@@ -1578,12 +1648,14 @@ function sanitizeHex(hex, fallback = "#0f172a") {
  *  - Рендер HTML страницы — через ``dangerouslySetInnerHTML`` (контент вводится
  *    внутри компании, тот же способ использует публичный Mini App).
  */
-function MiniAppPreview({ tab, form, pages, editingPageId, pageForm }) {
+function MiniAppPreview({ tab, form, pages, editingPageId, pageForm, isMisSite = false }) {
   const themeColor = sanitizeHex(form?.theme_color, "#0f172a");
   const title = (form?.title || "").trim() || (form?.name || "").trim() || "Mini App";
   const subtitle = (form?.subtitle || "").trim();
   const logoUrlRaw = (form?.logo_url || "").trim();
   const logoSrc = useMemo(() => siteLogoImgSrc(logoUrlRaw), [logoUrlRaw]);
+  const misIconKey = (form?.contacts?.mis_logo_icon || "").trim();
+  const showMisLogoIcon = isMisSite && isValidMisLogoIconKey(misIconKey);
   const [logoBroken, setLogoBroken] = useState(false);
   useEffect(() => {
     setLogoBroken(false);
@@ -1677,7 +1749,14 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm }) {
               className="flex items-center gap-3 px-4 pb-3 pt-6 text-white"
               style={{ background: headerBackground }}
             >
-              {logoSrc && !logoBroken ? (
+              {showMisLogoIcon ? (
+                <div
+                  aria-hidden
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 text-white"
+                >
+                  <MisLogoIcon iconKey={misIconKey} size={28} className="text-white" />
+                </div>
+              ) : logoSrc && !logoBroken ? (
                 <img
                   src={logoSrc}
                   alt=""
