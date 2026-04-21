@@ -542,11 +542,13 @@ async def _validate_mis_menu_for_site(
         )
     if not pids:
         return []
+    # Через ``__table__.c``: иначе в select() отклоняется ``SitePageModel.page_kind`` (MappedColumn, не ColumnElement).
+    sp = SitePageModel.__table__.c
     rows = (
         await session.execute(
-            select(SitePageModel.id, SitePageModel.mis_audience, SitePageModel.page_kind).where(
-                SitePageModel.site_id == site_id,
-                SitePageModel.id.in_(pids),
+            select(sp.id, sp.mis_audience, sp.page_kind).where(
+                sp.site_id == site_id,
+                sp.id.in_(pids),
             )
         )
     ).all()
