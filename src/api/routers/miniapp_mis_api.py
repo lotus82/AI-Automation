@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -15,6 +16,36 @@ from src.infrastructure.models import MedicalDoctorModel, MedicalPatientModel, P
 from src.infrastructure.portal_security import create_mis_patient_access_token
 
 router = APIRouter(prefix="/mis", tags=["miniapp-mis"])
+
+
+async def get_doctor_for_miniapp_user(
+    mini: MiniAppUserDep,
+    session: AsyncSessionDep,
+) -> MedicalDoctorModel | None:
+    """Профиль ``MedicalDoctorModel`` для текущего JWT Mini App, если ``chat_id`` совпадает с ``miniapp_chat_id``."""
+    cid = (mini.chat_id or "").strip()
+    if not cid:
+        return None
+    pu = (
+        await session.execute(
+            select(PortalUserModel).where(
+                PortalUserModel.organization_id == mini.organization_id,
+                PortalUserModel.miniapp_chat_id == cid,
+                PortalUserModel.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if pu is None:
+        return None
+    return (
+        await session.execute(
+            select(MedicalDoctorModel).where(
+                MedicalDoctorModel.portal_user_id == pu.id,
+                MedicalDoctorModel.organization_id == mini.organization_id,
+                MedicalDoctorModel.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
 
 
 class MiniAppMisSessionOut(BaseModel):
@@ -34,30 +65,18 @@ async def mis_miniapp_session(
 ) -> MiniAppMisSessionOut:
     """По JWT Mini App и ``chat_id`` определяет врача (профиль МИС + ``portal_users.miniapp_chat_id``)
     или пациента (``medical_patients.max_chat_id``)."""
+    doc = await get_doctor_for_miniapp_user(mini, session)
+    if doc is not None:
+        return MiniAppMisSessionOut(
+            role="doctor",
+            portal_user_id=doc.portal_user_id,
+            medical_doctor_id=doc.id,
+        )
+
     cid = (mini.chat_id or "").strip()
     oid = mini.organization_id
 
     if cid:
-        stmt_pu = select(PortalUserModel).where(
-            PortalUserModel.organization_id == oid,
-            PortalUserModel.miniapp_chat_id == cid,
-            PortalUserModel.is_active.is_(True),
-        )
-        pu = (await session.execute(stmt_pu)).scalar_one_or_none()
-        if pu is not None:
-            stmt_doc = select(MedicalDoctorModel).where(
-                MedicalDoctorModel.portal_user_id == pu.id,
-                MedicalDoctorModel.organization_id == oid,
-                MedicalDoctorModel.is_active.is_(True),
-            )
-            doc = (await session.execute(stmt_doc)).scalar_one_or_none()
-            if doc is not None:
-                return MiniAppMisSessionOut(
-                    role="doctor",
-                    portal_user_id=pu.id,
-                    medical_doctor_id=doc.id,
-                )
-
         stmt_pat = select(MedicalPatientModel).where(
             MedicalPatientModel.organization_id == oid,
             MedicalPatientModel.max_chat_id == cid,
@@ -70,6 +89,47 @@ async def mis_miniapp_session(
             )
 
     return MiniAppMisSessionOut(role="guest", patient_needs_registration=True)
+
+
+class MisMiniPatientRow(BaseModel):
+    """Краткая карточка пациента для списка в Mini App (врач)."""
+
+    id: UUID
+    full_name: str
+    phone: str | None = None
+    updated_at: datetime
+
+
+@router.get("/patients", response_model=list[MisMiniPatientRow])
+async def list_my_patients_for_miniapp(
+    mini: MiniAppUserDep,
+    session: AsyncSessionDep,
+) -> list[MisMiniPatientRow]:
+    """Список пациентов врача (только при совпадении ``chat_id`` с ``portal_users.miniapp_chat_id``)."""
+    doc = await get_doctor_for_miniapp_user(mini, session)
+    if doc is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Доступно только врачу: укажите ваш chat_id в разделе МИС портала",
+        )
+    stmt = (
+        select(MedicalPatientModel)
+        .where(
+            MedicalPatientModel.doctor_id == doc.id,
+            MedicalPatientModel.organization_id == doc.organization_id,
+        )
+        .order_by(MedicalPatientModel.updated_at.desc())
+    )
+    rows = (await session.scalars(stmt)).all()
+    return [
+        MisMiniPatientRow(
+            id=p.id,
+            full_name=p.full_name,
+            phone=(p.phone or "").strip() or None,
+            updated_at=p.updated_at,
+        )
+        for p in rows
+    ]
 
 
 class MisPatientBootstrapResponse(BaseModel):

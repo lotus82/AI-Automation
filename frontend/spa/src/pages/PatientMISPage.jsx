@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   BookOpen,
@@ -17,6 +17,7 @@ import {
   setPatientSession,
 } from "../utils/patientMisAuth.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
+import { normalizePublicSectionOrder } from "../utils/patientPublicCardLayout.js";
 
 const card =
   "rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm shadow-slate-200/50 sm:p-5";
@@ -344,18 +345,19 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
       </div>
     ) : null;
 
-  return (
-    <div className="space-y-4 pb-24 sm:space-y-6 sm:pb-12">
-      <section
-        className={card}
-        style={
-          radius != null
-            ? { borderRadius: radius, borderColor: accent ? `${accent}55` : undefined }
-            : undefined
-        }
-      >
-        {headerBar}
-        <h1 className="text-lg font-semibold text-slate-900">Мои данные</h1>
+  const sectionOrder = normalizePublicSectionOrder(ct);
+
+  const profileSection = (
+    <section
+      className={card}
+      style={
+        radius != null
+          ? { borderRadius: radius, borderColor: accent ? `${accent}55` : undefined }
+          : undefined
+      }
+    >
+      {headerBar}
+      <h1 className="text-lg font-semibold text-slate-900">Мои данные</h1>
         {maxSession ? (
           <>
             <p className="mt-1 text-xs text-slate-500">
@@ -451,9 +453,11 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
             </p>
           </>
         )}
-      </section>
+    </section>
+  );
 
-      <section className={card}>
+  const examsSection = (
+    <section className={card}>
         <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
           <ClipboardList className="h-5 w-5 shrink-0 text-teal-600" strokeWidth={1.75} aria-hidden />
           Последние обследования
@@ -482,9 +486,11 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
             ))}
           </ul>
         )}
-      </section>
+    </section>
+  );
 
-      <section className={card}>
+  const surveysSection = (
+    <section className={card}>
         <button
           type="button"
           className="flex w-full items-center justify-between gap-2 text-left"
@@ -533,9 +539,11 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
             )}
           </>
         ) : null}
-      </section>
+    </section>
+  );
 
-      <section className={card}>
+  const diarySection = (
+    <section className={card}>
         <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
           <HeartPulse className="h-5 w-5 shrink-0 text-teal-600" strokeWidth={1.75} aria-hidden />
           Дневник здоровья
@@ -581,9 +589,11 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
             {dBusy ? "Отправка…" : "Отправить врачу"}
           </button>
         </form>
-      </section>
+    </section>
+  );
 
-      <section className={card}>
+  const tipsSection = (
+    <section className={card}>
         <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
           <BookOpen className="h-5 w-5 shrink-0 text-teal-600" strokeWidth={1.75} aria-hidden />
           Полезные материалы
@@ -603,7 +613,22 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
             </a>
           </li>
         </ul>
-      </section>
+    </section>
+  );
+
+  const sectionsByKey = {
+    profile: profileSection,
+    exams: examsSection,
+    surveys: surveysSection,
+    diary: diarySection,
+    tips: tipsSection,
+  };
+
+  return (
+    <div className="space-y-4 pb-24 sm:space-y-6 sm:pb-12">
+      {sectionOrder.map((key) => (
+        <Fragment key={key}>{sectionsByKey[key]}</Fragment>
+      ))}
 
       {maxSession ? (
         <nav

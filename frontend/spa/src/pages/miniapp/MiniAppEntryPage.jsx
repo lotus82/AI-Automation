@@ -12,6 +12,7 @@ import { siteLogoImgSrc } from "../../utils/siteLogoUrl.js";
 import { isValidMisLogoIconKey, MisLogoIcon } from "../../utils/misMedicalBranding.jsx";
 import { MiniAppBookingContent } from "./MiniAppBookingContent.jsx";
 import { MiniAppEmbedPlaceholder } from "./MiniAppEmbedPlaceholder.jsx";
+import { MiniAppMisPatientsContent } from "./MiniAppMisPatientsContent.jsx";
 import { MiniAppStaffPanel } from "./MiniAppStaffPanel.jsx";
 import "./miniappPageContent.css";
 
@@ -369,14 +370,13 @@ function MiniAppHeader({ title, subtitle, logoUrl, themeColor, logoIconKey }) {
  * компании (не UGC) и рендерится в нативном WebView мессенджера. Клики по ссылкам
  * ведут через WebApp.openLink (внешний браузер), см. useMiniAppHtmlLinkDelegate.
  */
-function MiniAppPageContent({ page, organizationId }) {
+function MiniAppPageContent({ page, organizationId, miniToken, misRole, themeColor }) {
   const contentRef = useMiniAppHtmlLinkDelegate(page?.content);
+  const pk = page ? String(page.page_kind || "content").toLowerCase() : "";
   const isBooking =
-    page &&
-    String(page.page_kind || "content").toLowerCase() === "booking" &&
-    page.booking_staff_user_id;
+    page && pk === "booking" && page.booking_staff_user_id;
   const embedKey =
-    page && !isBooking ? String(page.embed_module || "").trim() : "";
+    page && !isBooking && pk !== "mis_patients" ? String(page.embed_module || "").trim() : "";
 
   if (!page) {
     return (
@@ -388,6 +388,19 @@ function MiniAppPageContent({ page, organizationId }) {
       </div>
     );
   }
+
+  if (pk === "mis_patients") {
+    return (
+      <MiniAppMisPatientsContent
+        miniToken={miniToken}
+        misRole={misRole}
+        pageTitle={page.title}
+        introHtml={page.content}
+        themeColor={themeColor}
+      />
+    );
+  }
+
   return (
     <div style={{ padding: "16px 16px 24px" }}>
       {/*
@@ -545,12 +558,14 @@ export function MiniAppEntryPage() {
       setConfig(cfg);
       if (cfg?.theme_color) setThemeColor(cfg.theme_color);
 
+      let misRoleFromSession = null;
       if (cfg?.site_kind === "mis" && authData?.access_token) {
         try {
           const { data: sess } = await axios.get("/api/miniapp/mis/session", {
             headers: { Authorization: `Bearer ${authData.access_token}` },
           });
           setMisSession(sess);
+          misRoleFromSession = sess?.role ?? null;
           if (sess?.role === "patient") {
             const { data: boot } = await axios.post(
               "/api/miniapp/mis/patient-bootstrap",
@@ -571,7 +586,15 @@ export function MiniAppEntryPage() {
         Array.isArray(cfg?.nav_items) && cfg.nav_items.length > 0
           ? cfg.nav_items.filter((x) => x && x.slug)
           : pgs.map((p) => ({ label: p.title, slug: p.slug }));
-      const firstSlug = nav[0]?.slug ?? pgs[0]?.slug ?? null;
+      const isMisPatientsOnlyPage = (slug) => {
+        const pg = pgs.find((p) => p.slug === slug);
+        return pg && String(pg.page_kind || "").toLowerCase() === "mis_patients";
+      };
+      const navForUser =
+        misRoleFromSession === "doctor"
+          ? nav
+          : nav.filter((it) => !isMisPatientsOnlyPage(it.slug));
+      const firstSlug = navForUser[0]?.slug ?? pgs.find((p) => !isMisPatientsOnlyPage(p.slug))?.slug ?? pgs[0]?.slug ?? null;
       setActiveSlug(firstSlug);
       setStatus("ready");
     } catch (e) {
@@ -628,11 +651,17 @@ export function MiniAppEntryPage() {
 
   const navItems = useMemo(() => {
     const raw = config?.nav_items;
-    if (Array.isArray(raw) && raw.length > 0) {
-      return raw.filter((x) => x && x.slug);
-    }
-    return pages.map((p) => ({ label: p.title, slug: p.slug }));
-  }, [config?.nav_items, pages]);
+    const base =
+      Array.isArray(raw) && raw.length > 0
+        ? raw.filter((x) => x && x.slug)
+        : pages.map((p) => ({ label: p.title, slug: p.slug }));
+    const isMisPatientsOnlySlug = (slug) => {
+      const pg = pages.find((p) => p.slug === slug);
+      return pg && String(pg.page_kind || "").toLowerCase() === "mis_patients";
+    };
+    if (misSession?.role === "doctor") return base;
+    return base.filter((it) => !isMisPatientsOnlySlug(it.slug));
+  }, [config?.nav_items, pages, misSession?.role]);
 
   const navItemsWithStaff = useMemo(() => {
     if (!staffMenu) return navItems;
@@ -647,6 +676,14 @@ export function MiniAppEntryPage() {
       if (first) setActiveSlug(first);
     }
   }, [status, staffMenu, activeSlug, navItems, pages]);
+
+  useEffect(() => {
+    if (status !== "ready" || activeSlug === "__staff__" || !activeSlug) return;
+    const allowed = new Set(navItems.map((x) => x.slug));
+    if (!allowed.has(activeSlug) && navItems[0]?.slug) {
+      setActiveSlug(navItems[0].slug);
+    }
+  }, [status, navItems, activeSlug]);
 
   useEffect(() => {
     if (status !== "ready") return;
@@ -739,7 +776,13 @@ export function MiniAppEntryPage() {
             </Typography.Body>
           </Flex>
         ) : (
-          <MiniAppPageContent page={activePage} organizationId={config?.organization_id} />
+          <MiniAppPageContent
+            page={activePage}
+            organizationId={config?.organization_id}
+            miniToken={miniToken}
+            misRole={misSession?.role ?? null}
+            themeColor={themeColor}
+          />
         )}
       </div>
       <MiniAppTabbar

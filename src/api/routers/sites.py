@@ -256,8 +256,8 @@ class SitePageCreateRequest(BaseModel):
     @classmethod
     def _page_kind(cls, v: str) -> str:
         s = (v or "content").strip().lower()
-        if s not in ("content", "booking"):
-            raise ValueError("page_kind: допустимо content или booking")
+        if s not in ("content", "booking", "mis_patients"):
+            raise ValueError("page_kind: допустимо content, booking или mis_patients")
         return s
 
     @model_validator(mode="after")
@@ -266,6 +266,11 @@ class SitePageCreateRequest(BaseModel):
             raise ValueError("Для страницы записи укажите сотрудника (booking_staff_user_id)")
         if self.page_kind == "booking" and self.embed_module:
             raise ValueError("Для страницы записи встраиваемый модуль не используется (оставьте пустым)")
+        if self.page_kind == "mis_patients":
+            if self.embed_module:
+                raise ValueError("Для страницы «Пациенты» встраиваемый модуль не используется")
+            if self.booking_staff_user_id is not None:
+                raise ValueError("Для страницы «Пациенты» не указывайте сотрудника записи")
         return self
 
 
@@ -309,8 +314,8 @@ class SitePageUpdateRequest(BaseModel):
         if v is None:
             return v
         s = v.strip().lower()
-        if s not in ("content", "booking"):
-            raise ValueError("page_kind: допустимо content или booking")
+        if s not in ("content", "booking", "mis_patients"):
+            raise ValueError("page_kind: допустимо content, booking или mis_patients")
         return s
 
 
@@ -703,7 +708,7 @@ async def create_site_page(
     sid = body.booking_staff_user_id if pk == "booking" else None
     if sid is not None:
         await _validate_booking_staff_for_site(session, scope, sid)
-    embed = None if pk == "booking" else body.embed_module
+    embed = None if pk in ("booking", "mis_patients") else body.embed_module
     row = SitePageModel(
         site_id=site_id,
         title=body.title.strip(),
@@ -756,7 +761,7 @@ async def update_site_page(
     fs = body.model_fields_set
     if body.page_kind is not None:
         row.page_kind = body.page_kind.strip().lower()
-        if row.page_kind == "content":
+        if row.page_kind in ("content", "mis_patients"):
             row.booking_staff_user_id = None
     if "booking_staff_user_id" in fs:
         row.booking_staff_user_id = body.booking_staff_user_id
@@ -772,6 +777,9 @@ async def update_site_page(
         await _validate_booking_staff_for_site(session, scope, row.booking_staff_user_id)
     if (row.page_kind or "content") == "booking":
         row.embed_module = None
+    if (row.page_kind or "content") == "mis_patients":
+        row.embed_module = None
+        row.booking_staff_user_id = None
 
     session.add(row)
     try:

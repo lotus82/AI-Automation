@@ -1,6 +1,8 @@
 import {
+  ArrowDown,
   ArrowLeft,
   ArrowDownWideNarrow,
+  ArrowUp,
   Eye,
   EyeOff,
   FileText,
@@ -36,6 +38,10 @@ import {
   MIS_LOGO_ICON_OPTIONS,
 } from "../../utils/misMedicalBranding.jsx";
 import { buildSberQrDonationBlockHtml, SBER_DONATION_DEFAULT_HREF } from "../../utils/sberDonationBlockHtml";
+import {
+  PATIENT_PUBLIC_SECTION_LABELS,
+  normalizePublicSectionOrder,
+} from "../../utils/patientPublicCardLayout.js";
 
 /** Ключи встраиваемых модулей Mini App (согласовано с backend). */
 const EMBED_MODULE_OPTIONS = [
@@ -176,6 +182,92 @@ function PatientCardThemePanel({ form, setForm, onSave, saving }) {
           <option value="solid">Сплошная заливка</option>
         </select>
       </label>
+
+      <div className="rounded-lg border border-slate-600 bg-slate-950/50 p-3">
+        <div className="text-xs font-medium text-slate-200">Порядок блоков на публичной карте</div>
+        <p className="mt-1 text-[11px] leading-snug text-slate-500">
+          Пациент видит разделы в этом порядке. Те же секции использует карта в Mini App (после входа по chat_id).
+        </p>
+        <ul className="mt-3 space-y-1.5">
+          {normalizePublicSectionOrder(theme).map((key, idx, arr) => (
+            <li
+              key={key}
+              className="flex items-center gap-2 rounded-md border border-slate-700/80 bg-slate-900/60 px-2 py-1.5 text-xs text-slate-200"
+            >
+              <span className="min-w-0 flex-1">
+                {idx + 1}. {PATIENT_PUBLIC_SECTION_LABELS[key] || key}
+              </span>
+              <button
+                type="button"
+                title="Выше"
+                disabled={idx === 0}
+                onClick={() => {
+                  if (idx === 0) return;
+                  const next = [...arr];
+                  [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+                  setTheme({ public_section_order: next });
+                }}
+                className="rounded border border-slate-600 p-1 text-slate-300 hover:bg-slate-800 disabled:opacity-30"
+              >
+                <ArrowUp className="h-3.5 w-3.5" aria-hidden />
+              </button>
+              <button
+                type="button"
+                title="Ниже"
+                disabled={idx >= arr.length - 1}
+                onClick={() => {
+                  if (idx >= arr.length - 1) return;
+                  const next = [...arr];
+                  [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+                  setTheme({ public_section_order: next });
+                }}
+                className="rounded border border-slate-600 p-1 text-slate-300 hover:bg-slate-800 disabled:opacity-30"
+              >
+                <ArrowDown className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="rounded-lg border border-slate-600 bg-slate-950/40 p-3">
+        <div className="text-xs font-medium text-slate-200">Как видит врач (упрощённо)</div>
+        <p className="mt-1 text-[11px] text-slate-500">
+          Превью порядка блоков: у врача в панели МИС отдельный экран карты; у пациента — публичная страница с теми же
+          разделами ниже.
+        </p>
+        <div
+          className="mt-3 space-y-2 rounded-xl border border-slate-700/80 bg-white p-3 text-slate-800"
+          style={{
+            borderRadius: Math.min(48, Math.max(0, Number(theme.card_radius) || 16)),
+          }}
+        >
+          <div
+            className="-mx-3 -mt-3 mb-2 px-3 py-2 text-[11px] font-medium text-white"
+            style={{
+              borderTopLeftRadius: Math.min(48, Math.max(0, Number(theme.card_radius) || 16)),
+              borderTopRightRadius: Math.min(48, Math.max(0, Number(theme.card_radius) || 16)),
+              background:
+                theme.header_style === "solid"
+                  ? typeof theme.accent_color === "string"
+                    ? theme.accent_color
+                    : "#0ea5e9"
+                  : `linear-gradient(135deg, ${typeof theme.accent_color === "string" ? theme.accent_color : "#0ea5e9"} 0%, ${typeof theme.accent_color === "string" ? theme.accent_color : "#0ea5e9"}dd 100%)`,
+            }}
+          >
+            Карта пациента
+          </div>
+          {normalizePublicSectionOrder(theme).map((key) => (
+            <div
+              key={key}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-medium text-slate-700"
+            >
+              {PATIENT_PUBLIC_SECTION_LABELS[key] || key}
+            </div>
+          ))}
+        </div>
+      </div>
+
       <button
         type="submit"
         disabled={saving}
@@ -493,13 +585,16 @@ export function SiteBuilderPage() {
 
   const openPageEditor = (p) => {
     setEditingPageId(p.id);
+    const pkRaw = (p.page_kind || "content").toLowerCase();
+    const pageKind =
+      pkRaw === "booking" ? "booking" : pkRaw === "mis_patients" ? "mis_patients" : "content";
     setPageForm({
       title: p.title || "",
       slug: p.slug || "",
       content: p.content || "",
       order_index: p.order_index ?? 0,
       is_published: Boolean(p.is_published),
-      page_kind: (p.page_kind || "content").toLowerCase() === "booking" ? "booking" : "content",
+      page_kind: pageKind,
       booking_staff_user_id: p.booking_staff_user_id ? String(p.booking_staff_user_id) : "",
       embed_module: p.embed_module ? String(p.embed_module) : "",
     });
@@ -512,7 +607,9 @@ export function SiteBuilderPage() {
     setPageSaving(true);
     setError("");
     try {
-      const pk = (pageForm.page_kind || "content").toLowerCase() === "booking" ? "booking" : "content";
+      const rawPk = (pageForm.page_kind || "content").toLowerCase();
+      const pk =
+        rawPk === "booking" ? "booking" : rawPk === "mis_patients" ? "mis_patients" : "content";
       const staffRaw = (pageForm.booking_staff_user_id || "").trim();
       const payload = {
         title: pageForm.title.trim(),
@@ -691,6 +788,7 @@ export function SiteBuilderPage() {
                 paymentLinkDefault={(form.contacts?.payment_url || "").trim()}
                 onSave={onSavePage}
                 saving={pageSaving}
+                isMisSite={isMisSite}
                 onDelete={() =>
                   editingPage ? onDeletePage(editingPage.id, editingPage.title) : null
                 }
@@ -1354,7 +1452,18 @@ function PagesTab({ pages, loading, onCreate, onOpen, onDelete, onChangeOrder, o
   );
 }
 
-function PageEditorTab({ page, form, setForm, portalUsers, paymentLinkDefault, onSave, saving, onDelete, onBackToList }) {
+function PageEditorTab({
+  page,
+  form,
+  setForm,
+  portalUsers,
+  paymentLinkDefault,
+  onSave,
+  saving,
+  onDelete,
+  onBackToList,
+  isMisSite = false,
+}) {
   const [isHtmlMode, setIsHtmlMode] = useState(false);
 
   const insertSberDonationBlock = () => {
@@ -1463,14 +1572,15 @@ function PageEditorTab({ page, form, setForm, portalUsers, paymentLinkDefault, o
               setForm((p) => ({
                 ...p,
                 page_kind: v,
-                booking_staff_user_id: v === "content" ? "" : p.booking_staff_user_id,
-                embed_module: v === "booking" ? "" : p.embed_module,
+                booking_staff_user_id: v === "booking" ? p.booking_staff_user_id : "",
+                embed_module: v === "content" ? p.embed_module : "",
               }));
             }}
             className={`${inputClass} max-w-md`}
           >
             <option value="content">Текст и медиа (как обычно)</option>
             <option value="booking">Запись на приём к сотруднику</option>
+            {isMisSite ? <option value="mis_patients">Пациенты (только врач в Mini App)</option> : null}
           </select>
         </Field>
         {(form.page_kind || "content") === "booking" ? (
@@ -1518,12 +1628,23 @@ function PageEditorTab({ page, form, setForm, portalUsers, paymentLinkDefault, o
             </Field>
           </div>
         ) : null}
+        {(form.page_kind || "content") === "mis_patients" ? (
+          <p className="mt-3 text-[12px] leading-snug text-slate-400">
+            В Mini App список карт виден только если <strong className="font-medium text-slate-300">chat_id</strong>{" "}
+            мессенджера совпадает с полем в профиле врача в панели («МИС — список пациентов» → сохранение chat_id).
+            Контент страницы ниже — вступительный HTML над списком.
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <label className="block text-xs font-medium text-slate-300">
-            {(form.page_kind || "content") === "booking" ? "Текст над формой записи (необязательно)" : "Контент"}
+            {(form.page_kind || "content") === "booking"
+              ? "Текст над формой записи (необязательно)"
+              : (form.page_kind || "content") === "mis_patients"
+                ? "Вступительный текст (HTML) над списком пациентов"
+                : "Контент"}
           </label>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -1683,10 +1804,11 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm, isMisSite =
                 : (pageForm?.page_kind || "").toLowerCase() === "content"
                   ? null
                   : p.booking_staff_user_id,
-            embed_module:
-              (pageForm?.page_kind || p.page_kind || "content").toLowerCase() === "booking"
-                ? null
-                : (pageForm?.embed_module || "").trim() || null,
+            embed_module: (() => {
+              const k = (pageForm?.page_kind || p.page_kind || "content").toLowerCase();
+              if (k === "booking" || k === "mis_patients") return null;
+              return (pageForm?.embed_module || "").trim() || null;
+            })(),
           }
         : p,
     );
@@ -1836,12 +1958,35 @@ function MiniAppPreview({ tab, form, pages, editingPageId, pageForm, isMisSite =
 
 function PagePreviewBody({ page }) {
   const previewContentRef = useMiniAppHtmlLinkDelegate(page?.content, { forceExternal: true });
+  const pk = page ? String(page.page_kind || "content").toLowerCase() : "";
   const isBooking =
     page &&
-    String(page.page_kind || "content").toLowerCase() === "booking" &&
+    pk === "booking" &&
     page.booking_staff_user_id;
   const embedKey =
-    page && !isBooking ? String(page.embed_module || "").trim() : "";
+    page && !isBooking && pk !== "mis_patients" ? String(page.embed_module || "").trim() : "";
+
+  if (pk === "mis_patients") {
+    return (
+      <article className="text-slate-800">
+        <h2 className="mb-2 text-lg font-semibold text-slate-900">
+          {(page.title || "").trim() || "Пациенты"}
+        </h2>
+        {page.content ? (
+          <div
+            ref={previewContentRef}
+            className="miniapp-preview-content mb-3 space-y-2 text-[14px] leading-relaxed"
+            dangerouslySetInnerHTML={{ __html: page.content }}
+          />
+        ) : null}
+        <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-[13px] text-teal-900">
+          Здесь в Mini App — список пациентов врача (доступ только при совпадении{" "}
+          <span className="font-medium">chat_id</span> с профилем врача).
+        </div>
+      </article>
+    );
+  }
+
   return (
     <article className="text-slate-800">
       <h2 className="mb-2 text-lg font-semibold text-slate-900">

@@ -72,6 +72,7 @@ export function DoctorMISPage() {
   const { patientId } = useParams();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const settingsOrganizationId = useAuthStore((s) => s.settingsOrganizationId);
   /** Админ организации / супер-админ: МИС без личного профиля врача (отдельные API /mis/admin/...). */
   const isMisAdmin = user?.role === "org_admin" || user?.role === "super_admin";
@@ -120,6 +121,12 @@ export function DoctorMISPage() {
   const [patientUrlCopied, setPatientUrlCopied] = useState(false);
   const [misStartCopied, setMisStartCopied] = useState(false);
   const [phoneCopied, setPhoneCopied] = useState(false);
+
+  const [miniChatDraft, setMiniChatDraft] = useState("");
+  const [miniChatSaving, setMiniChatSaving] = useState(false);
+  useEffect(() => {
+    setMiniChatDraft((user?.miniapp_chat_id || "").trim());
+  }, [user?.miniapp_chat_id]);
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [patientCardQrOpen, setPatientCardQrOpen] = useState(false);
   const patientUrlCopyTimer = useRef(null);
@@ -516,6 +523,21 @@ export function DoctorMISPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [qrModalOpen, patientCardQrOpen]);
 
+  const saveMiniappChatId = async () => {
+    setMiniChatSaving(true);
+    try {
+      await api.patch("/auth/me/miniapp-chat", {
+        miniapp_chat_id: miniChatDraft.trim() ? miniChatDraft.trim() : null,
+      });
+      const { data } = await api.get("/auth/me");
+      setUser(data);
+    } catch (e) {
+      window.alert(formatApiDetail(e));
+    } finally {
+      setMiniChatSaving(false);
+    }
+  };
+
   const createPatient = async (e) => {
     e.preventDefault();
     const full_name = npName.trim();
@@ -733,6 +755,39 @@ export function DoctorMISPage() {
               />
             </label>
           </div>
+
+          {user?.organization_id ? (
+            <section className={`${card} mb-4`}>
+              <h2 className="text-base font-semibold text-slate-900">Mini App (MAX): ваш chat_id</h2>
+              <p className="mt-1 text-xs text-slate-600">
+                Укажите тот же <strong className="font-medium">chat_id</strong>, что в Web App мессенджера — тогда в Mini
+                App МИС-сайта вы будете определяться как <strong className="font-medium">врач</strong> и увидите страницу
+                «Пациенты» (если она добавлена в меню конструктора). Совпадение идёт с этим полем в вашем профиле
+                портала.
+              </p>
+              <div className="mt-3 flex flex-wrap items-end gap-2">
+                <label className="min-w-[200px] flex-1 text-xs font-medium text-slate-600">
+                  MAX chat_id
+                  <input
+                    type="text"
+                    value={miniChatDraft}
+                    onChange={(e) => setMiniChatDraft(e.target.value)}
+                    maxLength={64}
+                    placeholder="например, из отладки Web App"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={miniChatSaving}
+                  onClick={saveMiniappChatId}
+                  className="rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-900 disabled:opacity-50"
+                >
+                  {miniChatSaving ? "Сохранение…" : "Сохранить"}
+                </button>
+              </div>
+            </section>
+          ) : null}
 
           {listLoading ? (
             <div className={`${card} flex items-center justify-center gap-2 py-16 text-slate-500`}>
