@@ -215,7 +215,9 @@ export function ApplicationsPage() {
         </header>
         <p className="text-xs text-slate-400">
           Выберите сайт, контент которого будет отображаться клиентам в Mini App мессенджера MAX.
-          Можно менять в любой момент — клиенты увидят изменения при следующем открытии.
+          Можно менять в любой момент — клиенты увидят изменения при следующем открытии. Сайты с меткой{" "}
+          <span className="text-violet-300">[МИС]</span> созданы в разделе «МИС» — те же страницы и модули,
+          плюс сценарии врач/пациент по chat_id.
         </p>
 
         {activeSiteError ? (
@@ -239,6 +241,7 @@ export function ApplicationsPage() {
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
+                  {s.site_kind === "mis" ? " [МИС]" : ""}
                   {s.title ? ` — ${s.title}` : ""}
                 </option>
               ))}
@@ -279,7 +282,8 @@ export function ApplicationsPage() {
 
         {sites.length === 0 && !sitesLoading ? (
           <p className="mt-3 text-xs text-slate-500">
-            У организации ещё нет сайтов. Создайте сайт в разделе «Сайты» — он появится в списке.
+            У организации ещё нет сайтов. Создайте сайт в разделе «Сайты» или МИС-сайт в разделе «МИС» — он
+            появится в списке.
           </p>
         ) : null}
       </section>

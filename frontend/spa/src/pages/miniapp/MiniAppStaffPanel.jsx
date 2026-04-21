@@ -349,7 +349,7 @@ export function MiniAppStaffPanel({ token }) {
                             style={actionOutlineStyle}
                             onClick={() => cancelAppointment(a.id)}
                           >
-                           ❌ Отменить
+                           ❌
                           </button>
                         ) : null}
                       </div>

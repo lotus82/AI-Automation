@@ -18,7 +18,7 @@ import hmac
 import json
 import logging
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import parse_qsl
 from uuid import UUID
 
@@ -516,11 +516,13 @@ class MiniAppConfigResponse(BaseModel):
     organization_name: str
     organization_display_name: str | None = None
     site_id: UUID
+    site_kind: str = "standard"
     title: str
     subtitle: str
     logo_url: str | None = None
     theme_color: str
     contacts: dict[str, object]
+    mis_patient_card_theme: dict[str, Any] | None = None
     pages: list[MiniAppConfigPage]
     nav_items: list[MiniAppNavItem]
 
@@ -599,16 +601,26 @@ async def get_miniapp_config(inn: str, session: AsyncSessionDep) -> MiniAppConfi
     menu_raw = site.menu_items if isinstance(getattr(site, "menu_items", None), list) else None
     nav_dtos = nav_items_for_miniapp(menu_raw, pages_rows)
 
+    raw_site_kind = getattr(site, "site_kind", None) or "standard"
+    site_kind = str(raw_site_kind).strip().lower()
+    if site_kind not in ("standard", "mis"):
+        site_kind = "standard"
+    contacts_raw = dict(site.contacts or {})
+    theme_raw = contacts_raw.get("mis_patient_card_theme")
+    mis_theme = theme_raw if isinstance(theme_raw, dict) else None
+
     return MiniAppConfigResponse(
         organization_id=org.id,
         organization_name=org.name,
         organization_display_name=(org.display_name or "").strip() or None,
         site_id=site.id,
+        site_kind=site_kind,
         title=(site.title or "").strip() or org.display_name or org.name,
         subtitle=(site.subtitle or "").strip(),
         logo_url=normalize_site_logo_url((site.logo_url or "").strip() or None),
         theme_color=(site.theme_color or "#000000").strip() or "#000000",
-        contacts=dict(site.contacts or {}),
+        contacts=contacts_raw,
+        mis_patient_card_theme=mis_theme,
         pages=[
             MiniAppConfigPage(
                 id=p.id,
@@ -698,5 +710,7 @@ async def miniapp_me(user: MiniAppUserDep) -> MiniAppMe:
 
 # Режим сотрудника (staff) — отдельный модуль, чтобы не раздувать этот файл.
 from src.api.routers.miniapp_staff_api import router as miniapp_staff_router  # noqa: E402
+from src.api.routers.miniapp_mis_api import router as miniapp_mis_router  # noqa: E402
 
 router.include_router(miniapp_staff_router)
+router.include_router(miniapp_mis_router)

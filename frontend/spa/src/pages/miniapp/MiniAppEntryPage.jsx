@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useMiniAppAuthStore } from "../../store/miniAppAuthStore.js";
 import { useMiniAppConfigStore } from "../../store/miniAppConfigStore.js";
+import { useMiniAppMisStore } from "../../store/miniAppMisStore.js";
+import { setPatientSession } from "../../utils/patientMisAuth.js";
 import { useMiniAppThemeStore } from "../../store/miniAppThemeStore.js";
 import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
 import { siteLogoImgSrc } from "../../utils/siteLogoUrl.js";
@@ -447,8 +449,14 @@ export function MiniAppEntryPage() {
   const config = useMiniAppConfigStore((s) => s.config);
   const setConfig = useMiniAppConfigStore((s) => s.setConfig);
   const resetConfig = useMiniAppConfigStore((s) => s.reset);
+  const resetMis = useMiniAppMisStore((s) => s.reset);
+  const setMisSession = useMiniAppMisStore((s) => s.setMisSession);
+  const setPatientToken = useMiniAppMisStore((s) => s.setPatientToken);
 
   const setThemeColor = useMiniAppThemeStore((s) => s.setThemeColor);
+
+  const misSession = useMiniAppMisStore((s) => s.misSession);
+  const misPatientToken = useMiniAppMisStore((s) => s.patientToken);
 
   const [status, setStatus] = useState("loading");
   const [errorTitle, setErrorTitle] = useState("");
@@ -464,6 +472,7 @@ export function MiniAppEntryPage() {
     setErrorTitle("");
     setErrorDetail("");
     resetConfig();
+    resetMis();
     setThemeColor(null);
 
     if (!inn || !String(inn).trim()) {
@@ -481,11 +490,13 @@ export function MiniAppEntryPage() {
       return;
     }
 
+    let authData = null;
     try {
-      const { data: authData } = await axios.post("/api/miniapp/auth", {
+      const authResp = await axios.post("/api/miniapp/auth", {
         inn: String(inn).trim(),
         init_data: initData,
       });
+      authData = authResp.data;
       setAuth({
         token: authData.access_token,
         userId: authData.user_id,
@@ -514,6 +525,28 @@ export function MiniAppEntryPage() {
       );
       setConfig(cfg);
       if (cfg?.theme_color) setThemeColor(cfg.theme_color);
+
+      if (cfg?.site_kind === "mis" && authData?.access_token) {
+        try {
+          const { data: sess } = await axios.get("/api/miniapp/mis/session", {
+            headers: { Authorization: `Bearer ${authData.access_token}` },
+          });
+          setMisSession(sess);
+          if (sess?.role === "patient") {
+            const { data: boot } = await axios.post(
+              "/api/miniapp/mis/patient-bootstrap",
+              {},
+              { headers: { Authorization: `Bearer ${authData.access_token}` } },
+            );
+            if (boot?.access_token) {
+              setPatientToken(boot.access_token);
+              setPatientSession(boot.access_token, boot.patient_id, authData.organization_id);
+            }
+          }
+        } catch {
+          setMisSession(null);
+        }
+      }
       const pgs = Array.isArray(cfg?.pages) ? cfg.pages : [];
       const nav =
         Array.isArray(cfg?.nav_items) && cfg.nav_items.length > 0
@@ -532,7 +565,7 @@ export function MiniAppEntryPage() {
       }
       setErrorDetail(typeof detail === "string" ? detail : JSON.stringify(detail));
     }
-  }, [inn, initData, setAuth, clearAuth, setConfig, resetConfig, setThemeColor]);
+  }, [inn, initData, setAuth, clearAuth, setConfig, resetConfig, setThemeColor, resetMis, setMisSession, setPatientToken]);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -635,6 +668,26 @@ export function MiniAppEntryPage() {
         logoUrl={config?.logo_url}
         themeColor={themeColor}
       />
+      {config?.site_kind === "mis" && misSession?.role ? (
+        <div
+          style={{
+            flexShrink: 0,
+            padding: "8px 16px",
+            fontSize: 13,
+            lineHeight: 1.4,
+            color: "#0369a1",
+            background: "#f0f9ff",
+            borderBottom: "1px solid #bae6fd",
+          }}
+        >
+          МИС:{" "}
+          {misSession.role === "doctor"
+            ? "врач (chat_id совпал с профилем врача)"
+            : misSession.role === "patient"
+              ? `пациент${misPatientToken ? " — доступ к карте по chat_id" : ""}`
+              : "гость (привяжите chat_id в карте пациента или в профиле врача)"}
+        </div>
+      ) : null}
       <div
         className="miniapp-main-scroll"
         style={{

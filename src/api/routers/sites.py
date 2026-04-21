@@ -14,6 +14,7 @@ import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
@@ -106,6 +107,10 @@ class SiteContacts(BaseModel):
         max_length=1024,
         description="Ссылка на оплату (например https://sberbank.ru/qr/?uuid=…) для блока QR в страницах",
     )
+    mis_patient_card_theme: dict[str, Any] | None = Field(
+        default=None,
+        description="Тема публичной карты пациента (МИС-сайт): accent_color, card_radius и т.д.",
+    )
 
 
 class SiteMenuItemInput(BaseModel):
@@ -132,6 +137,7 @@ class SiteListItem(BaseModel):
     id: UUID
     organization_id: UUID
     name: str
+    site_kind: str = "standard"
     title: str
     subtitle: str
     theme_color: str
@@ -147,12 +153,22 @@ class SiteDetail(SiteListItem):
 
 class SiteCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
+    site_kind: str = Field(default="standard", max_length=32)
+
+    @field_validator("site_kind")
+    @classmethod
+    def _site_kind_create(cls, v: str) -> str:
+        s = (v or "standard").strip().lower()
+        if s not in ("standard", "mis"):
+            raise ValueError("site_kind: допустимо standard или mis")
+        return s
 
 
 class SiteUpdateRequest(BaseModel):
     """Частичное обновление настроек сайта. Пустые строки считаются сбросом полей."""
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
+    site_kind: str | None = Field(default=None, max_length=32)
     title: str | None = Field(default=None, max_length=255)
     subtitle: str | None = Field(default=None, max_length=512)
     logo_url: str | None = Field(default=None, max_length=1024)
@@ -173,6 +189,16 @@ class SiteUpdateRequest(BaseModel):
             return "#000000"
         if not re.fullmatch(r"#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?", s):
             raise ValueError("theme_color должен быть HEX вида #RGB или #RRGGBB")
+        return s
+
+    @field_validator("site_kind")
+    @classmethod
+    def _site_kind_upd(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        s = v.strip().lower()
+        if s not in ("standard", "mis"):
+            raise ValueError("site_kind: допустимо standard или mis")
         return s
 
 
@@ -306,6 +332,7 @@ class PublicNavItem(BaseModel):
 class PublicSiteResponse(BaseModel):
     id: UUID
     name: str
+    site_kind: str = "standard"
     title: str
     subtitle: str
     logo_url: str | None = None
@@ -347,11 +374,18 @@ def _menu_public_from_db(raw: object) -> list[SiteMenuItemPublic]:
     return out
 
 
+def _site_kind_str(row: SiteModel) -> str:
+    raw = getattr(row, "site_kind", None) or "standard"
+    s = str(raw).strip().lower()
+    return s if s in ("standard", "mis") else "standard"
+
+
 def _site_to_detail(row: SiteModel) -> SiteDetail:
     return SiteDetail(
         id=row.id,
         organization_id=row.organization_id,
         name=row.name,
+        site_kind=_site_kind_str(row),
         title=row.title or "",
         subtitle=row.subtitle or "",
         theme_color=row.theme_color or "#000000",
@@ -368,6 +402,7 @@ def _site_to_list_item(row: SiteModel) -> SiteListItem:
         id=row.id,
         organization_id=row.organization_id,
         name=row.name,
+        site_kind=_site_kind_str(row),
         title=row.title or "",
         subtitle=row.subtitle or "",
         theme_color=row.theme_color or "#000000",
@@ -449,16 +484,23 @@ async def list_sites(
         default=None,
         description="Супер-админ: id организации (обязателен). Остальные — игнорируется, берётся из JWT.",
     ),
+    site_kind: str | None = Query(
+        default=None,
+        description="Фильтр: standard (обычные сайты) или mis (конструктор МИС).",
+    ),
 ) -> list[SiteListItem]:
     """Список сайтов организации."""
     scope = _resolve_site_org_scope(user, organization_id)
-    rows = (
-        await session.execute(
-            select(SiteModel)
-            .where(SiteModel.organization_id == scope)
-            .order_by(SiteModel.updated_at.desc())
-        )
-    ).scalars().all()
+    stmt = select(SiteModel).where(SiteModel.organization_id == scope)
+    if site_kind is not None and str(site_kind).strip():
+        sk = str(site_kind).strip().lower()
+        if sk not in ("standard", "mis"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Параметр site_kind: допустимо standard или mis",
+            )
+        stmt = stmt.where(SiteModel.site_kind == sk)
+    rows = (await session.execute(stmt.order_by(SiteModel.updated_at.desc()))).scalars().all()
     return [_site_to_list_item(r) for r in rows]
 
 
@@ -477,6 +519,7 @@ async def create_site(
     row = SiteModel(
         organization_id=scope,
         name=body.name.strip(),
+        site_kind=body.site_kind,
         title="",
         subtitle="",
         logo_url=None,
@@ -516,6 +559,8 @@ async def update_site(
 
     if body.name is not None:
         row.name = body.name.strip()
+    if body.site_kind is not None:
+        row.site_kind = body.site_kind
     if body.title is not None:
         row.title = body.title.strip()
     if body.subtitle is not None:
@@ -797,6 +842,7 @@ async def get_public_site(site_id: UUID, session: AsyncSessionDep) -> PublicSite
     return PublicSiteResponse(
         id=site.id,
         name=site.name,
+        site_kind=_site_kind_str(site),
         title=site.title or "",
         subtitle=site.subtitle or "",
         logo_url=normalize_site_logo_url((site.logo_url or "").strip() or None),

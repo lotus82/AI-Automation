@@ -310,7 +310,7 @@ export function DoctorMISPage() {
         ? `/mis/admin/patients/${patientId}`
         : `/mis/doctor/patients/${patientId}`;
       await api.delete(delUrl);
-      navigate("/mis");
+      navigate("/mis/clinic");
     } catch (e) {
       setDetailErr(formatApiDetail(e));
     } finally {
@@ -545,7 +545,7 @@ export function DoctorMISPage() {
       setNpName("");
       setNpPhone("");
       setNpBirth("");
-      if (data?.id) navigate(`/mis/patients/${data.id}`);
+      if (data?.id) navigate(`/mis/clinic/patients/${data.id}`);
       else await loadList();
     } catch (err) {
       setNpMsg(formatApiDetail(err));
@@ -744,7 +744,7 @@ export function DoctorMISPage() {
               {filtered.map((p) => (
                 <Link
                   key={p.id}
-                  to={`/mis/patients/${p.id}`}
+                  to={`/mis/clinic/patients/${p.id}`}
                   className={`${card} block transition hover:border-teal-300 hover:shadow-md hover:shadow-teal-500/10`}
                 >
                   <div className="font-semibold text-slate-900">{p.full_name}</div>
@@ -763,7 +763,7 @@ export function DoctorMISPage() {
       <div className="mx-auto max-w-4xl px-4 pt-6">
         <button
           type="button"
-          onClick={() => navigate("/mis")}
+          onClick={() => navigate("/mis/clinic")}
           className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-teal-700 hover:text-teal-900"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />

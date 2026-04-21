@@ -1,6 +1,6 @@
 import { Globe, Pencil, Plus, RefreshCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import api from "../../api/client.js";
 import { useAuthStore } from "../../store/authStore.js";
 import { PAGE_SHELL, PAGE_TEXT } from "../../styles/pageLayout.js";
@@ -23,8 +23,10 @@ function formatApiDetail(d) {
 /**
  * Список сайтов организации. Доступ: super_admin, org_admin, director.
  * Всё изолировано по текущей организации (интерсептор добавит organization_id).
+ *
+ * @param {{ misMode?: boolean }} props — `misMode`: только сайты ``site_kind=mis`` (конструктор МИС).
  */
-export function SitesListPage() {
+export function SitesListPage({ misMode = false }) {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const role = user?.role;
@@ -42,7 +44,9 @@ export function SitesListPage() {
     setLoading(true);
     setError("");
     try {
-      const { data } = await api.get("/sites");
+      const params = {};
+      if (misMode) params.site_kind = "mis";
+      const { data } = await api.get("/sites", { params });
       setRows(Array.isArray(data) ? data : []);
     } catch (e) {
       setError(formatApiDetail(e?.response?.data?.detail) || e?.message || String(e));
@@ -50,7 +54,7 @@ export function SitesListPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [misMode]);
 
   useEffect(() => {
     if (canAccess) load();
@@ -66,10 +70,11 @@ export function SitesListPage() {
     setCreating(true);
     setError("");
     try {
-      const { data } = await api.post("/sites", { name });
+      const body = misMode ? { name, site_kind: "mis" } : { name };
+      const { data } = await api.post("/sites", body);
       setShowCreate(false);
       setCreateName("");
-      navigate(`/sites/${data.id}`);
+      navigate(misMode ? `/mis/sites/${data.id}` : `/sites/${data.id}`);
     } catch (err) {
       setError(formatApiDetail(err?.response?.data?.detail) || err?.message || String(err));
     } finally {
@@ -99,9 +104,11 @@ export function SitesListPage() {
             <Globe className="h-5 w-5" strokeWidth={1.75} aria-hidden />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-white">Сайты</h1>
+            <h1 className="text-xl font-semibold text-white">{misMode ? "МИС — конструктор" : "Сайты"}</h1>
             <p className="text-sm text-slate-400">
-              Контент для клиентского Mini App. Многостраничные разделы с общими настройками.
+              {misMode
+                ? "Тот же конструктор, что и «Сайты»: страницы, меню, модули; роли врач/пациент в Mini App по chat_id."
+                : "Контент для клиентского Mini App. Многостраничные разделы с общими настройками."}
             </p>
           </div>
         </div>
@@ -121,7 +128,7 @@ export function SitesListPage() {
             className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden />
-            Создать сайт
+            {misMode ? "Создать МИС-сайт" : "Создать сайт"}
           </button>
         </div>
       </header>
@@ -132,12 +139,28 @@ export function SitesListPage() {
         </div>
       ) : null}
 
+      {misMode ? (
+        <div className="mb-4 rounded-xl border border-slate-700 bg-slate-800/40 px-4 py-3 text-sm text-slate-300">
+          <span className="text-slate-500">Клиника: </span>
+          <Link to="/mis/clinic" className="font-medium text-sky-400 underline-offset-2 hover:underline">
+            список пациентов и карты
+          </Link>
+        </div>
+      ) : null}
+
       <section className="rounded-2xl border border-slate-800 bg-slate-900/70">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-800 text-sm">
             <thead className="bg-slate-900/60 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Название</th>
+                <th className="px-4 py-2 text-left font-medium">
+                  Название
+                  {misMode ? (
+                    <span className="ml-2 rounded bg-violet-600/30 px-1.5 py-0.5 text-[10px] font-normal text-violet-200">
+                      МИС
+                    </span>
+                  ) : null}
+                </th>
                 <th className="px-4 py-2 text-left font-medium">Заголовок</th>
                 <th className="px-4 py-2 text-left font-medium">Цвет</th>
                 <th className="px-4 py-2 text-left font-medium">Обновлён</th>
@@ -154,7 +177,9 @@ export function SitesListPage() {
               ) : rows.length === 0 ? (
                 <tr>
                   <td className="px-4 py-6 text-center text-slate-500" colSpan={5}>
-                    Ещё нет сайтов. Нажмите «Создать сайт», чтобы начать.
+                    {misMode
+                      ? "Ещё нет МИС-сайтов. Создайте сайт и выберите его в «Приложениях» как активный для Mini App."
+                      : "Ещё нет сайтов. Нажмите «Создать сайт», чтобы начать."}
                   </td>
                 </tr>
               ) : (
@@ -179,7 +204,7 @@ export function SitesListPage() {
                       <div className="flex items-center justify-end gap-1">
                         <button
                           type="button"
-                          onClick={() => navigate(`/sites/${s.id}`)}
+                          onClick={() => navigate(misMode ? `/mis/sites/${s.id}` : `/sites/${s.id}`)}
                           className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700"
                           title="Редактировать"
                         >
@@ -217,7 +242,7 @@ export function SitesListPage() {
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl"
           >
-            <h2 className="text-base font-semibold text-white">Новый сайт</h2>
+            <h2 className="text-base font-semibold text-white">{misMode ? "Новый МИС-сайт" : "Новый сайт"}</h2>
             <p className="mt-1 text-xs text-slate-400">
               Внутреннее название отображается только в админ-панели. Заголовок и контент настроите в
               конструкторе.

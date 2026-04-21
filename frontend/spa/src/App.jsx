@@ -100,8 +100,10 @@ export default function App() {
           <Route path="forms" element={<FormsPage />} />
           <Route path="shops" element={<ShopsPage />} />
           <Route path="shops/:shopId/edit" element={<ShopConstructorPage />} />
-          <Route path="mis" element={<DoctorMISPage />} />
-          <Route path="mis/patients/:patientId" element={<DoctorMISPage />} />
+          <Route path="mis" element={<SitesListPage misMode />} />
+          <Route path="mis/sites/:id" element={<SiteBuilderPage />} />
+          <Route path="mis/clinic" element={<DoctorMISPage />} />
+          <Route path="mis/clinic/patients/:patientId" element={<DoctorMISPage />} />
           <Route path="applications" element={<ApplicationsPage />} />
           <Route path="sites" element={<SitesListPage />} />
           <Route path="sites/:id" element={<SiteBuilderPage />} />

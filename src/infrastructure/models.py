@@ -1314,6 +1314,13 @@ class SiteModel(Base):
         index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # standard — обычный сайт Mini App; mis — тот же конструктор, но сценарий МИС (роли врач/пациент).
+    site_kind: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        server_default=sql_text("'standard'"),
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(255), nullable=False, server_default=sql_text("''"))
     subtitle: Mapped[str] = mapped_column(String(512), nullable=False, server_default=sql_text("''"))
     logo_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)

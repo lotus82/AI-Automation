@@ -107,6 +107,10 @@ class MedicalEntryOut(BaseModel):
 class PublicPatientCardResponse(BaseModel):
     patient: MedicalPatientOut
     entries: list[MedicalEntryOut]
+    card_theme: dict[str, Any] | None = Field(
+        default=None,
+        description="Тема оформления из конструктора МИС-сайта (mis_patient_card_theme)",
+    )
 
 
 class MisAiConsultRequest(BaseModel):

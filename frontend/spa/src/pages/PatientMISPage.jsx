@@ -320,10 +320,41 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
   }
 
   const p = data?.patient;
+  const ct = data?.card_theme;
+  const accent =
+    typeof ct?.accent_color === "string" && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(ct.accent_color.trim())
+      ? ct.accent_color.trim()
+      : null;
+  const radius =
+    ct != null && Number(ct.card_radius) >= 0 ? Math.min(48, Math.round(Number(ct.card_radius))) : null;
+  const headerBar =
+    accent != null ? (
+      <div
+        className="-mx-4 -mt-4 mb-4 px-4 py-3 text-white sm:-mx-5 sm:px-5"
+        style={{
+          borderTopLeftRadius: radius != null ? radius : 16,
+          borderTopRightRadius: radius != null ? radius : 16,
+          background:
+            ct?.header_style === "solid"
+              ? accent
+              : `linear-gradient(135deg, ${accent} 0%, ${accent}dd 100%)`,
+        }}
+      >
+        <p className="text-xs font-medium uppercase tracking-wide text-white/90">Карта пациента</p>
+      </div>
+    ) : null;
 
   return (
     <div className="space-y-4 pb-24 sm:space-y-6 sm:pb-12">
-      <section className={card}>
+      <section
+        className={card}
+        style={
+          radius != null
+            ? { borderRadius: radius, borderColor: accent ? `${accent}55` : undefined }
+            : undefined
+        }
+      >
+        {headerBar}
         <h1 className="text-lg font-semibold text-slate-900">Мои данные</h1>
         {maxSession ? (
           <>

@@ -63,8 +63,10 @@ from src.infrastructure.models import (
     MedicalEntryModel,
     MedicalEntryType,
     MedicalPatientModel,
+    OrganizationModel,
     PortalUserModel,
     QuestionnaireModel,
+    SiteModel,
 )
 from src.infrastructure.portal_security import (
     create_mis_questionnaire_invite_token,
@@ -72,6 +74,38 @@ from src.infrastructure.portal_security import (
 )
 router = APIRouter(prefix="/mis", tags=["mis"])
 public_router = APIRouter(prefix="/public/mis", tags=["mis-public"])
+
+
+async def _mis_patient_card_theme_for_org(session: AsyncSession, org_id: UUID) -> dict | None:
+    """Тема публичной карты из контактов МИС-сайта (активный сайт или первый site_kind=mis)."""
+    org = await session.get(OrganizationModel, org_id)
+    if org is None:
+        return None
+    site_id = org.active_site_id
+    if site_id is not None:
+        site = await session.get(SiteModel, site_id)
+        if site is not None:
+            sk = (getattr(site, "site_kind", None) or "standard").strip().lower()
+            if sk == "mis":
+                contacts = site.contacts or {}
+                t = contacts.get("mis_patient_card_theme")
+                if isinstance(t, dict):
+                    return t
+    stmt = (
+        select(SiteModel)
+        .where(
+            SiteModel.organization_id == org_id,
+            SiteModel.site_kind == "mis",
+        )
+        .order_by(SiteModel.updated_at.desc())
+        .limit(1)
+    )
+    site_row = (await session.execute(stmt)).scalar_one_or_none()
+    if site_row is None:
+        return None
+    contacts = site_row.contacts or {}
+    t = contacts.get("mis_patient_card_theme")
+    return t if isinstance(t, dict) else None
 
 
 def _mis_max_client_for_organization(
@@ -343,7 +377,12 @@ async def mis_admin_get_patient(
         key=lambda e: (e.entry_date, e.created_at),
         reverse=True,
     )
-    return PublicPatientCardResponse(patient=_patient_out(p), entries=[_entry_out(e) for e in entries])
+    theme = await _mis_patient_card_theme_for_org(session, p.organization_id)
+    return PublicPatientCardResponse(
+        patient=_patient_out(p),
+        entries=[_entry_out(e) for e in entries],
+        card_theme=theme,
+    )
 
 
 @router.post("/admin/patients", response_model=MedicalPatientOut, status_code=status.HTTP_201_CREATED)
@@ -644,7 +683,12 @@ async def mis_doctor_get_patient(
         key=lambda e: (e.entry_date, e.created_at),
         reverse=True,
     )
-    return PublicPatientCardResponse(patient=_patient_out(p), entries=[_entry_out(e) for e in entries])
+    theme = await _mis_patient_card_theme_for_org(session, p.organization_id)
+    return PublicPatientCardResponse(
+        patient=_patient_out(p),
+        entries=[_entry_out(e) for e in entries],
+        card_theme=theme,
+    )
 
 
 @router.post("/doctor/patients", response_model=MedicalPatientOut, status_code=status.HTTP_201_CREATED)
@@ -769,7 +813,12 @@ async def mis_public_patient_card(
         key=lambda e: (e.entry_date, e.created_at),
         reverse=True,
     )
-    return PublicPatientCardResponse(patient=_patient_out(p), entries=[_entry_out(e) for e in entries])
+    theme = await _mis_patient_card_theme_for_org(session, p.organization_id)
+    return PublicPatientCardResponse(
+        patient=_patient_out(p),
+        entries=[_entry_out(e) for e in entries],
+        card_theme=theme,
+    )
 
 
 @public_router.post(

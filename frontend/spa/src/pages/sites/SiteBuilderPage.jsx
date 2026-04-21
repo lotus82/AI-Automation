@@ -12,11 +12,12 @@ import {
   Save,
   Settings as SettingsIcon,
   Smartphone,
+  Stethoscope,
   Trash2,
   Upload,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import Cropper from "react-easy-crop";
 import ReactQuill from "react-quill";
 import "react-easy-crop/react-easy-crop.css";
@@ -108,6 +109,71 @@ function formatApiDetail(d) {
   return String(d);
 }
 
+/** Вкладка «Карта пациента»: тема публичной карты (хранится в contacts.mis_patient_card_theme). */
+function PatientCardThemePanel({ form, setForm, onSave, saving }) {
+  const raw = form.contacts?.mis_patient_card_theme;
+  const theme =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? raw
+      : { accent_color: "#0ea5e9", card_radius: 16, header_style: "gradient" };
+  const setTheme = (patch) => {
+    setForm((prev) => ({
+      ...prev,
+      contacts: {
+        ...prev.contacts,
+        mis_patient_card_theme: { ...theme, ...patch },
+      },
+    }));
+  };
+  return (
+    <form onSubmit={onSave} className="space-y-4">
+      <p className="text-sm text-slate-400">
+        Эти параметры применяются к публичной карте пациента (
+        <code className="rounded bg-slate-800 px-1 text-xs">/public/mis/patient/…</code>) и передаются в Mini App
+        в конфиге.
+      </p>
+      <label className="block text-xs font-medium text-slate-300">
+        Акцентный цвет
+        <input
+          type="color"
+          value={typeof theme.accent_color === "string" ? theme.accent_color : "#0ea5e9"}
+          onChange={(e) => setTheme({ accent_color: e.target.value })}
+          className="mt-1 h-10 w-full max-w-[120px] cursor-pointer rounded border border-slate-700 bg-slate-950"
+        />
+      </label>
+      <label className="block text-xs font-medium text-slate-300">
+        Скругление карточек (px)
+        <input
+          type="number"
+          min={0}
+          max={48}
+          value={Number(theme.card_radius) || 16}
+          onChange={(e) => setTheme({ card_radius: Math.min(48, Math.max(0, Number(e.target.value) || 0)) })}
+          className="mt-1 block w-full max-w-[200px] rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+        />
+      </label>
+      <label className="block text-xs font-medium text-slate-300">
+        Шапка карты
+        <select
+          value={theme.header_style === "solid" ? "solid" : "gradient"}
+          onChange={(e) => setTheme({ header_style: e.target.value })}
+          className="mt-1 block w-full max-w-[280px] rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+        >
+          <option value="gradient">Градиент (акцентный цвет)</option>
+          <option value="solid">Сплошная заливка</option>
+        </select>
+      </label>
+      <button
+        type="submit"
+        disabled={saving}
+        className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+      >
+        {saving ? "Сохранение…" : "Сохранить тему"}
+      </button>
+    </form>
+  );
+}
+
 /** Пустые контакты — используется для начального состояния формы. */
 const EMPTY_CONTACTS = {
   phone: "",
@@ -141,7 +207,9 @@ const CONTACT_FIELDS = [
  */
 export function SiteBuilderPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id: siteId } = useParams();
+  const isMisBuilder = location.pathname.startsWith("/mis/sites");
   const user = useAuthStore((s) => s.user);
   const role = user?.role;
   const canAccess = role === "super_admin" || role === "org_admin" || role === "director";
@@ -265,6 +333,8 @@ export function SiteBuilderPage() {
 
   if (!user) return null;
   if (!canAccess) return <Navigate to="/scenarios/qa-analytics" replace />;
+
+  const isMisSite = isMisBuilder || (site?.site_kind || "") === "mis";
 
   // --- Настройки сайта -----------------------------------------------
 
@@ -467,18 +537,22 @@ export function SiteBuilderPage() {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => navigate("/sites")}
+            onClick={() => navigate(isMisBuilder ? "/mis" : "/sites")}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700"
-            title="К списку сайтов"
+            title={isMisBuilder ? "К списку МИС-сайтов" : "К списку сайтов"}
           >
             <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
-            Сайты
+            {isMisBuilder ? "МИС" : "Сайты"}
           </button>
           <div>
             <h1 className="text-xl font-semibold text-white">
               {loadingSite ? "Загрузка…" : site?.name || "Сайт"}
             </h1>
-            <p className="text-sm text-slate-400">Конструктор содержимого Mini App.</p>
+            <p className="text-sm text-slate-400">
+              {isMisSite
+                ? "Конструктор МИС-сайта (Mini App): меню, страницы, тема публичной карты пациента."
+                : "Конструктор содержимого Mini App."}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -512,6 +586,18 @@ export function SiteBuilderPage() {
             Настройки
           </span>
         </button>
+        {isMisSite ? (
+          <button
+            type="button"
+            className={tabBtn(tab === "patient-card")}
+            onClick={() => setTab("patient-card")}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <Stethoscope className="h-3.5 w-3.5" aria-hidden />
+              Карта пациента
+            </span>
+          </button>
+        ) : null}
         <button type="button" className={tabBtn(tab === "menu")} onClick={() => setTab("menu")}>
           <span className="inline-flex items-center gap-1.5">
             <Menu className="h-3.5 w-3.5" aria-hidden />
@@ -553,6 +639,10 @@ export function SiteBuilderPage() {
                 saving={savingSite}
                 loading={loadingSite}
               />
+            ) : null}
+
+            {tab === "patient-card" && isMisSite ? (
+              <PatientCardThemePanel form={form} setForm={setForm} onSave={onSaveSite} saving={savingSite} />
             ) : null}
 
             {tab === "menu" ? (

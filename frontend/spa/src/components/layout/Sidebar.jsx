@@ -108,11 +108,14 @@ function SidebarContent({ onNavigate, headerAction }) {
         {mainItems.map((item) => {
           const { to, label, icon: Icon, scenariosGroup, end } = item;
           const scenariosActive = Boolean(scenariosGroup && pathname.startsWith("/scenarios"));
+          const misActive = Boolean(item.section === "mis" && pathname.startsWith("/mis"));
           return (
             <NavLink
               key={to}
               to={to}
-              className={({ isActive }) => linkClass({ isActive: isActive || scenariosActive })}
+              className={({ isActive }) =>
+                linkClass({ isActive: isActive || scenariosActive || misActive })
+              }
               end={Boolean(end) && !scenariosGroup}
               onClick={() => onNavigate?.()}
             >
