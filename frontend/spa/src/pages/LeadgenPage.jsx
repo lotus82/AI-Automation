@@ -89,10 +89,7 @@ export function LeadgenPage() {
           <TrendingUp className="h-8 w-8 shrink-0 text-emerald-400/90" strokeWidth={1.75} aria-hidden />
           ИИ-лидогенератор
         </h1>
-        <p className="mt-2 text-sm text-slate-400">
-          Управление кампаниями обзвона, очередью номеров и перехватом лидов. Интеграция с dialer и CRM —
-          через существующие API проекта.
-        </p>
+
       </div>
 
       <div>

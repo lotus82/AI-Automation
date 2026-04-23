@@ -296,12 +296,8 @@ export function RolesPage() {
         <span className="text-slate-300" aria-hidden>
           🎭
         </span>
-        Роли и промпты
+        Роли
       </h1>
-      <p className="mb-4 text-sm leading-relaxed text-slate-300">
-        Роли с системными промптами, привязка групп MAX к роли и доп. тексту, общее дополнение для текстовых чатов. Хранится
-        в <code className="rounded bg-slate-800 px-1 text-xs">system_settings</code>.
-      </p>
 
       <p
         className={`mb-4 min-h-[1.25rem] text-sm ${statusError ? "text-red-400" : "text-emerald-400"}`}
@@ -318,14 +314,10 @@ export function RolesPage() {
             <h2 id="roles-table-title" className={sectionTitleClass}>
               <span aria-hidden>👤</span> Системные роли
             </h2>
-            <p className={`${helpClass} mb-3`}>
-              Основная роль по умолчанию используется в чате и расписании, если для группы MAX не выбрана другая. Роль для
-              ОКК — промпт анализа качества диалогов (сценарий QA).
-            </p>
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
               <div>
                 <label className={labelClass} htmlFor="analyst-role-select">
-                  Роль для ОКК / аналитики
+                  Роль для аналитики
                 </label>
                 <select
                   id="analyst-role-select"
@@ -416,12 +408,6 @@ export function RolesPage() {
             <h2 id="max-groups-title" className={sectionTitleClass}>
               <span aria-hidden>💬</span> Групповые чаты MAX
             </h2>
-            <p className={`${helpClass} mb-3`}>
-              Для каждой группы: <strong>роль</strong> (базовый системный промпт) и при необходимости{" "}
-              <strong>дополнительный текст</strong> только для этого чата. Пустая роль в списке — используется основная
-              роль по умолчанию. Совпадение по <code className="text-xs text-slate-300">session_id</code> /{" "}
-              <code className="text-xs text-slate-300">chat_id</code>.
-            </p>
             <div className="overflow-x-auto rounded-lg border border-slate-700/80">
               <table className="w-full min-w-[880px] border-collapse text-left text-sm">
                 <thead>
@@ -512,19 +498,10 @@ export function RolesPage() {
 
           <section className={sectionClass} aria-labelledby="messenger-supplement-title">
             <h2 id="messenger-supplement-title" className={sectionTitleClass}>
-              <span aria-hidden>📱</span> Мессенджеры и текстовые чаты
+              <span aria-hidden>📱</span> Правила формата ответа
             </h2>
             <div className="mb-0">
-              <label className={labelClass} htmlFor="text-bot-supplement">
-                Дополнение к системному промпту (TEXT_BOT_SYSTEM_SUPPLEMENT)
-              </label>
-              <p className={helpClass}>
-                Добавляется <strong>после</strong> промпта роли, CRM и доп. текста группы MAX. Используется во{" "}
-                <strong>всех текстовых чатах</strong> с моделью: мессенджеры (MAX и др.), встроенный чат панели, чат
-                врача с ИИ в МИС, проактивные сообщения по расписанию,{" "}
-                <strong>ИИ-заключение по опросникам</strong> и аналогичные сценарии — для единых правил формата ответа
-                (тон, длина, обращение, Markdown и т.д.).
-              </p>
+
               <textarea
                 id="text-bot-supplement"
                 className={`${inputClass} resize-y`}

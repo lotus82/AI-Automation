@@ -88,11 +88,6 @@ export function AITrainerPage() {
         <GraduationCap className="h-8 w-8 shrink-0 text-violet-400/90" strokeWidth={1.75} aria-hidden />
         ИИ-тренер отдела продаж
       </h1>
-      <p className="mb-6 text-sm text-slate-400">
-        Голосовая симуляция: Asterisk звонит менеджеру, ИИ отыгрывает роль клиента. Персоны и возражения создаются на
-        вкладке «Сценарии». Аналитика по методикам (BANT/MEDDIC) — в разделе «ИИ-контроль (QA)», вкладка «Аналитика
-        звонков».
-      </p>
 
       {loadMetaErr && tab === "simulation" && (
         <p className="mb-4 rounded-lg border border-red-900/50 bg-red-950/30 px-3 py-2 text-sm text-red-300">

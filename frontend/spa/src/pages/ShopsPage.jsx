@@ -92,9 +92,7 @@ export function ShopsPage() {
             <Store className="h-8 w-8 shrink-0 text-amber-400/90" strokeWidth={1.75} aria-hidden />
             Магазины
           </h1>
-          <p className="mt-2 text-sm text-slate-400">
-            Список витрин вашей организации. Редактирование каталога и страниц — в конструкторе магазина.
-          </p>
+
         </div>
         <button
           type="button"

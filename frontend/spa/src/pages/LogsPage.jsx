@@ -110,12 +110,7 @@ export function LogsPage() {
           <ScrollText className="h-7 w-7 shrink-0 text-slate-400/90" strokeWidth={1.75} aria-hidden />
           Логи контейнеров
         </h1>
-        <p className="mt-1 text-sm text-slate-400">
-          Для VPS: в <code className="rounded bg-slate-800 px-1 text-xs">.env</code> задайте{" "}
-          <code className="rounded bg-slate-800 px-1 text-xs">ADMIN_LOGS_TOKEN</code>, перезапустите{" "}
-          <code className="rounded bg-slate-800 px-1 text-xs">web</code> и смонтируйте Docker-сокет (см.{" "}
-          <code className="rounded bg-slate-800 px-1 text-xs">docker-compose.prod.yml</code>).
-        </p>
+
       </div>
 
       <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 space-y-3">

@@ -302,16 +302,6 @@ export function SchedulePage() {
         <span aria-hidden>📅</span>
         Расписание
       </h1>
-      <p className="mb-6 text-sm leading-relaxed text-slate-300">
-        Проактивные сообщения в чат <strong>MAX</strong> по триггерам: события из
-        базы (дни рождения и т.п.), интервал, напоминание до события. Выполнение
-        — воркер <strong>Celery Beat</strong> раз в минуту. Для типов DATABASE и
-        REMINDER загрузите события (CSV/JSON).{" "}
-        <strong>
-          Время указывается по Саратову (Europe/Saratov, UTC+4)
-        </strong>
-        , если в ISO-строке нет явного смещения (+03:00, Z и т.д.).
-      </p>
 
       <section className={panelClass} aria-labelledby="sch-new-title">
         <h2 id="sch-new-title" className="mb-4 text-lg font-semibold text-slate-100">

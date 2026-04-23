@@ -477,11 +477,9 @@ export function FormsPage() {
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold text-white">
           <FileText className="h-8 w-8 shrink-0 text-sky-400/90" strokeWidth={1.75} aria-hidden />
-          Формы
+          Мероприятия
         </h1>
-        <p className="mt-2 text-sm text-slate-400">
-          Конструктор форм (регистрация, обратная связь), мероприятия с отдельными ссылками и сбором ответов в БД.
-        </p>
+
       </div>
 
       {err ? (

@@ -320,13 +320,6 @@ export function QuestionnairesPage() {
             <ClipboardList className="h-7 w-7 shrink-0 text-sky-400/90" strokeWidth={1.75} aria-hidden />
             Опросники
           </h1>
-          <p className="mt-1 text-sm text-slate-400">
-            Конструктор, прохождение и ИИ-оценка по вашим критериям. Публичную ссылку можно вставить в MAX,
-            Битрикс24 и другие системы.
-            {user?.role === "super_admin"
-              ? " Список опросников для супер-админа соответствует контексту организации в боковом меню (без выбора — только глобальные)."
-              : ""}
-          </p>
         </div>
         <button
           type="button"

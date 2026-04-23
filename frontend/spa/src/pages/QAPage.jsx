@@ -158,10 +158,6 @@ export function QAPage() {
         <span aria-hidden>📊</span>
         ИИ-контроль (QA)
       </h1>
-      <p className="mb-4 text-sm leading-relaxed text-slate-300">
-        QA-аналитика транскрипций и рекомендации ОКК: реестр звонков, мониторинг чат-ботов, оценка после Celery и разбор
-        диалога по методикам BANT/MEDDIC.
-      </p>
 
       <div className={TAB_ROW} role="tablist" aria-label="Раздел ИИ-контроль">
         <button

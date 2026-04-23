@@ -101,9 +101,6 @@ export function Layout() {
               >
                 Сменить пароль
               </button>
-              <Link to="/" className="shrink-0 text-slate-500 hover:text-slate-300">
-                О платформе
-              </Link>
               <button
                 type="button"
                 className="shrink-0 rounded-lg border border-slate-600 px-3 py-1 text-slate-300 hover:bg-slate-800"

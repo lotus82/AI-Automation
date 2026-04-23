@@ -362,10 +362,6 @@ export function IntegrationsPage() {
           <Plug className="h-8 w-8 shrink-0 text-amber-400/90" strokeWidth={1.75} aria-hidden />
           Интеграции
         </h1>
-        <p className="mt-2 text-sm text-slate-400">
-          Подключения к внешним системам (REST, вебхуки). Список ниже можно позже связать с бэкендом модуля
-          Universal API Integration.
-        </p>
       </div>
 
       <div className="flex flex-wrap gap-1 border-b border-slate-700/80">
@@ -533,10 +529,6 @@ export function IntegrationsPage() {
         <section className="w-full min-w-0 space-y-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-200">Мессенджер MAX</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Токен бота, long polling, голосовые ответы и звонки — значения в{" "}
-              <code className="text-slate-300">system_settings</code> (как и раньше в общих настройках).
-            </p>
           </div>
           {messengerLoadError ? (
             <p className="rounded-lg border border-red-900/40 bg-red-950/20 px-3 py-2 text-sm text-red-200/95">{messengerLoadError}</p>
@@ -554,6 +546,26 @@ export function IntegrationsPage() {
               className="space-y-4 rounded-xl border border-slate-700/80 bg-slate-800/40 p-5 shadow-sm"
               onSubmit={onMaxSubmit}
             >
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-200" htmlFor="int-max-bot-username">
+                  Ник бота MAX (<code className="text-xs">@id…_bot</code>)
+                </label>
+                <p className="text-sm text-slate-400">
+                  Подстрока в тексте (например <code className="text-xs">@id…_bot</code>). В групповых чатах бот
+                  обрабатывает сообщение только при наличии этого упоминания.
+                </p>
+                <input
+                  id="int-max-bot-username"
+                  className="w-full rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  type="text"
+                  autoComplete="off"
+                  placeholder="@id6451417302_bot"
+                  value={maxForm.maxBotUsername}
+                  onChange={(e) => setMaxField("maxBotUsername", e.target.value)}
+                />
+              </div>
+
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-200" htmlFor="int-max-bot-token">
                   Токен бота MAX
@@ -594,17 +606,16 @@ export function IntegrationsPage() {
                     checked={maxForm.maxVoiceReply}
                     onChange={(e) => setMaxField("maxVoiceReply", e.target.checked)}
                   />
-                  Озвучивать ответы в MAX (MAX_VOICE_REPLY_ENABLED)
+                  Озвучивать ответы в MAX
                 </label>
                 <p className="mt-1.5 text-sm text-slate-400">
-                  После текстового ответа отправляется голосовое вложение (SaluteSpeech). Нужен ключ SaluteSpeech в разделе
-                  «Настройки» → STT/TTS.
+                  После текстового ответа отправляется голосовое вложение. Нужен настроенный TTS.
                 </p>
               </div>
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-200" htmlFor="int-max-call-delay">
-                  Задержка ответа на входящий звонок MAX, сек (MAX_CALL_ANSWER_DELAY)
+                  Задержка ответа на входящий звонок MAX, сек
                 </label>
                 <p className="text-sm text-slate-400">
                   Сколько секунд ждать перед отправкой команды «принять вызов» в API MAX.
@@ -623,7 +634,7 @@ export function IntegrationsPage() {
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-200" htmlFor="int-max-greeting">
-                  Приветствие при ответе на звонок MAX (MAX_CALL_GREETING_PHRASE)
+                  Приветствие при ответе на звонок MAX
                 </label>
                 <textarea
                   id="int-max-greeting"
@@ -634,31 +645,6 @@ export function IntegrationsPage() {
                   onChange={(e) => setMaxField("maxCallGreeting", e.target.value)}
                 />
               </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-200" htmlFor="int-max-bot-username">
-                  Упоминание бота в группе MAX (MAX_BOT_USERNAME)
-                </label>
-                <p className="text-sm text-slate-400">
-                  Подстрока в тексте (например <code className="text-xs">@id…_bot</code>). В групповых чатах бот
-                  обрабатывает сообщение только при наличии этого упоминания.
-                </p>
-                <input
-                  id="int-max-bot-username"
-                  className="w-full rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  type="text"
-                  autoComplete="off"
-                  placeholder="@id6451417302_bot"
-                  value={maxForm.maxBotUsername}
-                  onChange={(e) => setMaxField("maxBotUsername", e.target.value)}
-                />
-              </div>
-
-              <p className="rounded-lg border border-slate-700/80 bg-slate-950/40 px-3 py-2 text-sm text-slate-400">
-                Дополнительные промпты для <strong>групповых</strong> чатов MAX (несколько{" "}
-                <code className="text-xs text-slate-300">chat_id</code>) настраиваются в разделе{" "}
-                <strong>«Роли и промпты»</strong> — блок «Групповые чаты MAX».
-              </p>
 
               <button
                 type="submit"
@@ -673,12 +659,7 @@ export function IntegrationsPage() {
       ) : section === "telegram" ? (
         <section className="w-full min-w-0 space-y-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-200">Telegram</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Токен бота из <span className="text-sky-400">@BotFather</span> сохраняется в{" "}
-              <code className="text-slate-300">system_settings</code> (ключ <code className="text-slate-300">TELEGRAM_BOT_TOKEN</code>
-              ).
-            </p>
+            <h2 className="text-lg font-semibold text-slate-200">Мессенджер Telegram</h2>
           </div>
           {messengerLoadError ? (
             <p className="rounded-lg border border-red-900/40 bg-red-950/20 px-3 py-2 text-sm text-red-200/95">{messengerLoadError}</p>

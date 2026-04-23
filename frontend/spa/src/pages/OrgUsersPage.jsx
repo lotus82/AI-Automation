@@ -190,16 +190,6 @@ export function OrgUsersPage() {
     <div className="w-full min-w-0 space-y-8 text-slate-100">
       <div>
         <h1 className="text-2xl font-bold text-white">Пользователи организации</h1>
-        <p className="mt-2 text-sm text-slate-400">
-          Администратор организации создаёт директоров и сотрудников и задаёт права доступа к разделам. Директор может
-          добавлять только сотрудников.
-        </p>
-        {isOrgAdmin ? (
-          <p className="mt-2 text-sm text-slate-500">
-            МИС: у сотрудника или директора нажмите «Назначить врачом», затем при необходимости отметьте раздел «МИС» в
-            правах — иначе пункт меню не появится.
-          </p>
-        ) : null}
       </div>
 
       <section className="rounded-xl border border-slate-700/80 bg-slate-900/40 p-6">

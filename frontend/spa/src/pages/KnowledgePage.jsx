@@ -134,14 +134,6 @@ export function KnowledgePage() {
         <span aria-hidden>📚</span>
         База знаний
       </h1>
-      <p className="mb-6 text-sm leading-relaxed text-slate-300">
-        Загрузите прайс-листы (<strong>.xlsx</strong>) и текстовые документы (
-        <strong>.txt</strong>). Фрагменты индексируются для ответов бота (RAG).
-        Для векторного поиска нужен ключ <strong>OpenAI</strong> в настройках
-        или в{" "}
-        <code className="rounded bg-slate-800 px-1 text-xs">OPENAI_API_KEY</code>
-        .
-      </p>
 
       <section className={panelClass} aria-labelledby="kn-upload-title">
         <h2
@@ -178,7 +170,7 @@ export function KnowledgePage() {
           </div>
           <div>
             <label className={labelClass} htmlFor="knowledge-description">
-              Описание (для всех фрагментов из этой загрузки)
+              Описание
             </label>
             <textarea
               id="knowledge-description"
