@@ -136,13 +136,13 @@ export function DocumentsListPage() {
         onChange={onUploadFile}
       />
 
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-600/20 text-violet-300">
-            <BookOpen className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-          </div>
+      <div className="w-full min-w-0 space-y-6 pb-10 text-slate-100">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-xl font-semibold text-white">Читатель</h1>
+            <h1 className="text-xl font-semibold text-white">
+              <BookOpen className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+              Читатель
+            </h1>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -150,7 +150,7 @@ export function DocumentsListPage() {
             type="button"
             onClick={load}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60"
           >
             <RefreshCcw className="h-3.5 w-3.5" aria-hidden />
             Обновить
@@ -164,7 +164,7 @@ export function DocumentsListPage() {
             Добавить
           </button>
         </div>
-      </header>
+      </div>
 
       {uploadProgress !== null ? (
         <div className="mb-4 rounded-lg border border-slate-600 bg-slate-900/80 p-3">

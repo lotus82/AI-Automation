@@ -92,20 +92,30 @@ export function ShopsPage() {
             <Store className="h-8 w-8 shrink-0 text-amber-400/90" strokeWidth={1.75} aria-hidden />
             Магазины
           </h1>
-
         </div>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            setCreateOpen(true);
-            setMsg("");
-          }}
-          className={`inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${pressablePri}`}
-        >
-          <Plus className="h-4 w-4" strokeWidth={2} aria-hidden />
-          Добавить
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+              type="button"
+              onClick={load}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60"
+            >
+              <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} aria-hidden />
+              Обновить
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setCreateOpen(true);
+              setMsg("");
+            }}
+            className={`inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${pressablePri}`}
+          >
+            <Plus className="h-4 w-4" strokeWidth={2} aria-hidden />
+            Добавить
+          </button>
+        </div>
       </div>
 
       {msg ? (
