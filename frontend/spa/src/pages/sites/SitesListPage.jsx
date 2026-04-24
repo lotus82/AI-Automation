@@ -113,7 +113,7 @@ export function SitesListPage({ misMode = false }) {
             type="button"
             onClick={load}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60"
           >
             <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} aria-hidden />
             Обновить
@@ -121,7 +121,7 @@ export function SitesListPage({ misMode = false }) {
           <button
             type="button"
             onClick={() => setShowCreate(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden />
             Добавить
