@@ -1,5 +1,6 @@
 import { useParams } from "react-router-dom";
 import { SurveyTakeExperience } from "../components/questionnaires/SurveyTakeExperience.jsx";
+import { PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
 
 /** Публичная страница прохождения опроса (Битрикс / MAX): без Layout, только форма. */
 export function PublicSurveyPage() {

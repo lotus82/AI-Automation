@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import api from "../api/client.js";
 import { useAuthStore } from "../store/authStore.js";
+import { PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
 
 export function LoginPage() {
   const navigate = useNavigate();

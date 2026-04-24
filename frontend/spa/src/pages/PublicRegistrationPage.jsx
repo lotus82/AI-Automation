@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
+import { PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
 
 /** Разбивает текст и делает ссылки http(s) кликабельными */
 function LinkifiedText({ text }) {

@@ -8,7 +8,7 @@ import {
   IconQrButton,
 } from "../components/ui/IconActionButtons.jsx";
 import { useAuthStore } from "../store/authStore.js";
-import { PAGE_SHELL, PAGE_TEXT } from "../styles/pageLayout.js";
+import { PAGE_H1, PAGE_SHELL, PAGE_TEXT } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 /** FastAPI detail → строка. */

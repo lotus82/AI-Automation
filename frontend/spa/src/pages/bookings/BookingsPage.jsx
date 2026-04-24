@@ -17,6 +17,7 @@ import {
   BTN_SAVE,
   BTN_SAVE_COMPACT,
   ICON_BTN,
+  PAGE_H1,
   PAGE_SHELL,
   PAGE_TEXT,
   TAB_ROW,

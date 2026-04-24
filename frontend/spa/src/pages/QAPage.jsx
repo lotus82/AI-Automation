@@ -4,7 +4,7 @@ import api from "../api/client.js";
 import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
 import { ChatBotsMonitoring } from "../components/bots/ChatBotsMonitoring.jsx";
 import { CallAnalysisTab } from "../components/trainer/CallAnalysisTab.jsx";
-import { PAGE_INNER, PAGE_TEXT, TAB_ROW, tabBtn } from "../styles/pageLayout.js";
+import { PAGE_H1, PAGE_INNER, PAGE_TEXT, TAB_ROW, tabBtn } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function snippet(text, maxLen) {

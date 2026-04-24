@@ -3,7 +3,7 @@ import { GraduationCap } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import api from "../api/client.js";
 import { TrainerScenariosPanel } from "../components/trainer/TrainerScenariosPanel.jsx";
-import { PAGE_INNER, PAGE_TEXT, TAB_ROW, tabBtn } from "../styles/pageLayout.js";
+import { PAGE_H1, PAGE_INNER, PAGE_TEXT, TAB_ROW, tabBtn } from "../styles/pageLayout.js";
 
 function formatErr(err) {
   const d = err?.response?.data?.detail;

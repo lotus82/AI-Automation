@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { ShoppingCart } from "lucide-react";
 import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
+import { PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
 
 const MESSENGERS = [
   { id: "max", label: "MAX" },

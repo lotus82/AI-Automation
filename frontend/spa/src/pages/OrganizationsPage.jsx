@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import api from "../api/client.js";
 import { useAuthStore } from "../store/authStore.js";
-import { BTN_SAVE_COMPACT, ICON_BTN } from "../styles/pageLayout.js";
+import { BTN_SAVE_COMPACT, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 import {
   IconEditButton,

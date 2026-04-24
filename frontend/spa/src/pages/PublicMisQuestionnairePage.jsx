@@ -1,5 +1,6 @@
 import { useSearchParams } from "react-router-dom";
 import { SurveyTakeExperience } from "../components/questionnaires/SurveyTakeExperience.jsx";
+import { PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
 
 /** Публичное прохождение опросника по ссылке из MAX (JWT в query `t`). */
 export function PublicMisQuestionnairePage() {

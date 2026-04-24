@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import api from "../../api/client.js";
 import { useAuthStore } from "../../store/authStore.js";
-import { BTN_SAVE, ICON_BTN, PAGE_SHELL, PAGE_TEXT } from "../../styles/pageLayout.js";
+import { BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_SHELL, PAGE_TEXT } from "../../styles/pageLayout.js";
 
 function formatApiDetail(d) {
   if (d == null) return "";

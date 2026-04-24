@@ -19,7 +19,7 @@ import { IconCopyButton, IconQrButton } from "../components/ui/IconActionButtons
 import { SK } from "../constants/systemSettingsKeys.js";
 import { useAuthStore } from "../store/authStore.js";
 import { mapFromList } from "../utils/systemSettingsForm.js";
-import { BTN_SAVE, BTN_SAVE_COMPACT, ICON_BTN } from "../styles/pageLayout.js";
+import { BTN_SAVE, BTN_SAVE_COMPACT, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function formatApiDetail(err) {

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
 import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
 import { useStorefrontCart } from "../store/storefrontCartStore.js";
+import { PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
 
 function formatApiDetail(err) {
   const det = err?.response?.data?.detail ?? err?.detail;

@@ -22,6 +22,7 @@ import {
   legacyMisPatientsSlugAllowed,
   misSitePageVisibleInNav,
 } from "../../utils/misMiniAppNav.js";
+import { PAGE_H1, PAGE_TEXT } from "../../styles/pageLayout.js";
 import "./miniappPageContent.css";
 
 /** Нижнее меню МИС по роли (если в конфиге задано отдельно). */

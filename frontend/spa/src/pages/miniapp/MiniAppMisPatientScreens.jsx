@@ -5,6 +5,7 @@ import patientMisClient from "../../api/patientMisClient.js";
 import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
 import { getStoredPatientId } from "../../utils/patientMisAuth.js";
+import { PAGE_H1, PAGE_TEXT } from "../../styles/pageLayout.js";
 
 const KIND_TO_MODE = {
   mis_patient_card: "card",

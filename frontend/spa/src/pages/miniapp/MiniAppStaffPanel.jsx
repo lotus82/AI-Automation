@@ -2,6 +2,7 @@ import { Button, Flex, Spinner, Typography } from "@maxhub/max-ui";
 import axios from "axios";
 import { Save } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PAGE_H1, PAGE_TEXT } from "../../styles/pageLayout.js";
 
 const dayKeyOrder = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 const dayLabels = {

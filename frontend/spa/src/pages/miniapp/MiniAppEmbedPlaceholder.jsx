@@ -1,4 +1,5 @@
 import { Typography } from "@maxhub/max-ui";
+import { PAGE_H1, PAGE_TEXT } from "../../styles/pageLayout.js";
 
 /** Подписи к ключам модулей (согласовано с backend `MINIAPP_EMBED_MODULE_CHOICES`). */
 const LABELS = {

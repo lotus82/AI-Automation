@@ -28,7 +28,7 @@ import api from "../../api/client.js";
 import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
 import { MiniAppEmbedPlaceholder } from "../miniapp/MiniAppEmbedPlaceholder.jsx";
 import { useAuthStore } from "../../store/authStore.js";
-import { BTN_SAVE, ICON_BTN, PAGE_SHELL, PAGE_TEXT, TAB_ROW, tabBtn } from "../../styles/pageLayout.js";
+import { BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_SHELL, PAGE_TEXT, TAB_ROW, tabBtn } from "../../styles/pageLayout.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
 import { siteLogoImgSrc } from "../../utils/siteLogoUrl.js";
 import {

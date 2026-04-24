@@ -1,5 +1,6 @@
 import { Typography } from "@maxhub/max-ui";
 import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
+import { PAGE_H1, PAGE_TEXT } from "../../styles/pageLayout.js";
 
 /**
  * Страница «Карта пациента» для врача в Mini App: вступительный HTML + подсказка.

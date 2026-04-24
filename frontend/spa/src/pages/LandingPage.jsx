@@ -10,6 +10,7 @@ import {
   Sparkles,
   TrendingUp,
 } from "lucide-react";
+import { PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
 
 const features = [
   {

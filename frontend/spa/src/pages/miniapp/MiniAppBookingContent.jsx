@@ -2,6 +2,7 @@ import axios from "axios";
 import { useCallback, useEffect, useState } from "react";
 import { Typography } from "@maxhub/max-ui";
 import { useMiniAppAuthStore } from "../../store/miniAppAuthStore.js";
+import { PAGE_H1, PAGE_TEXT } from "../../styles/pageLayout.js";
 
 function pad2(n) {
   return String(n).padStart(2, "0");

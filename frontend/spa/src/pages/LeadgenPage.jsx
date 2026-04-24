@@ -1,7 +1,7 @@
 import { useCallback, useId, useRef, useState } from "react";
 import { TrendingUp } from "lucide-react";
 import api from "../api/client.js";
-import { PAGE_INNER, PAGE_TEXT } from "../styles/pageLayout.js";
+import { PAGE_H1, PAGE_INNER, PAGE_TEXT } from "../styles/pageLayout.js";
 
 /**
  * ИИ-лидогенератор: кампании и очередь обзвона (контент бывшей страницы «Телефония»).

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileText, GripVertical, Save } from "lucide-react";
 import { IconCopyButton, IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
 import api from "../api/client.js";
-import { BTN_SAVE, BTN_SAVE_COMPACT, ICON_BTN } from "../styles/pageLayout.js";
+import { BTN_SAVE, BTN_SAVE_COMPACT, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 /** Визуальный отклик: нажатие, фокус, плавные переходы */

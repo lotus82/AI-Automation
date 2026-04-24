@@ -3,6 +3,7 @@ import axios from "axios";
 import { useCallback, useEffect, useState } from "react";
 import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
 import { openExternalLinkFromMiniApp } from "../../utils/miniAppOpenExternalLink.js";
+import { PAGE_H1, PAGE_TEXT } from "../../styles/pageLayout.js";
 
 /**
  * Страница сайта с ``page_kind=mis_patients``: список карточек пациентов врача (только при role=doctor).

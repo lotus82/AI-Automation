@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
 import api from "../api/client.js";
-import { BTN_ADD, BTN_SAVE, ICON_BTN } from "../styles/pageLayout.js";
+import { BTN_ADD, BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
 
 function formatApiDetail(err) {
   const det = err?.response?.data?.detail;

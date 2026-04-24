@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { useStorefrontCart } from "../store/storefrontCartStore.js";
+import { PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
 
 const cardCls =
   "flex flex-col overflow-hidden rounded-2xl bg-[var(--store-card)] shadow-lg shadow-black/20 ring-1 ring-[var(--store-border)]";
