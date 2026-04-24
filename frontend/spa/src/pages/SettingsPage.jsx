@@ -199,15 +199,6 @@ export function SettingsPage() {
         </span>
         Настройки системы
       </h1>
-      <p className="mb-3 text-sm leading-relaxed text-slate-300">
-        Параметры LLM и голоса (SaluteSpeech) хранятся в базе данных. Токен Telegram-бота — в{" "}
-        <strong>«Интеграции» → Telegram</strong>; промпты ролей и настройки MAX — в <strong>«Роли»</strong> и{" "}
-        <strong>«Интеграции» → MAX</strong>.
-      </p>
-      <p className="mb-4 rounded-lg border border-amber-900/50 bg-amber-950/30 px-3 py-2 text-sm text-amber-100/90">
-        В продакшене ключи в БД следует шифровать at rest (например,{" "}
-        <code className="rounded bg-slate-900 px-1 text-xs">cryptography.fernet</code>).
-      </p>
 
       <p
         className={`mb-4 min-h-[1.25rem] text-sm ${statusError ? "text-red-400" : "text-emerald-400"}`}
@@ -249,18 +240,15 @@ export function SettingsPage() {
                   value={form.llmProvider}
                   onChange={(e) => setField("llmProvider", e.target.value)}
                 >
-                  <option value="deepseek">DeepSeek (по умолчанию)</option>
+                  <option value="deepseek">DeepSeek</option>
                   <option value="openai">OpenAI</option>
                 </select>
               </div>
 
               <div className="mb-4">
                 <label className={labelClass} htmlFor="llm-temperature">
-                  Температура LLM (LLM_TEMPERATURE)
+                  <span aria-hidden>🌡</span> Температура LLM
                 </label>
-                <p className={`${helpClass} mb-2`}>
-                  Низкая температура (0.1–0.3) — для точных продаж, высокая (0.7–1.0) — для креатива.
-                </p>
                 <div className="flex flex-wrap items-center gap-3">
                   <input
                     type="range"
@@ -323,11 +311,10 @@ export function SettingsPage() {
 
               <div className="mb-4">
                 <label className={labelClass} htmlFor="max-context-limit">
-                  Лимит сообщений в контексте LLM (MAX_CONTEXT_LIMIT)
+                  Лимит сообщений в контексте LLM
                 </label>
                 <p className={helpClass}>
-                  Сколько последних реплик (user/assistant) подмешивать в запрос к модели; действует для MAX, веб-чата и
-                  голоса.
+                  Сколько последних реплик (user/assistant) подмешивать в запрос к модели
                 </p>
                 <input
                   className={inputClass}
@@ -350,12 +337,8 @@ export function SettingsPage() {
                     checked={form.enableWebSearch}
                     onChange={(e) => setField("enableWebSearch", e.target.checked)}
                   />
-                  Разрешить веб-поиск для консультанта (ENABLE_WEB_SEARCH)
+                  Разрешить веб-поиск
                 </label>
-                <p className={`${helpClass} mt-1.5`}>
-                  Модель может вызвать инструмент <strong>search_web</strong> (DuckDuckGo). Отключите, чтобы сэкономить
-                  токены и время ответа.
-                </p>
               </div>
             </section>
           ) : null}
@@ -365,15 +348,10 @@ export function SettingsPage() {
               <h2 id="settings-stt-title" className={sectionTitleClass}>
                 <span aria-hidden>🎤</span> STT (SaluteSpeech)
               </h2>
-              <p className="mb-4 text-sm text-slate-400">
-                При <code className="text-xs">VOICE_STT_PROVIDER=salutespeech</code> в{" "}
-                <code className="text-xs">.env</code> ключ можно задать здесь или через{" "}
-                <code className="text-xs">SALUTESPEECH_AUTH_KEY</code> в окружении контейнера.
-              </p>
-
+              
               <div className="mb-4">
                 <label className={labelClass} htmlFor="salutespeech-key">
-                  Ключ SaluteSpeech (Authorization Key из Studio)
+                  Ключ SaluteSpeech
                 </label>
                 <p className={helpClass}>{form.hints.salutespeech}</p>
                 <input
@@ -390,7 +368,7 @@ export function SettingsPage() {
 
               <div className="mb-0">
                 <label className={labelClass} htmlFor="salutespeech-scope">
-                  OAuth scope (SALUTESPEECH_SCOPE)
+                  OAuth scope
                 </label>
                 <input
                   className={inputClass}
@@ -410,14 +388,10 @@ export function SettingsPage() {
               <h2 id="settings-tts-title" className={sectionTitleClass}>
                 <span aria-hidden>🔊</span> TTS (SaluteSpeech)
               </h2>
-              <p className="mb-4 text-sm text-slate-400">
-                При <code className="text-xs">VOICE_TTS_PROVIDER=salutespeech</code> в <code className="text-xs">.env</code>{" "}
-                используется голос ниже.
-              </p>
-
+              
               <div className="mb-0">
                 <label className={labelClass} htmlFor="salutespeech-voice">
-                  Голос TTS (SALUTESPEECH_VOICE)
+                  Голос TTS
                 </label>
                 <input
                   className={inputClass}

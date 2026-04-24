@@ -168,9 +168,7 @@ export function ApplicationsPage() {
         </div>
         <div>
           <h1 className="text-xl font-semibold text-white">Приложения</h1>
-          <p className="text-sm text-slate-400">
-            Ссылка на Mini App мессенджера MAX и список зарегистрированных пользователей.
-          </p>
+          
         </div>
       </header>
 

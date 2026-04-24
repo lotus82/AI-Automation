@@ -262,13 +262,10 @@ export function BookingsPage() {
       {user?.organization_id ? (
         <div className="mb-6 max-w-2xl rounded-lg border border-slate-600 bg-slate-900/50 p-4">
           <h2 className="mb-1 text-sm font-medium text-slate-200">Mini App (MAX): ваш chat_id</h2>
-          <p className="mb-3 text-xs text-slate-400">
-            Укажите тот же идентификатор чата, что у Web App в мессенджере — тогда в Mini App появится раздел «Управление»
-            (ваши записи и расписание). Значение должно совпадать с chat_id из авторизации Mini App.
-          </p>
+          
           <div className="flex flex-wrap items-end gap-2">
             <label className="min-w-[200px] flex-1">
-              <span className="mb-1 block text-xs text-slate-500">MAX chat_id</span>
+              
               <input
                 type="text"
                 value={miniChatDraft}

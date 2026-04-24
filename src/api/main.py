@@ -52,6 +52,7 @@ from src.infrastructure.max_bot_identity import (
     sync_all_max_bot_user_ids_from_stored_tokens,
 )
 from src.infrastructure.portal_bootstrap import ensure_portal_bootstrap
+from src.api.openapi_config import API_DESCRIPTION, build_openapi_schema
 
 logger = logging.getLogger(__name__)
 
@@ -169,11 +170,16 @@ def create_app() -> FastAPI:
     """Фабрика приложения (удобно для тестов и разных конфигураций)."""
     settings = get_settings()
     application = FastAPI(
-        title="Sales AI Agent API",
+        title="Lotus / Sales AI - REST API",
         version="0.13.0",
+        description=API_DESCRIPTION,
         lifespan=lifespan,
         debug=settings.debug,
+        docs_url="/docs",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
     )
+    application.openapi = lambda: build_openapi_schema(application)
     # В т.ч. симулятор вебхука MAX с панели bots.html: POST /api/max/webhook с того же origin или другого порта.
     application.add_middleware(PortalAuthMiddleware)
     application.add_middleware(

@@ -143,9 +143,6 @@ export function DocumentsListPage() {
           </div>
           <div>
             <h1 className="text-xl font-semibold text-white">Читатель</h1>
-            <p className="text-sm text-slate-400">
-              Загрузка больших текстов (.txt), разбор на книги, главы и стихи для Mini App.
-            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">

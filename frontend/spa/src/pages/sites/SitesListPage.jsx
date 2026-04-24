@@ -104,12 +104,8 @@ export function SitesListPage({ misMode = false }) {
             <Globe className="h-5 w-5" strokeWidth={1.75} aria-hidden />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-white">{misMode ? "МИС — конструктор" : "Сайты"}</h1>
-            <p className="text-sm text-slate-400">
-              {misMode
-                ? "Тот же конструктор, что и «Сайты»: страницы, меню, модули; роли врач/пациент в Mini App по chat_id."
-                : "Контент для клиентского Mini App. Многостраничные разделы с общими настройками."}
-            </p>
+            <h1 className="text-xl font-semibold text-white">{misMode ? "МИС" : "Сайты"}</h1>
+
           </div>
         </div>
         <div className="flex items-center gap-2">
