@@ -30,6 +30,15 @@ function isIntegrationFernetKeyError(message) {
   return typeof message === "string" && message.includes("INTEGRATION_FERNET_KEY");
 }
 
+/** Подсистемы панели: в таблице вместе с API-интеграциями; якоря = id секций ниже. */
+const BUILTIN_INTEGRATION_ROWS = [
+  { key: "sys-chats", name: "Чаты с агентом", anchor: "chats" },
+  { key: "sys-max", name: "Мессенджер MAX", anchor: "max" },
+  { key: "sys-telegram", name: "Мессенджер Telegram", anchor: "telegram" },
+  { key: "sys-vk", name: "VK", anchor: "vk" },
+  { key: "sys-telephony", name: "Телефония", anchor: "telephony" },
+];
+
 function formatApiDetail(err) {
   const body = err?.response?.data;
   const status = err?.response?.status;
@@ -245,6 +254,21 @@ export function IntegrationsPage() {
   useEffect(() => {
     loadList();
   }, [loadList]);
+
+  const scrollToSection = useCallback(
+    (anchor) => {
+      const id = String(anchor || "").replace(/^#/, "");
+      if (!id) return;
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      try {
+        const path = window.location.pathname + (window.location.search || "");
+        window.history.replaceState(null, "", `${path}#${id}`);
+      } catch {
+        /* ignore */
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const hash = location.hash?.replace(/^#/, "");
@@ -489,31 +513,59 @@ export function IntegrationsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
+              {BUILTIN_INTEGRATION_ROWS.map((row) => (
+                <tr
+                  key={row.key}
+                  className="border-b border-slate-800/80 bg-slate-900/20 hover:bg-slate-800/30"
+                >
+                  <td className="px-4 py-3 font-medium text-slate-200">{row.name}</td>
+                  <td className="px-4 py-3 text-right">
+                    <IconEditButton
+                      title="Перейти к настройкам"
+                      aria-label={`Перейти к настройкам: ${row.name}`}
+                      onClick={() => scrollToSection(row.anchor)}
+                    />
+                  </td>
+                </tr>
+              ))}
               {listLoading ? (
                 <tr>
-                  <td colSpan={2} className="px-4 py-8 text-center text-slate-500">
-                    Загрузка…
+                  <td colSpan={2} className="px-4 py-4 text-center text-slate-500">
+                    Загрузка API-интеграций…
+                  </td>
+                </tr>
+              ) : listErr ? (
+                <tr>
+                  <td colSpan={2} className="px-4 py-3 text-center text-sm text-amber-200/90">
+                    Список API-интеграций с сервера не загружен (см. сообщение выше).
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={2} className="px-4 py-8 text-center text-slate-500">
-                    Нет интеграций. Нажмите «Добавить».
+                  <td colSpan={2} className="px-4 py-4 text-center text-slate-500">
+                    В реестре API пока нет интеграций — нажмите «Добавить».
                   </td>
                 </tr>
               ) : (
-                rows.map((r) => (
-                  <tr key={r.id} className="border-b border-slate-800/80 hover:bg-slate-800/30">
-                    <td className="px-4 py-3 font-medium text-slate-200">{r.name}</td>
-                    <td className="px-4 py-3 text-right">
-                      <IconEditButton
-                        title="Редактировать"
-                        aria-label="Редактировать"
-                        onClick={() => openEdit(r.id)}
-                      />
+                <>
+                  <tr className="border-b border-slate-800/60 bg-slate-900/50">
+                    <td colSpan={2} className="px-4 py-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                      API-интеграции
                     </td>
                   </tr>
-                ))
+                  {rows.map((r) => (
+                    <tr key={r.id} className="border-b border-slate-800/80 hover:bg-slate-800/30">
+                      <td className="px-4 py-3 font-medium text-slate-200">{r.name}</td>
+                      <td className="px-4 py-3 text-right">
+                        <IconEditButton
+                          title="Редактировать"
+                          aria-label="Редактировать"
+                          onClick={() => openEdit(r.id)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </>
               )}
             </tbody>
           </table>
