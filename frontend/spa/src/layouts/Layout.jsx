@@ -97,9 +97,9 @@ export function Layout() {
               </button>
               <div className="min-w-0 md:hidden">
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Lotus AI</div>
-                <h1 className="truncate text-sm font-medium text-slate-300">Корпоративная панель</h1>
+                <h1 className="truncate text-sm font-medium text-slate-300">Панель управления</h1>
               </div>
-              <h1 className="hidden text-sm font-medium text-slate-400 md:block">Корпоративная панель</h1>
+              <h1 className="hidden text-sm font-medium text-slate-400 md:block">Панель управления</h1>
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm sm:justify-end">
               <span className="max-w-full truncate text-slate-500">

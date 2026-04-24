@@ -104,7 +104,7 @@ export function ShopsPage() {
           className={`inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${pressablePri}`}
         >
           <Plus className="h-4 w-4" strokeWidth={2} aria-hidden />
-          Создать магазин
+          Добавить
         </button>
       </div>
 
@@ -132,7 +132,7 @@ export function ShopsPage() {
             ) : shops.length === 0 ? (
               <tr>
                 <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
-                  Магазинов пока нет. Нажмите «Создать магазин».
+                  Магазинов пока нет. Нажмите «Добавить».
                 </td>
               </tr>
             ) : (
