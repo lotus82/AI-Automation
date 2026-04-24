@@ -1,9 +1,9 @@
-import { Save } from "lucide-react";
+import { Building2, Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import api from "../api/client.js";
 import { useAuthStore } from "../store/authStore.js";
-import { BTN_SAVE_COMPACT, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
+import { BTN_SAVE_COMPACT, ICON_BTN, PAGE_H1, PAGE_HEADER, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 import {
   IconEditButton,
@@ -147,7 +147,10 @@ export function OrganizationsPage() {
   return (
     <div className="w-full min-w-0 space-y-8 text-slate-100">
       <div>
-        <h1 className="text-2xl font-bold text-white">Организации</h1>
+        <header className={PAGE_HEADER}>
+          <Building2 className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+          <h1 className={PAGE_H1}>Организации</h1>
+        </header>
         <p className="mt-2 text-sm text-slate-400">
           Создайте организацию и учётную запись <strong className="text-slate-300">администратора организации </strong>
           (логин и пароль для входа). Свободной регистрации нет.

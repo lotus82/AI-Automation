@@ -1,8 +1,9 @@
+import { LogIn } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import api from "../api/client.js";
 import { useAuthStore } from "../store/authStore.js";
-import { PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
+import { PAGE_H1, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -53,7 +54,10 @@ export function LoginPage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 px-4 py-12">
       <div className="w-full max-w-md rounded-2xl border border-slate-700/80 bg-slate-900/60 p-8 shadow-xl backdrop-blur-sm">
-        <h1 className="text-center text-2xl font-bold text-white">Вход в панель</h1>
+        <div className="flex flex-col items-center gap-2">
+          <LogIn className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+          <h1 className={`text-center ${PAGE_H1}`}>Вход в панель</h1>
+        </div>
         <p className="mt-2 text-center text-sm text-slate-400">Lotus AI — корпоративный доступ</p>
 
         <form className="mt-8 space-y-4" onSubmit={onSubmit}>

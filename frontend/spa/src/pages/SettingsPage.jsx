@@ -1,4 +1,4 @@
-import { Save } from "lucide-react";
+import { Save, Settings } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import api from "../api/client.js";
 import { SK } from "../constants/systemSettingsKeys.js";
@@ -8,7 +8,7 @@ import {
   mapFromList,
   parseTruthy,
 } from "../utils/systemSettingsForm.js";
-import { BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
+import { BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_HEADER, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
 
 function DeepSeekGlyph() {
   return (
@@ -195,12 +195,10 @@ export function SettingsPage() {
 
   return (
     <div className="w-full min-w-0 text-slate-100">
-      <h1 className="mb-2 flex items-center gap-2 text-2xl font-bold text-white">
-        <span className="text-slate-300" aria-hidden>
-          ⚙
-        </span>
-        Настройки системы
-      </h1>
+      <header className={PAGE_HEADER}>
+        <Settings className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+        <h1 className={PAGE_H1}>Настройки системы</h1>
+      </header>
 
       <p
         className={`mb-4 min-h-[1.25rem] text-sm ${statusError ? "text-red-400" : "text-emerald-400"}`}

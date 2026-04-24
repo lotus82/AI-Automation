@@ -1,10 +1,19 @@
-import { Plus, Save } from "lucide-react";
+import { MessageCircle, Plus, Save, Smartphone, UserCog, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import api from "../api/client.js";
 import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
 import { SK } from "../constants/systemSettingsKeys.js";
 import { mapFromList } from "../utils/systemSettingsForm.js";
-import { BTN_ADD, BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
+import {
+  BTN_ADD,
+  BTN_SAVE,
+  ICON_BTN,
+  PAGE_HEADER,
+  PAGE_H1,
+  PAGE_SECTION_ICON,
+  PAGE_TEXT,
+  PAGE_TITLE_ICON,
+} from "../styles/pageLayout.js";
 
 function newRowId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -294,12 +303,10 @@ export function RolesPage() {
 
   return (
     <div className="w-full min-w-0 text-slate-100">
-      <h1 className="mb-2 flex items-center gap-2 text-2xl font-bold text-white">
-        <span className="text-slate-300" aria-hidden>
-          🎭
-        </span>
-        Роли
-      </h1>
+      <header className={PAGE_HEADER}>
+        <UserCog className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+        <h1 className={PAGE_H1}>Роли</h1>
+      </header>
 
       <p
         className={`mb-4 min-h-[1.25rem] text-sm ${statusError ? "text-red-400" : "text-emerald-400"}`}
@@ -314,7 +321,8 @@ export function RolesPage() {
         <form className="space-y-2" onSubmit={onSubmit}>
           <section className={sectionClass} aria-labelledby="roles-table-title">
             <h2 id="roles-table-title" className={sectionTitleClass}>
-              <span aria-hidden>👤</span> Системные роли
+              <Users className={PAGE_SECTION_ICON} strokeWidth={1.5} aria-hidden />
+              Системные роли
             </h2>
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
               <div>
@@ -409,7 +417,8 @@ export function RolesPage() {
 
           <section className={sectionClass} aria-labelledby="max-groups-title">
             <h2 id="max-groups-title" className={sectionTitleClass}>
-              <span aria-hidden>💬</span> Групповые чаты MAX
+              <MessageCircle className={PAGE_SECTION_ICON} strokeWidth={1.5} aria-hidden />
+              Групповые чаты MAX
             </h2>
             <div className="overflow-x-auto rounded-lg border border-slate-700/80">
               <table className="w-full min-w-[880px] border-collapse text-left text-sm">
@@ -502,7 +511,8 @@ export function RolesPage() {
 
           <section className={sectionClass} aria-labelledby="messenger-supplement-title">
             <h2 id="messenger-supplement-title" className={sectionTitleClass}>
-              <span aria-hidden>📱</span> Правила формата ответа
+              <Smartphone className={PAGE_SECTION_ICON} strokeWidth={1.5} aria-hidden />
+              Правила формата ответа
             </h2>
             <div className="mb-0">
 

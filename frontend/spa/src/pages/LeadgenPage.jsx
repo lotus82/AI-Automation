@@ -1,7 +1,7 @@
 import { useCallback, useId, useRef, useState } from "react";
 import { TrendingUp } from "lucide-react";
 import api from "../api/client.js";
-import { PAGE_H1, PAGE_INNER, PAGE_TEXT } from "../styles/pageLayout.js";
+import { PAGE_H1, PAGE_HEADER, PAGE_INNER, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
 
 /**
  * ИИ-лидогенератор: кампании и очередь обзвона (контент бывшей страницы «Телефония»).
@@ -84,13 +84,10 @@ export function LeadgenPage() {
 
   return (
     <div className={`${PAGE_INNER} space-y-8 ${PAGE_TEXT}`}>
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold text-white">
-          <TrendingUp className="h-8 w-8 shrink-0 text-emerald-400/90" strokeWidth={1.75} aria-hidden />
-          ИИ-лидогенератор
-        </h1>
-
-      </div>
+      <header className={PAGE_HEADER}>
+        <TrendingUp className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+        <h1 className={PAGE_H1}>ИИ-лидогенератор</h1>
+      </header>
 
       <div>
         <h2 className="text-xl font-semibold text-white">Телефония и автообзвон</h2>

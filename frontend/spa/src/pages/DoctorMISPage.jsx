@@ -19,7 +19,7 @@ import { IconCopyButton, IconQrButton } from "../components/ui/IconActionButtons
 import { SK } from "../constants/systemSettingsKeys.js";
 import { useAuthStore } from "../store/authStore.js";
 import { mapFromList } from "../utils/systemSettingsForm.js";
-import { BTN_SAVE, BTN_SAVE_COMPACT, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
+import { BTN_SAVE, BTN_SAVE_COMPACT, ICON_BTN, PAGE_H1, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function formatApiDetail(err) {
@@ -588,7 +588,7 @@ export function DoctorMISPage() {
           <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
             <div>
               <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
-                <Stethoscope className="h-8 w-8 text-teal-600" strokeWidth={1.5} aria-hidden />
+                <Stethoscope className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
                 {isMisAdmin ? "МИС — пациенты организации" : "МИС — мои пациенты"}
               </h1>
               <p className="mt-1 text-sm text-slate-600">

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileText, GripVertical, Save } from "lucide-react";
 import { IconCopyButton, IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
 import api from "../api/client.js";
-import { BTN_SAVE, BTN_SAVE_COMPACT, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
+import { BTN_SAVE, BTN_SAVE_COMPACT, ICON_BTN, PAGE_H1, PAGE_HEADER, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 /** Визуальный отклик: нажатие, фокус, плавные переходы */
@@ -475,13 +475,10 @@ export function FormsPage() {
 
   return (
     <div className="w-full min-w-0 space-y-6 text-slate-100">
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-white">
-          <FileText className="h-8 w-8 shrink-0 text-sky-400/90" strokeWidth={1.75} aria-hidden />
-          Мероприятия
-        </h1>
-
-      </div>
+      <header className={PAGE_HEADER}>
+        <FileText className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+        <h1 className={PAGE_H1}>Мероприятия</h1>
+      </header>
 
       {err ? (
         <p className="rounded-lg border border-red-900/40 bg-red-950/20 px-3 py-2 text-sm text-red-200">{err}</p>

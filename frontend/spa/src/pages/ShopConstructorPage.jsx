@@ -12,10 +12,11 @@ import {
   ScrollText,
   Settings2,
   ShoppingCart,
+  Store,
 } from "lucide-react";
 import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
 import api from "../api/client.js";
-import { BTN_ADD, BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
+import { BTN_ADD, BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
 
 function formatApiDetail(err) {
   const det = err?.response?.data?.detail;
@@ -434,8 +435,9 @@ export function ShopConstructorPage() {
           <ArrowLeft className="h-4 w-4" aria-hidden />
           К списку
         </Link>
+        <Store className={`${PAGE_TITLE_ICON} shrink-0`} strokeWidth={1.5} aria-hidden />
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-bold text-white md:text-2xl">
+          <h1 className={PAGE_H1}>
             Конструктор: {detail?.name ?? <span className="text-slate-500">загрузка…</span>}
           </h1>
           {publicUrl ? (

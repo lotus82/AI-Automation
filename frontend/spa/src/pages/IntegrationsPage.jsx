@@ -8,7 +8,15 @@ import { IntegrationForm } from "../components/integrations/IntegrationForm.jsx"
 import { VoiceTelephonyTestPanel } from "../components/telephony/VoiceTelephonyTestPanel.jsx";
 import { SK } from "../constants/systemSettingsKeys.js";
 import { hintForSecretRow, mapFromList, parseTruthy } from "../utils/systemSettingsForm.js";
-import { BTN_SAVE, BTN_SAVE_COMPACT, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
+import {
+  BTN_SAVE,
+  BTN_SAVE_COMPACT,
+  ICON_BTN,
+  PAGE_H1,
+  PAGE_HEADER,
+  PAGE_TEXT,
+  PAGE_TITLE_ICON,
+} from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 const SYSTEM_OPTIONS = [{ value: "bitrix24", label: "Битрикс24" }];
@@ -358,12 +366,10 @@ export function IntegrationsPage() {
 
   return (
     <div className="w-full min-w-0 space-y-8 text-slate-100">
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold text-white">
-          <Plug className="h-8 w-8 shrink-0 text-amber-400/90" strokeWidth={1.75} aria-hidden />
-          Интеграции
-        </h1>
-      </div>
+      <header className={PAGE_HEADER}>
+        <Plug className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+        <h1 className={PAGE_H1}>Интеграции</h1>
+      </header>
 
       <div className="flex flex-wrap gap-1 border-b border-slate-700/80">
         <button type="button" className={tabBtn(section === "registry")} onClick={() => setSection("registry")}>

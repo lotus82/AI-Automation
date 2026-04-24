@@ -1,10 +1,11 @@
+import { BarChart3 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "../api/client.js";
 import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
 import { ChatBotsMonitoring } from "../components/bots/ChatBotsMonitoring.jsx";
 import { CallAnalysisTab } from "../components/trainer/CallAnalysisTab.jsx";
-import { PAGE_H1, PAGE_INNER, PAGE_TEXT, TAB_ROW, tabBtn } from "../styles/pageLayout.js";
+import { PAGE_H1, PAGE_HEADER, PAGE_INNER, PAGE_TEXT, PAGE_TITLE_ICON, TAB_ROW, tabBtn } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function snippet(text, maxLen) {
@@ -154,10 +155,10 @@ export function QAPage() {
 
   return (
     <div className={`${PAGE_INNER} ${PAGE_TEXT}`}>
-      <h1 className="mb-2 flex items-center gap-2 text-2xl font-bold text-white">
-        <span aria-hidden>📊</span>
-        ИИ-контроль (QA)
-      </h1>
+      <header className={PAGE_HEADER}>
+        <BarChart3 className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+        <h1 className={PAGE_H1}>ИИ-контроль (QA)</h1>
+      </header>
 
       <div className={TAB_ROW} role="tablist" aria-label="Раздел ИИ-контроль">
         <button

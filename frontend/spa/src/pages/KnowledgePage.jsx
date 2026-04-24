@@ -1,6 +1,7 @@
+import { BookOpen, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../api/client.js";
-import { PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
+import { PAGE_H1, PAGE_HEADER, PAGE_SECTION_ICON, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
 import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
@@ -131,17 +132,18 @@ export function KnowledgePage() {
 
   return (
     <div className="w-full min-w-0 text-slate-100">
-      <h1 className="mb-2 flex items-center gap-2 text-2xl font-bold text-white">
-        <span aria-hidden>📚</span>
-        База знаний
-      </h1>
+      <header className={PAGE_HEADER}>
+        <BookOpen className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+        <h1 className={PAGE_H1}>База знаний</h1>
+      </header>
 
       <section className={panelClass} aria-labelledby="kn-upload-title">
         <h2
           id="kn-upload-title"
-          className="mb-4 text-lg font-semibold text-slate-100"
+          className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-100"
         >
-          ⬆ Загрузка файлов
+          <Upload className={PAGE_SECTION_ICON} strokeWidth={1.5} aria-hidden />
+          Загрузка файлов
         </h2>
         <form className="space-y-4" onSubmit={onUploadSubmit}>
           <div>

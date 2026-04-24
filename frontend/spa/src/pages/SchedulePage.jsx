@@ -1,8 +1,15 @@
-import { Save } from "lucide-react";
+import { Calendar as CalendarIcon, Save } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../api/client.js";
 import { IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
-import { BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
+import {
+  BTN_SAVE,
+  ICON_BTN,
+  PAGE_HEADER_BETWEEN,
+  PAGE_H1,
+  PAGE_TEXT,
+  PAGE_TITLE_ICON,
+} from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function formatDetail(detail) {
@@ -299,11 +306,9 @@ export function SchedulePage() {
 
   return (
     <div className={`w-full min-w-0 space-y-6 ${PAGE_TEXT}`}>
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <header className={PAGE_HEADER_BETWEEN}>
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300">
-            <span aria-hidden>📅</span>
-          </div>
+          <CalendarIcon className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
           <h1 className={PAGE_H1}>Расписания</h1>
         </div>
       </header>

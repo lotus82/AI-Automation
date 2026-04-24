@@ -18,8 +18,10 @@ import {
   BTN_SAVE_COMPACT,
   ICON_BTN,
   PAGE_H1,
+  PAGE_HEADER,
   PAGE_SHELL,
   PAGE_TEXT,
+  PAGE_TITLE_ICON,
   TAB_ROW,
   tabBtn,
 } from "../../styles/pageLayout.js";
@@ -263,9 +265,9 @@ export function BookingsPage() {
 
   return (
     <div className={PAGE_SHELL}>
-      <header className="mb-6 flex flex-wrap items-center gap-3">
-        <CalendarDays className="h-8 w-8 text-emerald-400" strokeWidth={1.5} aria-hidden />
-        <h1 className="text-2xl font-semibold text-white">Записи</h1>
+      <header className={PAGE_HEADER}>
+        <CalendarDays className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+        <h1 className={PAGE_H1}>Записи</h1>
       </header>
 
       {user?.organization_id ? (

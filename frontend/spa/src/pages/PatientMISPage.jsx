@@ -9,6 +9,8 @@ import {
   Loader2,
   LogOut,
   Save,
+  UserCircle,
+  UserPlus,
 } from "lucide-react";
 import patientMisClient from "../api/patientMisClient.js";
 import { PatientAuthGuard } from "../components/mis/PatientAuthGuard.jsx";
@@ -17,7 +19,7 @@ import {
   getStoredPatientId,
   setPatientSession,
 } from "../utils/patientMisAuth.js";
-import { BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
+import { BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 import { normalizePublicSectionOrder } from "../utils/patientPublicCardLayout.js";
 
@@ -92,7 +94,10 @@ function PatientMaxRegistrationForm({ draft, onSuccess }) {
 
   return (
     <div className={card}>
-      <h1 className="text-lg font-semibold text-slate-900">Регистрация</h1>
+      <div className="flex items-center gap-2">
+        <UserPlus className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+        <h1 className="text-lg font-semibold text-slate-900">Регистрация</h1>
+      </div>
       <p className="mt-1 text-sm text-slate-600">
         Заполните данные для привязки аккаунта MAX к карте у выбранного врача.
       </p>
@@ -359,7 +364,10 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
       }
     >
       {headerBar}
-      <h1 className="text-lg font-semibold text-slate-900">Мои данные</h1>
+      <div className="flex items-center gap-2">
+        <UserCircle className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+        <h1 className="text-lg font-semibold text-slate-900">Мои данные</h1>
+      </div>
         {maxSession ? (
           <>
             <p className="mt-1 text-xs text-slate-500">

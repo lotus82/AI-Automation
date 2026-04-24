@@ -1,9 +1,17 @@
-import { ArrowLeft, ChevronDown, ChevronRight, Save } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, FileText, Save } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import api from "../../api/client.js";
 import { useAuthStore } from "../../store/authStore.js";
-import { BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_SHELL, PAGE_TEXT } from "../../styles/pageLayout.js";
+import {
+  BTN_SAVE,
+  ICON_BTN,
+  PAGE_H1,
+  PAGE_HEADER_BETWEEN,
+  PAGE_SHELL,
+  PAGE_TEXT,
+  PAGE_TITLE_ICON,
+} from "../../styles/pageLayout.js";
 
 function formatApiDetail(d) {
   if (d == null) return "";
@@ -197,8 +205,8 @@ export function DocumentEditorPage() {
 
   return (
     <div className={`${PAGE_SHELL} ${PAGE_TEXT} px-4 py-6 sm:px-6`}>
-      <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
+      <header className={PAGE_HEADER_BETWEEN}>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
           <Link
             to="/documents"
             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700"
@@ -206,10 +214,9 @@ export function DocumentEditorPage() {
             <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
             К списку
           </Link>
+          <FileText className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
           <div className="min-w-0">
-            <h1 className="truncate text-xl font-semibold text-white">
-              {loading ? "Загрузка…" : docMeta?.title || "Документ"}
-            </h1>
+            <h1 className={`truncate ${PAGE_H1}`}>{loading ? "Загрузка…" : docMeta?.title || "Документ"}</h1>
             <p className="text-sm text-slate-400">Дерево узлов и правка текста</p>
           </div>
         </div>

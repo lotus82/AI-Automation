@@ -10,7 +10,15 @@ import { createPortal } from "react-dom";
 import api from "../api/client.js";
 import { useAuthStore } from "../store/authStore.js";
 import { SurveyTakeExperience } from "../components/questionnaires/SurveyTakeExperience.jsx";
-import { BTN_ADD, BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
+import {
+  BTN_ADD,
+  BTN_SAVE,
+  ICON_BTN,
+  PAGE_HEADER_BETWEEN,
+  PAGE_H1,
+  PAGE_TEXT,
+  PAGE_TITLE_ICON,
+} from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function formatApiDetail(err) {
@@ -314,11 +322,9 @@ export function QuestionnairesPage() {
 
   return (
     <div className={`w-full min-w-0 space-y-6 ${PAGE_TEXT}`}>
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <header className={PAGE_HEADER_BETWEEN}>
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600/20 text-sky-300">
-            <ClipboardList className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-          </div>
+          <ClipboardList className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
           <h1 className={PAGE_H1}>Опросники</h1>
         </div>
         <div className="flex items-center gap-2">

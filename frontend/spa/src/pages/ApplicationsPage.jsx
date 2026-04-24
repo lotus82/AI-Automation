@@ -8,7 +8,7 @@ import {
   IconQrButton,
 } from "../components/ui/IconActionButtons.jsx";
 import { useAuthStore } from "../store/authStore.js";
-import { PAGE_H1, PAGE_SHELL, PAGE_TEXT } from "../styles/pageLayout.js";
+import { PAGE_H1, PAGE_HEADER, PAGE_SHELL, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 /** FastAPI detail → строка. */
@@ -162,14 +162,9 @@ export function ApplicationsPage() {
 
   return (
     <div className={`w-full min-w-0 space-y-6 ${PAGE_TEXT}`}>
-      <header className="mb-6 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600/20 text-emerald-300">
-          <LayoutGrid className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-        </div>
-        <div>
-          <h1 className="text-xl font-semibold text-white">Приложения</h1>
-          
-        </div>
+      <header className={PAGE_HEADER}>
+        <LayoutGrid className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+        <h1 className={PAGE_H1}>Приложения</h1>
       </header>
 
       <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">

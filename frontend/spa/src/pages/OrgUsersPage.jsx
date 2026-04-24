@@ -1,9 +1,9 @@
-import { Save } from "lucide-react";
+import { Save, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import api from "../api/client.js";
 import { useAuthStore } from "../store/authStore.js";
-import { BTN_SAVE_COMPACT, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
+import { BTN_SAVE_COMPACT, ICON_BTN, PAGE_H1, PAGE_HEADER, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
 
 /** Текст ошибки FastAPI (detail: string | { msg }[]). */
 function formatApiDetail(d) {
@@ -190,9 +190,10 @@ export function OrgUsersPage() {
 
   return (
     <div className="w-full min-w-0 space-y-8 text-slate-100">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Пользователи организации</h1>
-      </div>
+      <header className={PAGE_HEADER}>
+        <Users className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+        <h1 className={PAGE_H1}>Пользователи организации</h1>
+      </header>
 
       <section className="rounded-xl border border-slate-700/80 bg-slate-900/40 p-6">
         <h2 className="text-lg font-semibold text-slate-200">Новый пользователь</h2>

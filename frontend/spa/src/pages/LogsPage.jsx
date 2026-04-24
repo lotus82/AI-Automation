@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Save, ScrollText } from "lucide-react";
 import api from "../api/client.js";
-import { BTN_SAVE_COMPACT, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
+import { BTN_SAVE_COMPACT, ICON_BTN, PAGE_H1, PAGE_HEADER, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
 
 const TOKEN_STORAGE = "sales_ai_admin_logs_token";
 
@@ -106,13 +106,10 @@ export function LogsPage() {
 
   return (
     <div className="w-full min-w-0 space-y-6 text-slate-100">
-      <div>
-        <h1 className="flex items-center gap-2 text-xl font-semibold text-white">
-          <ScrollText className="h-7 w-7 shrink-0 text-slate-400/90" strokeWidth={1.75} aria-hidden />
-          Логи контейнеров
-        </h1>
-
-      </div>
+      <header className={PAGE_HEADER}>
+        <ScrollText className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+        <h1 className={PAGE_H1}>Логи контейнеров</h1>
+      </header>
 
       <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 space-y-3">
         <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Токен доступа</div>

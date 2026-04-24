@@ -3,7 +3,7 @@ import { GraduationCap } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import api from "../api/client.js";
 import { TrainerScenariosPanel } from "../components/trainer/TrainerScenariosPanel.jsx";
-import { PAGE_H1, PAGE_INNER, PAGE_TEXT, TAB_ROW, tabBtn } from "../styles/pageLayout.js";
+import { PAGE_H1, PAGE_HEADER, PAGE_INNER, PAGE_TEXT, PAGE_TITLE_ICON, TAB_ROW, tabBtn } from "../styles/pageLayout.js";
 
 function formatErr(err) {
   const d = err?.response?.data?.detail;
@@ -84,10 +84,10 @@ export function AITrainerPage() {
 
   return (
     <div className={`${PAGE_INNER} ${PAGE_TEXT}`}>
-      <h1 className="mb-2 flex items-center gap-2 text-2xl font-bold text-white">
-        <GraduationCap className="h-8 w-8 shrink-0 text-violet-400/90" strokeWidth={1.75} aria-hidden />
-        ИИ-тренер отдела продаж
-      </h1>
+      <header className={PAGE_HEADER}>
+        <GraduationCap className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+        <h1 className={PAGE_H1}>ИИ-тренер отдела продаж</h1>
+      </header>
 
       {loadMetaErr && tab === "simulation" && (
         <p className="mb-4 rounded-lg border border-red-900/50 bg-red-950/30 px-3 py-2 text-sm text-red-300">

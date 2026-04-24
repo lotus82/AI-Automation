@@ -43,6 +43,19 @@ export const PAGE_HEAD =
 
 export const PAGE_H1 = "text-2xl font-semibold tracking-tight text-slate-100";
 
+/**
+ * Иконка слева от основного заголовка страницы (как в «Записях» / BookingsPage).
+ * В Lucide: `strokeWidth={1.5}`.
+ */
+export const PAGE_TITLE_ICON = "h-8 w-8 shrink-0 text-emerald-400";
+
+/** Ряд шапки: иконка + H1; при `justify-between` — кнопки справа. */
+export const PAGE_HEADER = "mb-6 flex flex-wrap items-center gap-3";
+export const PAGE_HEADER_BETWEEN = "mb-6 flex flex-wrap items-center justify-between gap-3";
+
+/** Иконка у подзаголовка секции (H2) на той же панели */
+export const PAGE_SECTION_ICON = "h-5 w-5 shrink-0 text-emerald-400";
+
 /** Иконка рядом с текстом в кнопке */
 export const ICON_BTN = "h-4 w-4 shrink-0";
 

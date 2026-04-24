@@ -3,7 +3,12 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import api from "../../api/client.js";
 import { useAuthStore } from "../../store/authStore.js";
-import { PAGE_H1, PAGE_TEXT } from "../../styles/pageLayout.js";
+import {
+  PAGE_HEADER_BETWEEN,
+  PAGE_H1,
+  PAGE_TEXT,
+  PAGE_TITLE_ICON,
+} from "../../styles/pageLayout.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
 
 /** FastAPI detail → человеко-читаемая строка. */
@@ -98,21 +103,13 @@ export function SitesListPage({ misMode = false }) {
 
   return (
     <div className={`w-full min-w-0 space-y-6 ${PAGE_TEXT}`}>
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <header className={PAGE_HEADER_BETWEEN}>
         <div className="flex items-center gap-3">
-          <div
-            className={
-              misMode
-                ? "flex h-10 w-10 items-center justify-center rounded-xl bg-teal-600/20 text-teal-300"
-                : "flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600/20 text-sky-300"
-            }
-          >
-            {misMode ? (
-              <Stethoscope className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-            ) : (
-              <Globe className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-            )}
-          </div>
+          {misMode ? (
+            <Stethoscope className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+          ) : (
+            <Globe className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+          )}
           <h1 className={PAGE_H1}>{misMode ? "МИС" : "Сайты"}</h1>
         </div>
         <div className="flex items-center gap-2">

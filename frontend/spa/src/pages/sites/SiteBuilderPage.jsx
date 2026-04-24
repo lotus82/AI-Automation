@@ -6,6 +6,7 @@ import {
   Eye,
   EyeOff,
   FileText,
+  LayoutGrid,
   Menu,
   Palette,
   Plus,
@@ -28,7 +29,17 @@ import api from "../../api/client.js";
 import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
 import { MiniAppEmbedPlaceholder } from "../miniapp/MiniAppEmbedPlaceholder.jsx";
 import { useAuthStore } from "../../store/authStore.js";
-import { BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_SHELL, PAGE_TEXT, TAB_ROW, tabBtn } from "../../styles/pageLayout.js";
+import {
+  BTN_SAVE,
+  ICON_BTN,
+  PAGE_H1,
+  PAGE_HEADER_BETWEEN,
+  PAGE_SHELL,
+  PAGE_TEXT,
+  PAGE_TITLE_ICON,
+  TAB_ROW,
+  tabBtn,
+} from "../../styles/pageLayout.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
 import { siteLogoImgSrc } from "../../utils/siteLogoUrl.js";
 import {
@@ -717,19 +728,24 @@ export function SiteBuilderPage() {
 
   return (
     <div className={`${PAGE_SHELL} ${PAGE_TEXT} px-4 py-6 sm:px-6`}>
-      <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+      <header className={PAGE_HEADER_BETWEEN}>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={() => navigate(isMisBuilder ? "/mis" : "/sites")}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700"
             title={isMisBuilder ? "К списку МИС-сайтов" : "К списку сайтов"}
           >
             <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
             {isMisBuilder ? "МИС" : "Сайты"}
           </button>
-          <div>
-            <h1 className="text-xl font-semibold text-white">
+          {isMisBuilder ? (
+            <Stethoscope className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+          ) : (
+            <LayoutGrid className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+          )}
+          <div className="min-w-0">
+            <h1 className={PAGE_H1}>
               {loadingSite ? "Загрузка…" : site?.name || "Сайт"}
             </h1>
             <p className="text-sm text-slate-400">
