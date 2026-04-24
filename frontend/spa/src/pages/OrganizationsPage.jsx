@@ -1,7 +1,9 @@
+import { Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import api from "../api/client.js";
 import { useAuthStore } from "../store/authStore.js";
+import { BTN_SAVE_COMPACT, ICON_BTN } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 import {
   IconEditButton,
@@ -389,11 +391,8 @@ export function OrganizationsPage() {
                 />
               </div>
               <div className="flex gap-2 pt-2">
-                <button
-                  type="submit"
-                  disabled={editSaving}
-                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
-                >
+                <button type="submit" disabled={editSaving} className={BTN_SAVE_COMPACT}>
+                  <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
                   {editSaving ? "Сохранение…" : "Сохранить"}
                 </button>
                 <button

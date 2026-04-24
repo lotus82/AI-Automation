@@ -7,6 +7,7 @@ import {
   MessageCircle,
   Search,
   Send,
+  Save,
   Sparkles,
   Stethoscope,
   Trash2,
@@ -18,6 +19,7 @@ import { IconCopyButton, IconQrButton } from "../components/ui/IconActionButtons
 import { SK } from "../constants/systemSettingsKeys.js";
 import { useAuthStore } from "../store/authStore.js";
 import { mapFromList } from "../utils/systemSettingsForm.js";
+import { BTN_SAVE, BTN_SAVE_COMPACT, ICON_BTN } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function formatApiDetail(err) {
@@ -781,8 +783,9 @@ export function DoctorMISPage() {
                   type="button"
                   disabled={miniChatSaving}
                   onClick={saveMiniappChatId}
-                  className="rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-900 disabled:opacity-50"
+                  className={`${BTN_SAVE_COMPACT} rounded-xl px-4 py-2.5`}
                 >
+                  <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
                   {miniChatSaving ? "Сохранение…" : "Сохранить"}
                 </button>
               </div>
@@ -984,8 +987,9 @@ export function DoctorMISPage() {
                   type="button"
                   disabled={saveBusy}
                   onClick={saveCard}
-                  className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:opacity-50"
+                  className={`${BTN_SAVE} rounded-xl`}
                 >
+                  <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
                   {saveBusy ? "Сохранение…" : "Сохранить карту"}
                 </button>
                 {saveMsg ? <span className="text-sm text-slate-600">{saveMsg}</span> : null}

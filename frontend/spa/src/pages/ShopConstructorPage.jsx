@@ -3,17 +3,19 @@ import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   ChevronRight,
-  FolderPlus,
   Layers,
   Loader2,
   Package,
   Percent,
+  Plus,
+  Save,
   ScrollText,
   Settings2,
   ShoppingCart,
 } from "lucide-react";
 import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
 import api from "../api/client.js";
+import { BTN_ADD, BTN_SAVE, ICON_BTN } from "../styles/pageLayout.js";
 
 function formatApiDetail(err) {
   const det = err?.response?.data?.detail;
@@ -497,8 +499,9 @@ export function ShopConstructorPage() {
           type="button"
           disabled={busy}
           onClick={saveShopBasics}
-          className={`mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${pressable}`}
+          className={`${BTN_SAVE} mt-3 ${pressable}`}
         >
+          <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
           Сохранить основные данные
         </button>
       </section>
@@ -550,9 +553,9 @@ export function ShopConstructorPage() {
             <button
               type="submit"
               disabled={busy}
-              className="inline-flex items-center gap-1 rounded bg-slate-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+              className={`${BTN_ADD} disabled:opacity-50`}
             >
-              <FolderPlus className="h-4 w-4" aria-hidden />
+              <Plus className={ICON_BTN} strokeWidth={2} aria-hidden />
               {catParentId ? "Добавить подкатегорию" : "Добавить категорию"}
             </button>
           </form>
@@ -796,9 +799,20 @@ export function ShopConstructorPage() {
             <button
               type="submit"
               disabled={busy}
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              className={
+                editPageId
+                  ? `${BTN_SAVE} disabled:opacity-50`
+                  : "rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              }
             >
-              {editPageId ? "Сохранить" : "Создать страницу"}
+              {editPageId ? (
+                <>
+                  <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
+                  Сохранить
+                </>
+              ) : (
+                "Создать страницу"
+              )}
             </button>
           </form>
         </section>
@@ -871,11 +885,8 @@ export function ShopConstructorPage() {
               value={discEnd}
               onChange={(e) => setDiscEnd(e.target.value)}
             />
-            <button
-              type="submit"
-              disabled={busy}
-              className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
-            >
+            <button type="submit" disabled={busy} className={`${BTN_ADD} disabled:opacity-50`}>
+              <Plus className={ICON_BTN} strokeWidth={2} aria-hidden />
               Добавить
             </button>
           </form>

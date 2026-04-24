@@ -1,9 +1,9 @@
-import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, Save } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import api from "../../api/client.js";
 import { useAuthStore } from "../../store/authStore.js";
-import { PAGE_SHELL, PAGE_TEXT } from "../../styles/pageLayout.js";
+import { BTN_SAVE, ICON_BTN, PAGE_SHELL, PAGE_TEXT } from "../../styles/pageLayout.js";
 
 function formatApiDetail(d) {
   if (d == null) return "";
@@ -309,11 +309,8 @@ export function DocumentEditorPage() {
                   placeholder="Текст стиха или абзаца"
                 />
               </label>
-              <button
-                type="submit"
-                disabled={saving}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
-              >
+              <button type="submit" disabled={saving} className={BTN_SAVE}>
+                <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
                 {saving ? "Сохранение…" : "Сохранить узел"}
               </button>
             </form>

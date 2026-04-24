@@ -1,6 +1,8 @@
+import { Save } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../api/client.js";
 import { IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
+import { BTN_SAVE, ICON_BTN } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function formatDetail(detail) {
@@ -277,8 +279,7 @@ export function SchedulePage() {
   const helpClass = "mt-0 text-sm text-slate-400";
   const panelClass =
     "mb-8 rounded-xl border border-slate-700/80 bg-slate-800/40 p-5 shadow-sm";
-  const btnPrimary =
-    "inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:opacity-50";
+  const btnPrimary = BTN_SAVE;
   const btnSecondary =
     "inline-flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50";
 
@@ -463,8 +464,8 @@ export function SchedulePage() {
             />
           </div>
           <div>
-            <button type="submit" className={btnPrimary} disabled={creating}>
-              💾 Создать
+            <button type="submit" className={btnSecondary} disabled={creating}>
+              Создать
             </button>
           </div>
         </form>
@@ -774,7 +775,8 @@ export function SchedulePage() {
                   id="sch-edit-save"
                   disabled={savingEdit}
                 >
-                  💾 Сохранить
+                  <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
+                  Сохранить
                 </button>
                 <button
                   type="button"

@@ -1,10 +1,10 @@
-import { Menu } from "lucide-react";
-import { useEffect, useState } from "react";
-import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { KeyRound, LogOut, Menu, Save, User } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import api from "../api/client.js";
 import { Sidebar } from "../components/Sidebar.jsx";
 import { SidebarMobileDrawer } from "../components/layout/Sidebar.jsx";
-import { PAGE_SHELL, PAGE_TEXT } from "../styles/pageLayout.js";
+import { BTN_SAVE_COMPACT, ICON_BTN, PAGE_SHELL, PAGE_TEXT } from "../styles/pageLayout.js";
 import { useAuthStore } from "../store/authStore.js";
 
 /**
@@ -17,6 +17,8 @@ export function Layout() {
   const clearAuth = useAuthStore((s) => s.clearAuth);
 
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef(null);
   const [pwOpen, setPwOpen] = useState(false);
   const [curPw, setCurPw] = useState("");
   const [newPw, setNewPw] = useState("");
@@ -39,6 +41,24 @@ export function Layout() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [mobileNavOpen]);
+
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+    const onDown = (e) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") setProfileMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [profileMenuOpen]);
 
   const changePassword = async (e) => {
     e.preventDefault();
@@ -91,23 +111,53 @@ export function Layout() {
                   </span>
                 ) : null}
               </span>
-              <button
-                type="button"
-                className="shrink-0 text-sky-400 hover:text-sky-300"
-                onClick={() => {
-                  setPwOpen(true);
-                  setPwMsg("");
-                }}
-              >
-                Сменить пароль
-              </button>
-              <button
-                type="button"
-                className="shrink-0 rounded-lg border border-slate-600 px-3 py-1 text-slate-300 hover:bg-slate-800"
-                onClick={logout}
-              >
-                Выйти
-              </button>
+              <div className="relative shrink-0" ref={profileMenuRef}>
+                <button
+                  type="button"
+                  className="inline-flex rounded-lg border border-slate-600 p-2 text-slate-200 hover:bg-slate-800"
+                  aria-label="Профиль"
+                  aria-expanded={profileMenuOpen}
+                  aria-haspopup="menu"
+                  onClick={() => setProfileMenuOpen((o) => !o)}
+                >
+                  <User className="h-5 w-5" strokeWidth={2} aria-hidden />
+                </button>
+                {profileMenuOpen ? (
+                  <div
+                    className="absolute right-0 top-full z-50 mt-1 flex min-w-[2.5rem] flex-col gap-0.5 rounded-lg border border-slate-600 bg-slate-900 p-1 shadow-xl"
+                    role="menu"
+                    aria-label="Меню профиля"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="rounded-md p-2 text-slate-200 hover:bg-slate-800"
+                      title="Сменить пароль"
+                      aria-label="Сменить пароль"
+                      onClick={() => {
+                        setProfileMenuOpen(false);
+                        setPwOpen(true);
+                        setPwMsg("");
+                      }}
+                    >
+                      <KeyRound className="h-5 w-5" strokeWidth={2} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="rounded-md p-2 text-slate-200 hover:bg-slate-800"
+                      title="Выйти"
+                      aria-label="Выйти"
+                      onClick={() => {
+                        setProfileMenuOpen(false);
+                        logout();
+                      }}
+                    >
+                      <LogOut className="h-5 w-5" strokeWidth={2} aria-hidden />
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
         </header>
@@ -156,10 +206,8 @@ export function Layout() {
                 />
               </div>
               <div className="flex gap-2 pt-2">
-                <button
-                  type="submit"
-                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500"
-                >
+                <button type="submit" className={BTN_SAVE_COMPACT}>
+                  <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
                   Сохранить
                 </button>
                 <button

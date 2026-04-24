@@ -28,7 +28,7 @@ import api from "../../api/client.js";
 import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
 import { MiniAppEmbedPlaceholder } from "../miniapp/MiniAppEmbedPlaceholder.jsx";
 import { useAuthStore } from "../../store/authStore.js";
-import { PAGE_SHELL, PAGE_TEXT, TAB_ROW, tabBtn } from "../../styles/pageLayout.js";
+import { BTN_SAVE, ICON_BTN, PAGE_SHELL, PAGE_TEXT, TAB_ROW, tabBtn } from "../../styles/pageLayout.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
 import { siteLogoImgSrc } from "../../utils/siteLogoUrl.js";
 import {
@@ -284,11 +284,8 @@ function PatientCardThemePanel({ form, setForm, onSave, saving }) {
         </div>
       </div>
 
-      <button
-        type="submit"
-        disabled={saving}
-        className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
-      >
+      <button type="submit" disabled={saving} className={BTN_SAVE}>
+        <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
         {saving ? "Сохранение…" : "Сохранить тему"}
       </button>
     </form>
@@ -1039,7 +1036,7 @@ function MenuTab({
           disabled={pickerPages.length === 0}
           className="inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-600 disabled:opacity-50"
         >
-          <Plus className="h-3.5 w-3.5" aria-hidden />
+          <Plus className={ICON_BTN} strokeWidth={2} aria-hidden />
           Добавить пункт
         </button>
       </div>
@@ -1129,12 +1126,8 @@ function MenuTab({
       </div>
 
       <div className="flex justify-end">
-        <button
-          type="submit"
-          disabled={saving}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
-        >
-          <Save className="h-4 w-4" aria-hidden />
+        <button type="submit" disabled={saving} className={BTN_SAVE}>
+          <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
           {saving ? "Сохранение…" : "Сохранить меню"}
         </button>
       </div>
@@ -1481,12 +1474,8 @@ function SettingsTab({
       </section>
 
       <div className="lg:col-span-2 flex justify-end">
-        <button
-          type="submit"
-          disabled={saving}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
-        >
-          <Save className="h-4 w-4" aria-hidden />
+        <button type="submit" disabled={saving} className={BTN_SAVE}>
+          <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
           {saving ? "Сохранение…" : "Сохранить настройки"}
         </button>
       </div>
@@ -1545,7 +1534,7 @@ function PagesTab({
             onClick={onCreate}
             className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
           >
-            <Plus className="h-3.5 w-3.5" aria-hidden />
+            <Plus className={ICON_BTN} strokeWidth={2} aria-hidden />
             Новая страница
           </button>
         </div>
@@ -2042,12 +2031,8 @@ function PageEditorTab({
       </div>
 
       <div className="flex justify-end">
-        <button
-          type="submit"
-          disabled={saving}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
-        >
-          <Save className="h-4 w-4" aria-hidden />
+        <button type="submit" disabled={saving} className={BTN_SAVE}>
+          <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
           {saving ? "Сохранение…" : "Сохранить страницу"}
         </button>
       </div>

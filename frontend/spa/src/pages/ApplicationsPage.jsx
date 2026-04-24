@@ -251,7 +251,7 @@ export function ApplicationsPage() {
               type="button"
               onClick={saveActiveSite}
               disabled={!activeSiteDirty || savingActiveSite}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-sky-500 disabled:opacity-60"
             >
               {activeSiteJustSaved ? (
                 <>

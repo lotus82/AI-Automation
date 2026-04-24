@@ -1,7 +1,9 @@
+import { Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import api from "../api/client.js";
 import { useAuthStore } from "../store/authStore.js";
+import { BTN_SAVE_COMPACT, ICON_BTN } from "../styles/pageLayout.js";
 
 /** Текст ошибки FastAPI (detail: string | { msg }[]). */
 function formatApiDetail(d) {
@@ -370,9 +372,10 @@ function EmployeeSectionsEditor({ row, onSave }) {
       </div>
       <button
         type="button"
-        className="mt-2 rounded bg-slate-700 px-3 py-1 text-xs text-white hover:bg-slate-600"
+        className={`${BTN_SAVE_COMPACT} mt-2 text-xs`}
         onClick={() => onSave(local)}
       >
+        <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
         Сохранить разделы
       </button>
     </div>

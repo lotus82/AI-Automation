@@ -1,6 +1,6 @@
 import { Typography } from "@maxhub/max-ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BookOpen, ClipboardList, HeartPulse, User } from "lucide-react";
+import { BookOpen, ClipboardList, HeartPulse, Save, User } from "lucide-react";
 import patientMisClient from "../../api/patientMisClient.js";
 import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
@@ -284,16 +284,21 @@ function ProfileBlock({ patient, accent, onSaved }) {
           disabled={busy}
           style={{
             width: "100%",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
             padding: "12px 16px",
             borderRadius: 12,
             border: "none",
-            background: accent,
+            background: "#0284c7",
             color: "#fff",
             fontWeight: 600,
             fontSize: 15,
             opacity: busy ? 0.7 : 1,
           }}
         >
+          <Save className="h-[18px] w-[18px] shrink-0" strokeWidth={2} aria-hidden />
           {busy ? "Сохранение…" : "Сохранить"}
         </button>
       </form>

@@ -1,4 +1,6 @@
+import { Save } from "lucide-react";
 import { useState } from "react";
+import { BTN_SAVE, ICON_BTN } from "../../styles/pageLayout.js";
 import { ActionListSection } from "./ActionListSection.jsx";
 import { AuthSection } from "./AuthSection.jsx";
 
@@ -73,10 +75,8 @@ export function IntegrationForm({ onSubmit, initialData }) {
 
       <ActionListSection actions={data.actions} onChange={setActions} />
 
-      <button
-        type="submit"
-        className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-500"
-      >
+      <button type="submit" className={BTN_SAVE}>
+        <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
         Save Integration
       </button>
     </form>

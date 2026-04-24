@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, Plus, Save } from "lucide-react";
 import {
   IconCopyButton,
   IconDeleteButton,
@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 import api from "../api/client.js";
 import { useAuthStore } from "../store/authStore.js";
 import { SurveyTakeExperience } from "../components/questionnaires/SurveyTakeExperience.jsx";
+import { BTN_ADD, BTN_SAVE, ICON_BTN } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function formatApiDetail(err) {
@@ -459,10 +460,11 @@ export function QuestionnairesPage() {
                   <span className="text-sm font-medium text-slate-300">Вопросы</span>
                   <button
                     type="button"
-                    className="text-sm text-emerald-400 hover:text-emerald-300"
+                    className={`${BTN_ADD} text-sm`}
                     onClick={addQuestion}
                   >
-                    + Добавить вопрос
+                    <Plus className={ICON_BTN} strokeWidth={2} aria-hidden />
+                    Добавить вопрос
                   </button>
                 </div>
                 {form.questions.map((q, qi) => (
@@ -558,11 +560,8 @@ export function QuestionnairesPage() {
               {builderErr ? <p className="text-sm text-red-400">{builderErr}</p> : null}
 
               <div className="flex flex-wrap gap-2 border-t border-slate-800 pt-4">
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
-                >
+                <button type="submit" disabled={saving} className={BTN_SAVE}>
+                  <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
                   {saving ? "Сохранение…" : "Сохранить"}
                 </button>
                 <button

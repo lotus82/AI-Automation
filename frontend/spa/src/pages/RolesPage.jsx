@@ -1,8 +1,10 @@
+import { Plus, Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import api from "../api/client.js";
 import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
 import { SK } from "../constants/systemSettingsKeys.js";
 import { mapFromList } from "../utils/systemSettingsForm.js";
+import { BTN_ADD, BTN_SAVE, ICON_BTN } from "../styles/pageLayout.js";
 
 function newRowId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -397,10 +399,11 @@ export function RolesPage() {
             </div>
             <button
               type="button"
-              className="mt-3 rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700"
+              className={`${BTN_ADD} mt-3`}
               onClick={addRoleRow}
             >
-              + Добавить роль
+              <Plus className={ICON_BTN} strokeWidth={2} aria-hidden />
+              Добавить роль
             </button>
           </section>
 
@@ -489,10 +492,11 @@ export function RolesPage() {
             </div>
             <button
               type="button"
-              className="mt-3 rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700"
+              className={`${BTN_ADD} mt-3`}
               onClick={addMaxRow}
             >
-              + Добавить группу
+              <Plus className={ICON_BTN} strokeWidth={2} aria-hidden />
+              Добавить группу
             </button>
           </section>
 
@@ -514,12 +518,9 @@ export function RolesPage() {
           </section>
 
           <div className="mt-6">
-            <button
-              type="submit"
-              className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:opacity-50"
-              disabled={saving}
-            >
-              💾 Сохранить
+            <button type="submit" className={BTN_SAVE} disabled={saving}>
+              <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
+              Сохранить
             </button>
           </div>
         </form>

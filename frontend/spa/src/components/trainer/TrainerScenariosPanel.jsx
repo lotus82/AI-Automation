@@ -1,5 +1,7 @@
+import { Save } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import api from "../../api/client.js";
+import { BTN_SAVE, ICON_BTN } from "../../styles/pageLayout.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
 
 /**
@@ -153,11 +155,8 @@ export function TrainerScenariosPanel({ onScenariosChanged }) {
             />
           </div>
           <div>
-            <button
-              type="submit"
-              className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={submitting}
-            >
+            <button type="submit" className={BTN_SAVE} disabled={submitting}>
+              <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
               Сохранить
             </button>
           </div>

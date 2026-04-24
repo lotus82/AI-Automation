@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { ScrollText } from "lucide-react";
+import { Save, ScrollText } from "lucide-react";
 import api from "../api/client.js";
+import { BTN_SAVE_COMPACT, ICON_BTN } from "../styles/pageLayout.js";
 
 const TOKEN_STORAGE = "sales_ai_admin_logs_token";
 
@@ -124,11 +125,8 @@ export function LogsPage() {
             value={tokenInput}
             onChange={(e) => setTokenInput(e.target.value)}
           />
-          <button
-            type="button"
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
-            onClick={saveToken}
-          >
+          <button type="button" className={BTN_SAVE_COMPACT} onClick={saveToken}>
+            <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
             Сохранить
           </button>
         </div>

@@ -1,4 +1,4 @@
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, Save } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Calendar from "react-calendar";
 import { Navigate } from "react-router-dom";
@@ -13,7 +13,15 @@ import {
 } from "recharts";
 import api from "../../api/client.js";
 import { useAuthStore } from "../../store/authStore.js";
-import { PAGE_SHELL, PAGE_TEXT } from "../../styles/pageLayout.js";
+import {
+  BTN_SAVE,
+  BTN_SAVE_COMPACT,
+  ICON_BTN,
+  PAGE_SHELL,
+  PAGE_TEXT,
+  TAB_ROW,
+  tabBtn,
+} from "../../styles/pageLayout.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
 import "react-calendar/dist/Calendar.css";
 import "./bookingsCalendar.css";
@@ -279,15 +287,16 @@ export function BookingsPage() {
               type="button"
               disabled={miniChatSaving}
               onClick={saveMiniappChatId}
-              className="rounded bg-slate-700 px-3 py-2 text-sm text-white hover:bg-slate-600 disabled:opacity-50"
+              className={BTN_SAVE_COMPACT}
             >
+              <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
               {miniChatSaving ? "Сохранение…" : "Сохранить"}
             </button>
           </div>
         </div>
       ) : null}
 
-      <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-700 pb-2">
+      <div className={TAB_ROW}>
         {[
           { id: "calendar", label: "Календарь" },
           { id: "settings", label: "Настройки записи" },
@@ -297,9 +306,7 @@ export function BookingsPage() {
             key={x.id}
             type="button"
             onClick={() => setTab(x.id)}
-            className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-              tab === x.id ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-            }`}
+            className={tabBtn(tab === x.id)}
           >
             {x.label}
           </button>
@@ -553,9 +560,10 @@ export function BookingsPage() {
                   </button>
                   <button
                     type="button"
-                    className="rounded bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-500"
+                    className={BTN_SAVE_COMPACT}
                     onClick={submitBlock}
                   >
+                    <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
                     Сохранить
                   </button>
                 </div>
@@ -654,8 +662,9 @@ export function BookingsPage() {
                 type="button"
                 disabled={cfgSaving}
                 onClick={saveConfig}
-                className="mt-4 rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                className={`${BTN_SAVE} mt-4`}
               >
+                <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
                 {cfgSaving ? "Сохранение…" : "Сохранить"}
               </button>
             </>

@@ -1,5 +1,6 @@
 import { Button, Flex, Spinner, Typography } from "@maxhub/max-ui";
 import axios from "axios";
+import { Save } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const dayKeyOrder = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -508,8 +509,16 @@ export function MiniAppStaffPanel({ token }) {
                 />
               </div>
               <div style={{ marginTop: 16 }}>
-                <Button mode="primary" onClick={saveConfig} disabled={cfgSaving}>
-                  {cfgSaving ? "Сохранение…" : "Сохранить расписание"}
+                <Button
+                  mode="primary"
+                  onClick={saveConfig}
+                  disabled={cfgSaving}
+                  style={{ background: "#0284c7", color: "#fff" }}
+                >
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <Save className="h-4 w-4" strokeWidth={2} aria-hidden />
+                    {cfgSaving ? "Сохранение…" : "Сохранить расписание"}
+                  </span>
                 </Button>
               </div>
             </>

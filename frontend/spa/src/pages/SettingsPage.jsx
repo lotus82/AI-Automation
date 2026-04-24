@@ -1,3 +1,4 @@
+import { Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import api from "../api/client.js";
 import { SK } from "../constants/systemSettingsKeys.js";
@@ -7,6 +8,7 @@ import {
   mapFromList,
   parseTruthy,
 } from "../utils/systemSettingsForm.js";
+import { BTN_SAVE, ICON_BTN } from "../styles/pageLayout.js";
 
 function DeepSeekGlyph() {
   return (
@@ -407,12 +409,9 @@ export function SettingsPage() {
           ) : null}
 
           <div className="mt-6">
-            <button
-              type="submit"
-              className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-medium text-white shadow hover:bg-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:opacity-50"
-              disabled={saving}
-            >
-              💾 Сохранить
+            <button type="submit" className={BTN_SAVE} disabled={saving}>
+              <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
+              Сохранить
             </button>
           </div>
         </form>

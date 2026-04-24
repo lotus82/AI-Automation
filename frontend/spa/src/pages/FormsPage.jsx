@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileText, GripVertical } from "lucide-react";
+import { FileText, GripVertical, Save } from "lucide-react";
 import { IconCopyButton, IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
 import api from "../api/client.js";
+import { BTN_SAVE, BTN_SAVE_COMPACT, ICON_BTN } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 /** Визуальный отклик: нажатие, фокус, плавные переходы */
@@ -638,9 +639,20 @@ export function FormsPage() {
                 <button
                   type="submit"
                   disabled={tplSaving}
-                  className={`rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 disabled:active:scale-100 ${pressablePrimary}`}
+                  className={
+                    editingTplId
+                      ? `${BTN_SAVE} ${pressablePrimary}`
+                      : `rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 disabled:active:scale-100 ${pressablePrimary}`
+                  }
                 >
-                  {editingTplId ? "Сохранить" : "Создать шаблон"}
+                  {editingTplId ? (
+                    <>
+                      <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
+                      Сохранить
+                    </>
+                  ) : (
+                    "Создать шаблон"
+                  )}
                 </button>
                 {editingTplId ? (
                   <button
@@ -916,7 +928,7 @@ export function FormsPage() {
                   <button
                     type="button"
                     disabled={eventBusy === "meta" || !editEvTitle.trim()}
-                    className={`rounded bg-emerald-800 px-3 py-1.5 text-xs text-white border border-emerald-700 ${pressablePrimary} disabled:opacity-50`}
+                    className={`${BTN_SAVE_COMPACT} text-xs ${pressablePrimary}`}
                     onClick={() => {
                       if (!editEvTitle.trim()) return;
                       if (editEvEnd < editEvStart) {
@@ -935,6 +947,7 @@ export function FormsPage() {
                       );
                     }}
                   >
+                    <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
                     {eventBusy === "meta" ? "Сохранение…" : "Сохранить название и даты"}
                   </button>
                 </div>
@@ -983,11 +996,12 @@ export function FormsPage() {
                   <button
                     type="button"
                     disabled={eventBusy === "notify"}
-                    className={`rounded bg-slate-700 px-3 py-1.5 text-xs text-white border border-slate-600 ${pressablePrimary} disabled:opacity-50`}
+                    className={`${BTN_SAVE_COMPACT} text-xs ${pressablePrimary} disabled:opacity-50`}
                     onClick={() =>
                       patchEvent(selectedEvent.id, eventNotifyToApi(editEvNotifyMessenger, editEvNotifyChat), "notify")
                     }
                   >
+                    <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
                     {eventBusy === "notify" ? "Сохранение…" : "Сохранить уведомления"}
                   </button>
                 </div>
@@ -1040,7 +1054,7 @@ export function FormsPage() {
                   <button
                     type="button"
                     disabled={!!eventBusy}
-                    className={`rounded bg-emerald-700 px-3 py-1.5 text-xs text-white border border-emerald-600 ${pressablePrimary} disabled:opacity-50`}
+                    className={`${BTN_SAVE_COMPACT} text-xs ${pressablePrimary} disabled:opacity-50`}
                     onClick={() => {
                       const d = new Date(extendDeadline);
                       if (Number.isNaN(d.getTime())) return;
@@ -1054,6 +1068,7 @@ export function FormsPage() {
                       );
                     }}
                   >
+                    <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
                     {eventBusy === "deadline" ? "Сохранение…" : "Сохранить дедлайн"}
                   </button>
                 </div>

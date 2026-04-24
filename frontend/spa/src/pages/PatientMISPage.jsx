@@ -8,6 +8,7 @@ import {
   ListChecks,
   Loader2,
   LogOut,
+  Save,
 } from "lucide-react";
 import patientMisClient from "../api/patientMisClient.js";
 import { PatientAuthGuard } from "../components/mis/PatientAuthGuard.jsx";
@@ -16,6 +17,7 @@ import {
   getStoredPatientId,
   setPatientSession,
 } from "../utils/patientMisAuth.js";
+import { BTN_SAVE, ICON_BTN } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 import { normalizePublicSectionOrder } from "../utils/patientPublicCardLayout.js";
 
@@ -423,8 +425,9 @@ function PatientCabinetContent({ patientId, maxSession, onLogout }) {
               <button
                 type="submit"
                 disabled={profileBusy}
-                className="w-full rounded-xl bg-teal-600 py-3 text-sm font-semibold text-white shadow-md shadow-teal-600/25 disabled:opacity-50 sm:w-auto sm:px-8"
+                className={`${BTN_SAVE} w-full justify-center rounded-xl py-3 shadow-md sm:w-auto sm:px-8`}
               >
+                <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
                 {profileBusy ? "Сохранение…" : "Сохранить изменения"}
               </button>
             </form>

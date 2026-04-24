@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plug } from "lucide-react";
+import { Plug, Save } from "lucide-react";
 import { IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
 import { useSearchParams } from "react-router-dom";
 import api from "../api/client.js";
@@ -8,6 +8,7 @@ import { IntegrationForm } from "../components/integrations/IntegrationForm.jsx"
 import { VoiceTelephonyTestPanel } from "../components/telephony/VoiceTelephonyTestPanel.jsx";
 import { SK } from "../constants/systemSettingsKeys.js";
 import { hintForSecretRow, mapFromList, parseTruthy } from "../utils/systemSettingsForm.js";
+import { BTN_SAVE, BTN_SAVE_COMPACT, ICON_BTN } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 const SYSTEM_OPTIONS = [{ value: "bitrix24", label: "Битрикс24" }];
@@ -480,9 +481,10 @@ export function IntegrationsPage() {
                             <div className="flex flex-wrap gap-2">
                               <button
                                 type="button"
-                                className="rounded bg-emerald-700 px-2 py-1 text-xs text-white hover:bg-emerald-600"
+                                className={`${BTN_SAVE_COMPACT} text-xs`}
                                 onClick={() => saveEdit(row.id)}
                               >
+                                <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
                                 Сохранить
                               </button>
                               <button
@@ -646,11 +648,8 @@ export function IntegrationsPage() {
                 />
               </div>
 
-              <button
-                type="submit"
-                className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-500 disabled:opacity-50"
-                disabled={maxSaving}
-              >
+              <button type="submit" className={BTN_SAVE} disabled={maxSaving}>
+                <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
                 Сохранить настройки MAX
               </button>
             </form>
@@ -695,11 +694,8 @@ export function IntegrationsPage() {
                   onChange={(e) => setTelegramField("telegramToken", e.target.value)}
                 />
               </div>
-              <button
-                type="submit"
-                className="rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-500 disabled:opacity-50"
-                disabled={telegramSaving}
-              >
+              <button type="submit" className={BTN_SAVE} disabled={telegramSaving}>
+                <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
                 Сохранить токен
               </button>
             </form>
