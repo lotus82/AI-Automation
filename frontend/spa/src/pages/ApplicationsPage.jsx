@@ -161,7 +161,7 @@ export function ApplicationsPage() {
   };
 
   return (
-    <div className={`${PAGE_SHELL} ${PAGE_TEXT} px-4 py-6 sm:px-6`}>
+    <div className={`w-full min-w-0 space-y-6 ${PAGE_TEXT}`}>
       <header className="mb-6 flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600/20 text-emerald-300">
           <LayoutGrid className="h-5 w-5" strokeWidth={1.75} aria-hidden />
