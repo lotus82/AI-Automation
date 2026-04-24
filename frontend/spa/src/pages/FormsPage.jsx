@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileText, GripVertical, Save } from "lucide-react";
+import { createPortal } from "react-dom";
+import { FileText, GripVertical, Plus, RefreshCcw, Save } from "lucide-react";
 import { IconCopyButton, IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
 import api from "../api/client.js";
-import { BTN_SAVE, BTN_SAVE_COMPACT, ICON_BTN, PAGE_H1, PAGE_HEADER, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
+import {
+  BTN_ADD,
+  BTN_SAVE,
+  BTN_SAVE_COMPACT,
+  ICON_BTN,
+  PAGE_H1,
+  PAGE_HEADER_BETWEEN,
+  PAGE_TEXT,
+  PAGE_TITLE_ICON,
+} from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 /** Визуальный отклик: нажатие, фокус, плавные переходы */
@@ -69,12 +79,16 @@ const tabBtn = (active) =>
   } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950`;
 
 export function FormsPage() {
-  const [tab, setTab] = useState("templates");
+  /** Вкладки: `events` — мероприятия (по умолчанию), `forms` — формы. */
+  const [tab, setTab] = useState("events");
   const [templates, setTemplates] = useState([]);
   const [events, setEvents] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+
+  const [eventModalOpen, setEventModalOpen] = useState(false);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
 
   const [tplName, setTplName] = useState("");
   const [tplDesc, setTplDesc] = useState("");
@@ -113,6 +127,7 @@ export function FormsPage() {
 
   const loadAll = useCallback(async () => {
     setErr("");
+    setLoading(true);
     try {
       const [tRes, eRes, sRes] = await Promise.all([
         api.get("/forms/templates"),
@@ -128,6 +143,45 @@ export function FormsPage() {
       setLoading(false);
     }
   }, []);
+
+  const resetEventForm = () => {
+    setEvTitle("");
+    setEvSubtitle("");
+    setEvTemplateId("");
+    setEvStart("");
+    setEvEnd("");
+    setEvDeadline("");
+    setEvScheduleIds([]);
+    setEvNotifyMessenger("");
+    setEvNotifyChatId("");
+    setEvMsg("");
+  };
+
+  const openCreateEventModal = () => {
+    resetEventForm();
+    setEventModalOpen(true);
+  };
+
+  const openCreateTemplateModal = () => {
+    resetTemplateForm();
+    setTplMsg("");
+    setTemplateModalOpen(true);
+  };
+
+  const onHeaderAdd = () => {
+    if (tab === "events") openCreateEventModal();
+    else openCreateTemplateModal();
+  };
+
+  const closeEventModal = () => {
+    setEventModalOpen(false);
+    resetEventForm();
+  };
+
+  const closeTemplateModal = () => {
+    setTemplateModalOpen(false);
+    resetTemplateForm();
+  };
 
   useEffect(() => {
     loadAll();
@@ -274,7 +328,8 @@ export function FormsPage() {
         order: f.order ?? i,
       })),
     );
-    setTab("templates");
+    setTplMsg("");
+    setTemplateModalOpen(true);
   };
 
   const saveTemplate = async (e) => {
@@ -303,15 +358,16 @@ export function FormsPage() {
           description: tplDesc.trim(),
           fields,
         });
-        setTplMsg("Шаблон сохранён.");
+        setTplMsg("Сохранено.");
       } else {
         await api.post("/forms/templates", {
           name: tplName.trim(),
           description: tplDesc.trim(),
           fields,
         });
-        setTplMsg("Шаблон создан.");
+        setTplMsg("");
         resetTemplateForm();
+        setTemplateModalOpen(false);
       }
       await loadAll();
     } catch (err) {
@@ -322,11 +378,14 @@ export function FormsPage() {
   };
 
   const deleteTemplate = async (id) => {
-    if (!window.confirm("Удалить шаблон? Нельзя, если есть мероприятия с этой формой.")) return;
+    if (!window.confirm("Удалить форму? Нельзя, если есть мероприятия с этой формой.")) return;
     try {
       await api.delete(`/forms/templates/${id}`);
       await loadAll();
-      if (editingTplId === id) resetTemplateForm();
+      if (editingTplId === id) {
+        resetTemplateForm();
+        setTemplateModalOpen(false);
+      }
     } catch (err) {
       alert(formatApiDetail(err));
     }
@@ -335,7 +394,7 @@ export function FormsPage() {
   const createEvent = async (e) => {
     e.preventDefault();
     if (!evTemplateId) {
-      setEvMsg("Выберите шаблон формы.");
+      setEvMsg("Выберите форму.");
       return;
     }
     setEvSaving(true);
@@ -355,13 +414,8 @@ export function FormsPage() {
       }
       Object.assign(body, eventNotifyToApi(evNotifyMessenger, evNotifyChatId));
       await api.post("/forms/events", body);
-      setEvTitle("");
-      setEvSubtitle("");
-      setEvDeadline("");
-      setEvScheduleIds([]);
-      setEvNotifyMessenger("");
-      setEvNotifyChatId("");
-      setEvMsg("Мероприятие создано.");
+      resetEventForm();
+      setEventModalOpen(false);
       await loadAll();
     } catch (err) {
       setEvMsg(`Ошибка: ${formatApiDetail(err)}`);
@@ -473,11 +527,34 @@ export function FormsPage() {
     return fields;
   }, [selectedEvent, templates, submissions]);
 
+  const modalRoot = typeof document !== "undefined" ? document.body : null;
+
   return (
-    <div className="w-full min-w-0 space-y-6 text-slate-100">
-      <header className={PAGE_HEADER}>
-        <FileText className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
-        <h1 className={PAGE_H1}>Мероприятия</h1>
+    <div className={`w-full min-w-0 space-y-6 ${PAGE_TEXT}`}>
+      <header className={PAGE_HEADER_BETWEEN}>
+        <div className="flex items-center gap-3">
+          <FileText className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+          <h1 className={PAGE_H1}>Мероприятия</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={loadAll}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60"
+          >
+            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} aria-hidden />
+            Обновить
+          </button>
+          <button
+            type="button"
+            onClick={onHeaderAdd}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+            Добавить
+          </button>
+        </div>
       </header>
 
       {err ? (
@@ -485,390 +562,114 @@ export function FormsPage() {
       ) : null}
 
       <div className="mb-0 flex flex-nowrap gap-1 overflow-x-auto overscroll-x-contain border-b border-slate-700/80 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <button type="button" className={tabBtn(tab === "templates")} onClick={() => setTab("templates")}>
-          Шаблоны форм
-        </button>
         <button type="button" className={tabBtn(tab === "events")} onClick={() => setTab("events")}>
           Мероприятия
+        </button>
+        <button type="button" className={tabBtn(tab === "forms")} onClick={() => setTab("forms")}>
+          Формы
         </button>
       </div>
 
       {loading ? <p className="text-slate-400">Загрузка…</p> : null}
 
-      {!loading && tab === "templates" ? (
-        <div className="grid gap-8 lg:grid-cols-2">
-          <section>
-            <h2 className="mb-3 text-lg font-semibold text-slate-200">
-              {editingTplId ? "Редактирование шаблона" : "Новый шаблон"}
-            </h2>
-            <form className="space-y-4 rounded-xl border border-slate-700/80 bg-slate-900/50 p-5" onSubmit={saveTemplate}>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-400">Название шаблона</label>
-                <input
-                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
-                  value={tplName}
-                  onChange={(e) => setTplName(e.target.value)}
-                  required
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-400">Описание (внутреннее)</label>
-                <input
-                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
-                  value={tplDesc}
-                  onChange={(e) => setTplDesc(e.target.value)}
-                />
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <span className="text-sm font-medium text-slate-300">Поля формы</span>
-                    <p className="text-xs text-slate-500">Меняйте порядок, перетаскивая блок за иконку слева.</p>
-                  </div>
-                  <button
-                    type="button"
-                    className={`rounded border border-slate-600 px-2 py-1 text-xs text-sky-300 ${pressableSubtle}`}
-                    onClick={addField}
-                  >
-                    + Поле
-                  </button>
-                </div>
-                {tplFields.map((f, idx) => (
-                  <div
-                    key={f.id}
-                    className={`rounded-lg border bg-slate-950/60 p-3 transition-shadow ${
-                      dragFieldIdx === idx ? "border-emerald-600/50 opacity-70 shadow-md" : "border-slate-700"
-                    } ${
-                      dragOverFieldIdx === idx && dragFieldIdx !== null && dragFieldIdx !== idx
-                        ? "ring-2 ring-emerald-500/80 ring-offset-2 ring-offset-slate-950 border-emerald-500/40"
-                        : ""
-                    } space-y-2`}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      e.dataTransfer.dropEffect = "move";
-                      if (dragFieldIdx !== null) setDragOverFieldIdx(idx);
-                    }}
-                    onDragLeave={(e) => {
-                      if (!e.currentTarget.contains(e.relatedTarget)) setDragOverFieldIdx(null);
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const raw = e.dataTransfer.getData("text/plain");
-                      const from = parseInt(raw, 10);
-                      setDragOverFieldIdx(null);
-                      setDragFieldIdx(null);
-                      if (!Number.isNaN(from)) reorderFields(from, idx);
-                    }}
-                  >
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData("text/plain", String(idx));
-                          e.dataTransfer.effectAllowed = "move";
-                          setDragFieldIdx(idx);
-                        }}
-                        onDragEnd={() => {
-                          setDragFieldIdx(null);
-                          setDragOverFieldIdx(null);
-                        }}
-                        className={`mt-0.5 h-fit shrink-0 rounded border border-slate-600 bg-slate-800/90 p-1.5 text-slate-400 hover:text-emerald-300 cursor-grab active:cursor-grabbing ${pressableSubtle}`}
-                        aria-label="Перетащить поле"
-                        title="Перетащить"
-                      >
-                        <GripVertical className="h-4 w-4" strokeWidth={2} aria-hidden />
-                      </button>
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <div className="flex flex-wrap gap-2">
-                          <select
-                            className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white"
-                            value={f.type}
-                            onChange={(e) => updateField(idx, { type: e.target.value })}
-                          >
-                            {FIELD_TYPES.map((o) => (
-                              <option key={o.value} value={o.value}>
-                                {o.label}
-                              </option>
-                            ))}
-                          </select>
-                          <label className="flex items-center gap-1 text-xs text-slate-400">
-                            <input
-                              type="checkbox"
-                              checked={f.required}
-                              onChange={(e) => updateField(idx, { required: e.target.checked })}
-                            />
-                            Обязательное
-                          </label>
+      {!loading && tab === "forms" ? (
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/70">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-800 text-left text-sm text-slate-300">
+              <thead className="bg-slate-900/60 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Название</th>
+                  <th className="px-4 py-3 font-medium">Описание</th>
+                  <th className="px-4 py-3 font-medium">Полей</th>
+                  <th className="px-4 py-3 text-right font-medium">Действия</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {templates.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                      Нет форм. Создайте первую.
+                    </td>
+                  </tr>
+                ) : (
+                  templates.map((t) => (
+                    <tr key={t.id} className="border-b border-slate-800/80 hover:bg-slate-800/30">
+                      <td className="px-4 py-3 font-medium text-slate-200">{t.name}</td>
+                      <td className="max-w-md px-4 py-3 text-slate-400">
+                        <span className="line-clamp-2">{(t.description || "").trim() || "—"}</span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-400">{(t.fields ?? []).length}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex flex-wrap items-center justify-end gap-1">
+                          <IconEditButton
+                            title="Редактировать форму"
+                            className={pressableSubtle}
+                            onClick={() => startEditTemplate(t)}
+                          />
                           <IconDeleteButton
-                            title="Удалить поле"
-                            className={`ml-auto h-7 w-7 ${pressableDanger}`}
-                            onClick={() => removeField(idx)}
+                            title="Удалить форму"
+                            className={pressableDanger}
+                            onClick={() => deleteTemplate(t.id)}
                           />
                         </div>
-                        <input
-                          className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-sm text-white"
-                          placeholder="Подпись поля"
-                          value={f.label}
-                          onChange={(e) => updateField(idx, { label: e.target.value })}
-                        />
-                        <input
-                          className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300"
-                          placeholder="Подсказка (placeholder)"
-                          value={f.placeholder ?? ""}
-                          onChange={(e) => updateField(idx, { placeholder: e.target.value })}
-                        />
-                        {(f.type === "single_choice" || f.type === "multiple_choice") && (
-                          <textarea
-                            className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300"
-                            rows={3}
-                            placeholder="Варианты — по одному в строке"
-                            value={(f.options ?? []).join("\n")}
-                            onChange={(e) => updateField(idx, { options: parseOptionsText(e.target.value) })}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="submit"
-                  disabled={tplSaving}
-                  className={
-                    editingTplId
-                      ? `${BTN_SAVE} ${pressablePrimary}`
-                      : `rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 disabled:active:scale-100 ${pressablePrimary}`
-                  }
-                >
-                  {editingTplId ? (
-                    <>
-                      <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
-                      Сохранить
-                    </>
-                  ) : (
-                    "Создать шаблон"
-                  )}
-                </button>
-                {editingTplId ? (
-                  <button
-                    type="button"
-                    className={`rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 ${pressableSubtle}`}
-                    onClick={resetTemplateForm}
-                  >
-                    Отмена
-                  </button>
-                ) : null}
-              </div>
-              {tplMsg ? <p className="text-sm text-slate-400">{tplMsg}</p> : null}
-            </form>
-          </section>
-          <section>
-            <h2 className="mb-3 text-lg font-semibold text-slate-200">Сохранённые шаблоны</h2>
-            <ul className="space-y-2">
-              {templates.map((t) => (
-                <li
-                  key={t.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-2"
-                >
-                  <div>
-                    <div className="font-medium text-white">{t.name}</div>
-                    <div className="text-xs text-slate-500">{(t.fields ?? []).length} полей</div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <IconEditButton
-                      title="Изменить шаблон"
-                      className={pressableSubtle}
-                      onClick={() => startEditTemplate(t)}
-                    />
-                    <IconDeleteButton
-                      title="Удалить шаблон"
-                      className={pressableDanger}
-                      onClick={() => deleteTemplate(t.id)}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
       ) : null}
 
       {!loading && tab === "events" ? (
-        <div className="grid gap-8 lg:grid-cols-2">
-          <section>
-            <h2 className="mb-3 text-lg font-semibold text-slate-200">Новое мероприятие</h2>
-            <form className="space-y-4 rounded-xl border border-slate-700/80 bg-slate-900/50 p-5" onSubmit={createEvent}>
-              <div>
-                <label className="mb-1 block text-xs text-slate-400">Заголовок (крупно на странице регистрации)</label>
-                <input
-                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
-                  value={evTitle}
-                  onChange={(e) => setEvTitle(e.target.value)}
-                  required
-                  placeholder="Например: Пенуэл Пробуждения — Саратов"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-slate-400">
-                  Дополнительный текст (обычный шрифт: ссылки на чаты, примечания)
-                </label>
-                <textarea
-                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
-                  rows={4}
-                  value={evSubtitle}
-                  onChange={(e) => setEvSubtitle(e.target.value)}
-                  placeholder="Обязательный вопрос, группа: https://t.me/…"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-slate-400">Шаблон формы</label>
-                <select
-                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
-                  value={evTemplateId}
-                  onChange={(e) => setEvTemplateId(e.target.value)}
-                  required
-                >
-                  <option value="">— выберите —</option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-xs text-slate-400">Дата начала</label>
-                  <input
-                    type="date"
-                    className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
-                    value={evStart}
-                    onChange={(e) => setEvStart(e.target.value)}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-slate-400">Дата окончания</label>
-                  <input
-                    type="date"
-                    className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
-                    value={evEnd}
-                    onChange={(e) => setEvEnd(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-slate-400">
-                  Дедлайн регистрации (необязательно; по умолчанию — конец последнего дня мероприятия)
-                </label>
-                <input
-                  type="datetime-local"
-                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
-                  value={evDeadline}
-                  onChange={(e) => setEvDeadline(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-xs text-slate-400">Уведомления о регистрациях — мессенджер</label>
-                  <select
-                    className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
-                    value={evNotifyMessenger}
-                    onChange={(e) => setEvNotifyMessenger(e.target.value)}
-                  >
-                    <option value="">— не отправлять —</option>
-                    <option value="max">MAX</option>
-                    <option value="tg">Telegram</option>
-                    <option value="vk">VK</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-slate-400">ID чата</label>
-                  <input
-                    className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white disabled:opacity-50"
-                    value={evNotifyChatId}
-                    onChange={(e) => setEvNotifyChatId(e.target.value)}
-                    placeholder="chat id / peer id"
-                    disabled={!evNotifyMessenger}
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-slate-500">
-                При новой заявке бот отправит в этот чат данные участника и общее число зарегистрированных. Нужны токены на
-                сервере: MAX_BOT_TOKEN, TELEGRAM_BOT_TOKEN или VK_API_ACCESS_TOKEN.
-              </p>
-              <div>
-                <label className="mb-1 block text-xs text-slate-400">Расписания (напоминания), привязка к мероприятию</label>
-                <select
-                  multiple
-                  className="h-28 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
-                  value={evScheduleIds}
-                  onChange={(e) => {
-                    const opts = [...e.target.selectedOptions].map((o) => o.value);
-                    setEvScheduleIds(opts);
-                  }}
-                >
-                  {schedules.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.type} · {s.chat_id.slice(0, 12)}…
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-xs text-slate-500">
-                  Удерживайте Ctrl (Cmd на Mac) для выбора нескольких. Создание расписаний — в разделе «Расписание».
-                </p>
-              </div>
-              <button
-                type="submit"
-                disabled={evSaving}
-                className={`rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 disabled:active:scale-100 ${pressablePrimary}`}
-              >
-                Создать мероприятие
-              </button>
-              {evMsg ? <p className="text-sm text-slate-400">{evMsg}</p> : null}
-            </form>
-          </section>
-          <section className="min-w-0 space-y-4">
-            <h2 className="text-lg font-semibold text-slate-200">Список мероприятий</h2>
-            <div className="overflow-x-auto rounded-xl border border-slate-700/80">
-              <table className="w-full min-w-[560px] border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b border-slate-700 bg-slate-900/60 text-xs uppercase text-slate-400">
-                    <th className="px-3 py-2">Название</th>
-                    <th className="px-3 py-2">Даты</th>
-                    <th className="px-3 py-2">Открыта</th>
-                    <th className="px-3 py-2">Заявок</th>
-                    <th className="px-3 py-2 w-24"> </th>
+        <div className="space-y-6">
+          <section className="rounded-2xl border border-slate-800 bg-slate-900/70">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[560px] divide-y divide-slate-800 text-left text-sm text-slate-300">
+                <thead className="bg-slate-900/60 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Название</th>
+                    <th className="px-4 py-3 font-medium">Даты</th>
+                    <th className="px-4 py-3 font-medium">Открыта</th>
+                    <th className="px-4 py-3 font-medium">Заявок</th>
+                    <th className="px-4 py-3 text-right font-medium"> </th>
                   </tr>
                 </thead>
-                <tbody>
-                  {events.map((ev) => (
-                    <tr key={ev.id} className="border-b border-slate-800 hover:bg-slate-800/30">
-                      <td className="px-3 py-2 text-slate-200">{ev.title}</td>
-                      <td className="px-3 py-2 text-slate-400 whitespace-nowrap">
-                        {ev.event_start_date} — {ev.event_end_date}
-                      </td>
-                      <td className="px-3 py-2">{ev.registration_open ? "да" : "нет"}</td>
-                      <td className="px-3 py-2">{ev.submissions_count}</td>
-                      <td className="px-3 py-2">
-                        <button
-                          type="button"
-                          className={`rounded px-2 py-1 text-sky-400 border border-sky-800/30 ${pressableSubtle}`}
-                          onClick={() => setSelectedEvent(ev)}
-                        >
-                          Подробнее
-                        </button>
+                <tbody className="divide-y divide-slate-800/60">
+                  {events.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                        Нет мероприятий. Создайте первое.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    events.map((ev) => (
+                      <tr key={ev.id} className="border-b border-slate-800/80 hover:bg-slate-800/30">
+                        <td className="px-4 py-3 font-medium text-slate-200">{ev.title}</td>
+                        <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
+                          {ev.event_start_date} — {ev.event_end_date}
+                        </td>
+                        <td className="px-4 py-3">{ev.registration_open ? "да" : "нет"}</td>
+                        <td className="px-4 py-3">{ev.submissions_count}</td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            type="button"
+                            className={`inline-flex rounded px-2 py-1 text-sky-400 border border-sky-800/30 ${pressableSubtle}`}
+                            onClick={() => setSelectedEvent(ev)}
+                          >
+                            Подробнее
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
+          </section>
 
-            {selectedEvent ? (
+          {selectedEvent ? (
               <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4 space-y-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0 flex-1 space-y-2">
@@ -1138,9 +939,351 @@ export function FormsPage() {
                 )}
               </div>
             ) : null}
-          </section>
         </div>
       ) : null}
+
+      {eventModalOpen && modalRoot
+        ? createPortal(
+            <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/60 p-4">
+              <div className="my-8 w-full max-w-2xl rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold text-white">Новое мероприятие</h2>
+                  <button
+                    type="button"
+                    className="text-slate-400 hover:text-white"
+                    onClick={closeEventModal}
+                    aria-label="Закрыть"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <form className="space-y-4" onSubmit={createEvent}>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">Заголовок (крупно на странице регистрации)</label>
+                    <input
+                      className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                      value={evTitle}
+                      onChange={(e) => setEvTitle(e.target.value)}
+                      required
+                      placeholder="Например: Пенуэл Пробуждения — Саратов"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">
+                      Дополнительный текст (обычный шрифт: ссылки на чаты, примечания)
+                    </label>
+                    <textarea
+                      className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                      rows={4}
+                      value={evSubtitle}
+                      onChange={(e) => setEvSubtitle(e.target.value)}
+                      placeholder="Обязательный вопрос, группа: https://t.me/…"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">Форма</label>
+                    <select
+                      className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                      value={evTemplateId}
+                      onChange={(e) => setEvTemplateId(e.target.value)}
+                      required
+                    >
+                      <option value="">— выберите —</option>
+                      {templates.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Дата начала</label>
+                      <input
+                        type="date"
+                        className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                        value={evStart}
+                        onChange={(e) => setEvStart(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Дата окончания</label>
+                      <input
+                        type="date"
+                        className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                        value={evEnd}
+                        onChange={(e) => setEvEnd(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">
+                      Дедлайн регистрации (необязательно; по умолчанию — конец последнего дня мероприятия)
+                    </label>
+                    <input
+                      type="datetime-local"
+                      className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                      value={evDeadline}
+                      onChange={(e) => setEvDeadline(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">Уведомления о регистрациях — мессенджер</label>
+                      <select
+                        className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                        value={evNotifyMessenger}
+                        onChange={(e) => setEvNotifyMessenger(e.target.value)}
+                      >
+                        <option value="">— не отправлять —</option>
+                        <option value="max">MAX</option>
+                        <option value="tg">Telegram</option>
+                        <option value="vk">VK</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-400">ID чата</label>
+                      <input
+                        className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white disabled:opacity-50"
+                        value={evNotifyChatId}
+                        onChange={(e) => setEvNotifyChatId(e.target.value)}
+                        placeholder="chat id / peer id"
+                        disabled={!evNotifyMessenger}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    При новой заявке бот отправит в этот чат данные участника и общее число зарегистрированных. Нужны
+                    токены на сервере: MAX_BOT_TOKEN, TELEGRAM_BOT_TOKEN или VK_API_ACCESS_TOKEN.
+                  </p>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-400">Расписания (напоминания), привязка к мероприятию</label>
+                    <select
+                      multiple
+                      className="h-28 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                      value={evScheduleIds}
+                      onChange={(e) => {
+                        const opts = [...e.target.selectedOptions].map((o) => o.value);
+                        setEvScheduleIds(opts);
+                      }}
+                    >
+                      {schedules.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.type} · {s.chat_id.slice(0, 12)}…
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Удерживайте Ctrl (Cmd на Mac) для выбора нескольких. Создание расписаний — в разделе «Расписание».
+                    </p>
+                  </div>
+                  {evMsg ? <p className="text-sm text-red-300">{evMsg}</p> : null}
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    <button
+                      type="button"
+                      className={`rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 ${pressableSubtle}`}
+                      onClick={closeEventModal}
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={evSaving}
+                      className={`rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 disabled:active:scale-100 ${pressablePrimary}`}
+                    >
+                      {evSaving ? "Создание…" : "Создать мероприятие"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>,
+            modalRoot,
+          )
+        : null}
+
+      {templateModalOpen && modalRoot
+        ? createPortal(
+            <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/60 p-4">
+              <div className="my-8 w-full max-w-[100rem] rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-white">
+                    {editingTplId ? "Редактирование формы" : "Новая форма"}
+                  </h2>
+                  <button
+                    type="button"
+                    className="text-slate-400 hover:text-white"
+                    onClick={closeTemplateModal}
+                    aria-label="Закрыть"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <form className="space-y-4" onSubmit={saveTemplate}>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-400">Название формы</label>
+                    <input
+                      className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                      value={tplName}
+                      onChange={(e) => setTplName(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-400">Описание (внутреннее)</label>
+                    <input
+                      className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-white"
+                      value={tplDesc}
+                      onChange={(e) => setTplDesc(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <span className="text-sm font-medium text-slate-300">Поля формы</span>
+                        <p className="text-xs text-slate-500">Меняйте порядок, перетаскивая блок за иконку слева.</p>
+                      </div>
+                      <button type="button" className={BTN_ADD} onClick={addField}>
+                        <Plus className={ICON_BTN} strokeWidth={2} aria-hidden />
+                        Поле
+                      </button>
+                    </div>
+                    {tplFields.map((f, idx) => (
+                      <div
+                        key={f.id}
+                        className={`rounded-lg border bg-slate-950/60 p-3 transition-shadow ${
+                          dragFieldIdx === idx ? "border-emerald-600/50 opacity-70 shadow-md" : "border-slate-700"
+                        } ${
+                          dragOverFieldIdx === idx && dragFieldIdx !== null && dragFieldIdx !== idx
+                            ? "ring-2 ring-emerald-500/80 ring-offset-2 ring-offset-slate-950 border-emerald-500/40"
+                            : ""
+                        } space-y-2`}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          if (dragFieldIdx !== null) setDragOverFieldIdx(idx);
+                        }}
+                        onDragLeave={(e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget)) setDragOverFieldIdx(null);
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const raw = e.dataTransfer.getData("text/plain");
+                          const from = parseInt(raw, 10);
+                          setDragOverFieldIdx(null);
+                          setDragFieldIdx(null);
+                          if (!Number.isNaN(from)) reorderFields(from, idx);
+                        }}
+                      >
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData("text/plain", String(idx));
+                              e.dataTransfer.effectAllowed = "move";
+                              setDragFieldIdx(idx);
+                            }}
+                            onDragEnd={() => {
+                              setDragFieldIdx(null);
+                              setDragOverFieldIdx(null);
+                            }}
+                            className={`mt-0.5 h-fit shrink-0 rounded border border-slate-600 bg-slate-800/90 p-1.5 text-slate-400 hover:text-emerald-300 cursor-grab active:cursor-grabbing ${pressableSubtle}`}
+                            aria-label="Перетащить поле"
+                            title="Перетащить"
+                          >
+                            <GripVertical className="h-4 w-4" strokeWidth={2} aria-hidden />
+                          </button>
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <div className="flex flex-wrap gap-2">
+                              <select
+                                className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white"
+                                value={f.type}
+                                onChange={(e) => updateField(idx, { type: e.target.value })}
+                              >
+                                {FIELD_TYPES.map((o) => (
+                                  <option key={o.value} value={o.value}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <label className="flex items-center gap-1 text-xs text-slate-400">
+                                <input
+                                  type="checkbox"
+                                  checked={f.required}
+                                  onChange={(e) => updateField(idx, { required: e.target.checked })}
+                                />
+                                Обязательное
+                              </label>
+                              <IconDeleteButton
+                                title="Удалить поле"
+                                className={`ml-auto h-7 w-7 ${pressableDanger}`}
+                                onClick={() => removeField(idx)}
+                              />
+                            </div>
+                            <input
+                              className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-sm text-white"
+                              placeholder="Подпись поля"
+                              value={f.label}
+                              onChange={(e) => updateField(idx, { label: e.target.value })}
+                            />
+                            <input
+                              className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300"
+                              placeholder="Подсказка (placeholder)"
+                              value={f.placeholder ?? ""}
+                              onChange={(e) => updateField(idx, { placeholder: e.target.value })}
+                            />
+                            {(f.type === "single_choice" || f.type === "multiple_choice") && (
+                              <textarea
+                                className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300"
+                                rows={3}
+                                placeholder="Варианты — по одному в строке"
+                                value={(f.options ?? []).join("\n")}
+                                onChange={(e) => updateField(idx, { options: parseOptionsText(e.target.value) })}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="submit"
+                      disabled={tplSaving}
+                      className={
+                        editingTplId
+                          ? `${BTN_SAVE} ${pressablePrimary}`
+                          : `rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 disabled:active:scale-100 ${pressablePrimary}`
+                      }
+                    >
+                      {editingTplId ? (
+                        <>
+                          <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
+                          Сохранить
+                        </>
+                      ) : (
+                        "создать"
+                      )}
+                    </button>
+                    {editingTplId ? (
+                      <button
+                        type="button"
+                        className={`rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 ${pressableSubtle}`}
+                        onClick={closeTemplateModal}
+                      >
+                        Отмена
+                      </button>
+                    ) : null}
+                  </div>
+                  {tplMsg ? <p className="text-sm text-slate-400">{tplMsg}</p> : null}
+                </form>
+              </div>
+            </div>,
+            modalRoot,
+          )
+        : null}
     </div>
   );
 }
