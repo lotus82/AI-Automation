@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ClipboardList, Plus, Save } from "lucide-react";
+import { ClipboardList, Plus, RefreshCcw, Save } from "lucide-react";
 import {
   IconCopyButton,
   IconDeleteButton,
@@ -10,7 +10,7 @@ import { createPortal } from "react-dom";
 import api from "../api/client.js";
 import { useAuthStore } from "../store/authStore.js";
 import { SurveyTakeExperience } from "../components/questionnaires/SurveyTakeExperience.jsx";
-import { BTN_ADD, BTN_SAVE, ICON_BTN } from "../styles/pageLayout.js";
+import { BTN_ADD, BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function formatApiDetail(err) {
@@ -313,25 +313,24 @@ export function QuestionnairesPage() {
   const modalRoot = typeof document !== "undefined" ? document.body : null;
 
   return (
-    <>
-    <div className="w-full min-w-0 space-y-6 text-slate-100">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-xl font-semibold text-white">
-            <ClipboardList className="h-7 w-7 shrink-0 text-sky-400/90" strokeWidth={1.75} aria-hidden />
-            Опросники
-          </h1>
+    <div className={`w-full min-w-0 space-y-6 ${PAGE_TEXT}`}>
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600/20 text-sky-300">
+            <ClipboardList className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+          </div>
+          <h1 className={PAGE_H1}>Опросники</h1>
         </div>
         <div className="flex items-center gap-2">
           <button
-              type="button"
-              onClick={load}
-              disabled={loading}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60"
-            >
-              <RefreshCcw className="h-3.5 w-3.5" aria-hidden />
-              Обновить
-            </button>
+            type="button"
+            onClick={load}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60"
+          >
+            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} aria-hidden />
+            Обновить
+          </button>
           <button
             type="button"
             onClick={openCreate}
@@ -341,22 +340,23 @@ export function QuestionnairesPage() {
             Добавить
           </button>
         </div>
-      </div>
+      </header>
 
       {listErr ? <p className="text-sm text-red-400">{listErr}</p> : null}
 
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/40">
-        <table className="min-w-full text-left text-sm text-slate-300">
-          <thead className="border-b border-slate-800 bg-slate-900/80 text-xs uppercase text-slate-500">
+      <section className="rounded-2xl border border-slate-800 bg-slate-900/70">
+        <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-slate-800 text-left text-sm text-slate-300">
+          <thead className="bg-slate-900/60 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3 font-medium">Название</th>
               <th className="px-4 py-3 font-medium min-w-[12rem] max-w-xs">Публичная ссылка</th>
               <th className="px-4 py-3 font-medium">Создан</th>
               <th className="px-4 py-3 font-medium">Обновлён</th>
-              <th className="px-4 py-3 font-medium text-right">Действия</th>
+              <th className="px-4 py-3 text-right font-medium">Действия</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-800/60">
             {listLoading ? (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
@@ -425,7 +425,8 @@ export function QuestionnairesPage() {
             )}
           </tbody>
         </table>
-      </div>
+        </div>
+      </section>
 
       {builderOpen && modalRoot
         ? createPortal(
@@ -629,6 +630,5 @@ export function QuestionnairesPage() {
       )
         : null}
     </div>
-    </>
   );
 }

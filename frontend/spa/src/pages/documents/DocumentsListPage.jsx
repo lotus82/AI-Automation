@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import api from "../../api/client.js";
 import { useAuthStore } from "../../store/authStore.js";
-import { PAGE_SHELL, PAGE_TEXT } from "../../styles/pageLayout.js";
+import { PAGE_H1, PAGE_TEXT } from "../../styles/pageLayout.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
 
 function formatApiDetail(d) {
@@ -127,7 +127,7 @@ export function DocumentsListPage() {
   };
 
   return (
-    <div className={`${PAGE_SHELL} ${PAGE_TEXT} px-4 py-6 sm:px-6`}>
+    <div className={`w-full min-w-0 space-y-6 ${PAGE_TEXT}`}>
       <input
         id="documents-txt-upload"
         type="file"
@@ -136,14 +136,12 @@ export function DocumentsListPage() {
         onChange={onUploadFile}
       />
 
-      <div className="w-full min-w-0 space-y-6 pb-10 text-slate-100">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold text-white">
-              <BookOpen className="h-5 w-5" strokeWidth={1.75} aria-hidden />
-              Читатель
-            </h1>
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600/20 text-sky-300">
+            <BookOpen className="h-5 w-5" strokeWidth={1.75} aria-hidden />
           </div>
+          <h1 className={PAGE_H1}>Читатель</h1>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -152,7 +150,7 @@ export function DocumentsListPage() {
             disabled={loading}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60"
           >
-            <RefreshCcw className="h-3.5 w-3.5" aria-hidden />
+            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} aria-hidden />
             Обновить
           </button>
           <button
@@ -164,7 +162,7 @@ export function DocumentsListPage() {
             Добавить
           </button>
         </div>
-      </div>
+      </header>
 
       {uploadProgress !== null ? (
         <div className="mb-4 rounded-lg border border-slate-600 bg-slate-900/80 p-3">
@@ -224,17 +222,18 @@ export function DocumentsListPage() {
         </form>
       ) : null}
 
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/40">
+      <section className="rounded-2xl border border-slate-800 bg-slate-900/70">
+        <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-slate-800 text-sm">
-          <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-              <th className="px-4 py-3">Название</th>
-              <th className="hidden px-4 py-3 sm:table-cell">Автор</th>
-              <th className="px-4 py-3">Обновлён</th>
-              <th className="px-4 py-3 text-right">Действия</th>
+          <thead className="bg-slate-900/60 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-4 py-3 text-left font-medium">Название</th>
+              <th className="hidden px-4 py-3 text-left font-medium sm:table-cell">Автор</th>
+              <th className="px-4 py-3 text-left font-medium">Обновлён</th>
+              <th className="px-4 py-3 text-right font-medium">Действия</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800 text-slate-200">
+          <tbody className="divide-y divide-slate-800/60 text-slate-200">
             {loading ? (
               <tr>
                 <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
@@ -289,7 +288,8 @@ export function DocumentsListPage() {
             )}
           </tbody>
         </table>
-      </div>
+        </div>
+      </section>
     </div>
   );
 }

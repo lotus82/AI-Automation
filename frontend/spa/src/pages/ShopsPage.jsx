@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Store } from "lucide-react";
+import { Plus, RefreshCcw, Store } from "lucide-react";
 import { IconDeleteButton, IconEditLink } from "../components/ui/IconActionButtons.jsx";
 import api from "../api/client.js";
+import { PAGE_H1, PAGE_TEXT } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 function formatApiDetail(err) {
@@ -85,23 +86,23 @@ export function ShopsPage() {
   };
 
   return (
-    <div className="w-full min-w-0 space-y-6 pb-10 text-slate-100">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-white">
-            <Store className="h-8 w-8 shrink-0 text-amber-400/90" strokeWidth={1.75} aria-hidden />
-            Магазины
-          </h1>
+    <div className={`w-full min-w-0 space-y-6 ${PAGE_TEXT}`}>
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300">
+            <Store className="h-5 w-5" strokeWidth={1.75} aria-hidden />
+          </div>
+          <h1 className={PAGE_H1}>Магазины</h1>
         </div>
         <div className="flex items-center gap-2">
           <button
-              type="button"
-              onClick={load}
-              disabled={loading}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60"
-            >
-              <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} aria-hidden />
-              Обновить
+            type="button"
+            onClick={load}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60"
+          >
+            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} aria-hidden />
+            Обновить
           </button>
           <button
             type="button"
@@ -110,29 +111,30 @@ export function ShopsPage() {
               setCreateOpen(true);
               setMsg("");
             }}
-            className={`inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${pressablePri}`}
+            className={`inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 ${pressablePri}`}
           >
-            <Plus className="h-4 w-4" strokeWidth={2} aria-hidden />
+            <Plus className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
             Добавить
           </button>
         </div>
-      </div>
+      </header>
 
       {msg ? (
         <p className="rounded-lg border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-slate-300">{msg}</p>
       ) : null}
 
-      <div className="overflow-x-auto rounded-xl border border-slate-700/80 bg-slate-900/40">
-        <table className="w-full min-w-[720px] text-left text-sm">
-          <thead className="border-b border-slate-700 bg-slate-900/60 text-xs uppercase text-slate-400">
-            <tr>
-              <th className="px-4 py-3">Название</th>
-              <th className="px-4 py-3">Slug</th>
-              <th className="px-4 py-3">Обновлён</th>
-              <th className="px-4 py-3 w-40">Действия</th>
-            </tr>
-          </thead>
-          <tbody>
+      <section className="rounded-2xl border border-slate-800 bg-slate-900/70">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] divide-y divide-slate-800 text-left text-sm">
+            <thead className="bg-slate-900/60 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Название</th>
+                <th className="px-4 py-3 font-medium">Slug</th>
+                <th className="px-4 py-3 font-medium">Обновлён</th>
+                <th className="w-40 px-4 py-3 text-right font-medium">Действия</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60 text-slate-200">
             {loading ? (
               <tr>
                 <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
@@ -147,14 +149,14 @@ export function ShopsPage() {
               </tr>
             ) : (
               shops.map((s) => (
-                <tr key={s.id} className="border-t border-slate-800">
+                <tr key={s.id} className="hover:bg-slate-800/40">
                   <td className="px-4 py-3 font-medium text-slate-100">{s.name}</td>
                   <td className="px-4 py-3 text-slate-400">
                     <code className="text-xs text-emerald-200/80">/{s.slug}</code>
                   </td>
                   <td className="px-4 py-3 text-slate-400">{formatDateTimeRu(s.updated_at)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap items-center gap-1">
+                  <td className="px-4 py-3 text-right">
+                    <div className="inline-flex flex-wrap items-center justify-end gap-1">
                       <IconEditLink to={`/shops/${s.id}/edit`} className={pressableSub} />
                       <IconDeleteButton
                         disabled={busy}
@@ -167,9 +169,10 @@ export function ShopsPage() {
                 </tr>
               ))
             )}
-          </tbody>
-        </table>
-      </div>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       {createOpen ? (
         <div

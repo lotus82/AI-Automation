@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import api from "../../api/client.js";
 import { useAuthStore } from "../../store/authStore.js";
-import { PAGE_SHELL, PAGE_TEXT } from "../../styles/pageLayout.js";
+import { PAGE_H1, PAGE_TEXT } from "../../styles/pageLayout.js";
 import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
 
 /** FastAPI detail → человеко-читаемая строка. */
@@ -97,16 +97,13 @@ export function SitesListPage({ misMode = false }) {
   };
 
   return (
-    <div className={`${PAGE_SHELL} ${PAGE_TEXT} px-4 py-6 sm:px-6`}>
+    <div className={`w-full min-w-0 space-y-6 ${PAGE_TEXT}`}>
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600/20 text-sky-300">
             <Globe className="h-5 w-5" strokeWidth={1.75} aria-hidden />
           </div>
-          <div>
-            <h1 className="text-xl font-semibold text-white">{misMode ? "МИС" : "Сайты"}</h1>
-
-          </div>
+          <h1 className={PAGE_H1}>{misMode ? "МИС" : "Сайты"}</h1>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -149,7 +146,7 @@ export function SitesListPage({ misMode = false }) {
           <table className="min-w-full divide-y divide-slate-800 text-sm">
             <thead className="bg-slate-900/60 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">
+                <th className="px-4 py-3 text-left font-medium">
                   Название
                   {misMode ? (
                     <span className="ml-2 rounded bg-violet-600/30 px-1.5 py-0.5 text-[10px] font-normal text-violet-200">
@@ -157,22 +154,22 @@ export function SitesListPage({ misMode = false }) {
                     </span>
                   ) : null}
                 </th>
-                <th className="px-4 py-2 text-left font-medium">Заголовок</th>
-                <th className="px-4 py-2 text-left font-medium">Цвет</th>
-                <th className="px-4 py-2 text-left font-medium">Обновлён</th>
-                <th className="px-4 py-2 text-right font-medium">Действия</th>
+                <th className="px-4 py-3 text-left font-medium">Заголовок</th>
+                <th className="px-4 py-3 text-left font-medium">Цвет</th>
+                <th className="px-4 py-3 text-left font-medium">Обновлён</th>
+                <th className="px-4 py-3 text-right font-medium">Действия</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {loading ? (
                 <tr>
-                  <td className="px-4 py-4 text-slate-400" colSpan={5}>
+                  <td className="px-4 py-8 text-slate-400" colSpan={5}>
                     Загрузка…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-6 text-center text-slate-500" colSpan={5}>
+                  <td className="px-4 py-8 text-center text-slate-500" colSpan={5}>
                     {misMode
                       ? "Ещё нет МИС-сайтов. Создайте сайт и выберите его в «Приложениях» как активный для Mini App."
                       : "Ещё нет сайтов. Нажмите «Создать сайт», чтобы начать."}
@@ -181,11 +178,11 @@ export function SitesListPage({ misMode = false }) {
               ) : (
                 rows.map((s) => (
                   <tr key={s.id} className="hover:bg-slate-800/40">
-                    <td className="px-4 py-2 font-medium text-slate-100">{s.name}</td>
-                    <td className="px-4 py-2 text-slate-300">
+                    <td className="px-4 py-3 font-medium text-slate-100">{s.name}</td>
+                    <td className="px-4 py-3 text-slate-300">
                       {s.title || <span className="text-slate-500">—</span>}
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span
                           className="inline-block h-4 w-4 rounded-full ring-1 ring-slate-600"
@@ -195,8 +192,8 @@ export function SitesListPage({ misMode = false }) {
                         <span className="font-mono text-xs text-slate-400">{s.theme_color}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-2 text-slate-400">{formatDateTimeRu(s.updated_at)}</td>
-                    <td className="px-4 py-2">
+                    <td className="px-4 py-3 text-slate-400">{formatDateTimeRu(s.updated_at)}</td>
+                    <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
                         <button
                           type="button"
