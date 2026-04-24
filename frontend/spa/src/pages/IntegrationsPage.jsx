@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation } from "react-router-dom";
-import { ExternalLink, Plug, Plus, RefreshCcw, Save } from "lucide-react";
-import { IconDeleteButton, IconEditButton } from "../components/ui/IconActionButtons.jsx";
+import { Plug, Plus, RefreshCcw, Save } from "lucide-react";
+import { IconEditButton } from "../components/ui/IconActionButtons.jsx";
 import api from "../api/client.js";
 import { AgentChat } from "../components/Chat/AgentChat.jsx";
 import { IntegrationForm } from "../components/integrations/IntegrationForm.jsx";
@@ -22,6 +22,13 @@ const DEFAULT_MAX_GREETING =
 const MAX_INTEGRATION_BASE_URL = "https://api.max.ru";
 /** Long poll `GET /updates` идёт на platform API, см. `max_platform_api_base` / `MAX_PLATFORM_API_BASE`. */
 const MAX_PLATFORM_API_BASE_DEFAULT = "https://platform-api.max.ru";
+
+const FERNET_KEY_GENERATE_CMD =
+  'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"';
+
+function isIntegrationFernetKeyError(message) {
+  return typeof message === "string" && message.includes("INTEGRATION_FERNET_KEY");
+}
 
 function formatApiDetail(err) {
   const body = err?.response?.data;
@@ -144,6 +151,52 @@ function mapApiRowToForm(data) {
     auth: data.auth && typeof data.auth === "object" ? { ...data.auth } : { auth_type: "NO_AUTH" },
     actions: Array.isArray(data.actions) ? data.actions.map((a) => ({ ...a })) : [],
   };
+}
+
+function IntegrationReadonlySummary({ data }) {
+  if (!data) return null;
+  const base = data.base_url != null ? String(data.base_url) : "—";
+  const authType =
+    data.auth && typeof data.auth === "object" && data.auth.auth_type != null
+      ? String(data.auth.auth_type)
+      : "—";
+  const nAct = Array.isArray(data.actions) ? data.actions.length : 0;
+  const nWh = Array.isArray(data.webhooks) ? data.webhooks.length : 0;
+  return (
+    <div className="mb-6 space-y-3 rounded-xl border border-slate-700/90 bg-slate-950/40 p-4 text-sm text-slate-200">
+      <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">Содержимое интеграции</h3>
+      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div>
+          <dt className="text-xs text-slate-500">ID</dt>
+          <dd className="mt-0.5 break-all font-mono text-xs text-slate-200">{String(data.id)}</dd>
+        </div>
+        <div className="sm:col-span-1 lg:col-span-2">
+          <dt className="text-xs text-slate-500">Base URL</dt>
+          <dd className="mt-0.5 break-all font-mono text-xs text-slate-200" title={base}>
+            {base}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500">Авторизация</dt>
+          <dd className="mt-0.5 text-slate-200">{authType}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500">Действия / вебхуки</dt>
+          <dd className="mt-0.5 text-slate-200">
+            {nAct} / {nWh}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500">Создана</dt>
+          <dd className="mt-0.5 text-slate-300">{formatDateTimeRu(data.created_at)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500">Обновлена</dt>
+          <dd className="mt-0.5 text-slate-300">{formatDateTimeRu(data.updated_at)}</dd>
+        </div>
+      </dl>
+    </div>
+  );
 }
 
 export function IntegrationsPage() {
@@ -354,17 +407,6 @@ export function IntegrationsPage() {
     }
   };
 
-  const onDeleteRow = async (id) => {
-    if (!window.confirm("Удалить эту интеграцию?")) return;
-    try {
-      await api.delete(`/v1/integrations/${id}`);
-      await loadList();
-    } catch (e) {
-      console.error(e);
-      window.alert(formatApiDetail(e) || "Не удалось удалить");
-    }
-  };
-
   const modalRoot = typeof document !== "undefined" ? document.body : null;
 
   return (
@@ -395,7 +437,45 @@ export function IntegrationsPage() {
         </div>
       </header>
 
-      {listErr ? <p className="text-sm text-red-400">{listErr}</p> : null}
+      {listErr ? (
+        isIntegrationFernetKeyError(listErr) ? (
+          <div
+            className="rounded-2xl border border-amber-800/50 bg-amber-950/25 px-4 py-3 text-sm text-amber-100/95"
+            role="alert"
+          >
+            <p className="m-0 font-medium text-amber-50">{listErr}</p>
+            <p className="mt-2 text-amber-100/85">
+              Без ключа нельзя хранить секреты интеграций в БД. На сервере (или в{" "}
+              <code className="text-xs text-amber-200/95">.env</code> рядом с{" "}
+              <code className="text-xs text-amber-200/95">docker-compose</code>) задайте переменную и перезапустите
+              контейнер API:
+            </p>
+            <ol className="mt-2 list-decimal space-y-2 pl-5 text-amber-100/90">
+              <li>
+                Сгенерируйте ключ (одна строка, 44 символа):
+                <pre className="mt-1 overflow-x-auto rounded-lg border border-amber-900/50 bg-slate-950/80 p-2 font-mono text-xs text-amber-100/90">
+                  {FERNET_KEY_GENERATE_CMD}
+                </pre>
+              </li>
+              <li>
+                В <code className="text-xs">.env</code> добавьте, например:{" "}
+                <code className="whitespace-pre-wrap break-all text-xs text-amber-200/95">
+                  INTEGRATION_FERNET_KEY=ваш_сгенерированный_ключ
+                </code>
+              </li>
+              <li>
+                <code className="text-xs">docker compose -f docker-compose.prod.yml up -d</code> (или ваш способ) —
+                чтобы сервис перечитал окружение.
+              </li>
+            </ol>
+            <p className="mt-2 text-xs text-amber-200/70">
+              Тот же ключ должен оставаться неизменным, иначе уже сохранённые в БД секреты интеграций не расшифруются.
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-red-400">{listErr}</p>
+        )
+      ) : null}
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/70">
         <div className="overflow-x-auto">
@@ -403,60 +483,37 @@ export function IntegrationsPage() {
             <thead className="bg-slate-900/60 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3 font-medium">Название</th>
-                <th className="px-4 py-3 font-medium min-w-[12rem]">Base URL</th>
-                <th className="px-4 py-3 font-medium">Создана</th>
-                <th className="px-4 py-3 font-medium">Обновлена</th>
-                <th className="px-4 py-3 text-right font-medium">Действия</th>
+                <th className="w-[1%] px-4 py-3 text-right font-medium" scope="col">
+                  <span className="sr-only">Редактировать</span>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {listLoading ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={2} className="px-4 py-8 text-center text-slate-500">
                     Загрузка…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
-                    Нет интеграций. Нажмите «Добавить» или откройте конструктор.
+                  <td colSpan={2} className="px-4 py-8 text-center text-slate-500">
+                    Нет интеграций. Нажмите «Добавить».
                   </td>
                 </tr>
               ) : (
-                rows.map((r) => {
-                  const base = r.base_url != null ? String(r.base_url) : "";
-                  return (
-                    <tr key={r.id} className="border-b border-slate-800/80 hover:bg-slate-800/30">
-                      <td className="px-4 py-3 font-medium text-slate-200">{r.name}</td>
-                      <td className="px-4 py-3 max-w-[min(28rem,50vw)]">
-                        <a
-                          href={base}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex min-w-0 max-w-full items-center gap-1.5 break-all font-mono text-xs text-emerald-400 underline decoration-emerald-600/50 underline-offset-2 hover:text-emerald-300"
-                          title={base}
-                        >
-                          <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                          {base || "—"}
-                        </a>
-                      </td>
-                      <td className="px-4 py-3 text-slate-400">{formatDateTimeRu(r.created_at)}</td>
-                      <td className="px-4 py-3 text-slate-400">{formatDateTimeRu(r.updated_at)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex flex-wrap items-center justify-end gap-1">
-                          <IconEditButton
-                            title="Редактировать интеграцию"
-                            onClick={() => openEdit(r.id)}
-                          />
-                          <IconDeleteButton
-                            title="Удалить интеграцию"
-                            onClick={() => onDeleteRow(r.id)}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
+                rows.map((r) => (
+                  <tr key={r.id} className="border-b border-slate-800/80 hover:bg-slate-800/30">
+                    <td className="px-4 py-3 font-medium text-slate-200">{r.name}</td>
+                    <td className="px-4 py-3 text-right">
+                      <IconEditButton
+                        title="Редактировать"
+                        aria-label="Редактировать"
+                        onClick={() => openEdit(r.id)}
+                      />
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
@@ -469,7 +526,7 @@ export function IntegrationsPage() {
               <div className="my-8 w-full max-w-[100rem] rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-white">
-                    {editingId ? "Редактирование интеграции" : "Конструктор интеграции"}
+                    {editingId ? "Интеграция" : "Конструктор интеграции"}
                   </h2>
                   <button
                     type="button"
@@ -481,14 +538,31 @@ export function IntegrationsPage() {
                   </button>
                 </div>
                 {builderErr ? (
-                  <p className="mb-4 rounded-lg border border-red-900/40 bg-red-950/20 px-3 py-2 text-sm text-red-200/95">
-                    {builderErr}
-                  </p>
+                  isIntegrationFernetKeyError(builderErr) ? (
+                    <div
+                      className="mb-4 rounded-lg border border-amber-800/50 bg-amber-950/25 px-3 py-2 text-sm text-amber-100/95"
+                      role="alert"
+                    >
+                      <p className="m-0 font-medium text-amber-50">{builderErr}</p>
+                      <p className="mt-1 text-xs text-amber-100/85">
+                        См. шаги на странице (блок с командой <code>python -c &quot;…Fernet…&quot;</code>) или в{" "}
+                        <code className="text-amber-200/90">.env.example</code>.
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mb-4 rounded-lg border border-red-900/40 bg-red-950/20 px-3 py-2 text-sm text-red-200/95">
+                      {builderErr}
+                    </p>
+                  )
                 ) : null}
                 {editFormLoading ? (
                   <p className="text-sm text-slate-400">Загрузка…</p>
                 ) : formInitial ? (
                   <div className={integrationSaving ? "pointer-events-none opacity-60" : ""}>
+                    {editingId && editSource ? <IntegrationReadonlySummary data={editSource} /> : null}
+                    {editingId ? (
+                      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Конфигурация</p>
+                    ) : null}
                     <IntegrationForm
                       key={editingId || "new"}
                       showHeading={false}
