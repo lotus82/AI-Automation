@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { useLocation } from "react-router-dom";
-import { Plug, Plus, RefreshCcw, Save } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { Plug, Plus, RefreshCcw } from "lucide-react";
 import { IconEditButton } from "../components/ui/IconActionButtons.jsx";
 import api from "../api/client.js";
-import { AgentChat } from "../components/Chat/AgentChat.jsx";
 import { IntegrationForm } from "../components/integrations/IntegrationForm.jsx";
-import { VoiceTelephonyTestPanel } from "../components/telephony/VoiceTelephonyTestPanel.jsx";
+import { IntegrationsSystemModalBody } from "./IntegrationsSystemModalBody.jsx";
 import { SK } from "../constants/systemSettingsKeys.js";
 import { hintForSecretRow, mapFromList, parseTruthy } from "../utils/systemSettingsForm.js";
-import { BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_HEADER_BETWEEN, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
+import { PAGE_H1, PAGE_HEADER_BETWEEN, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 const UUID_RE =
@@ -18,11 +17,6 @@ const UUID_RE =
 const DEFAULT_MAX_GREETING =
   "Здравствуйте! Это ИИ-помощник компании. Слушаю вас.";
 
-/** Как `max_api_base` / `MAX_API_BASE` на бэкенде — см. `src/core/config.py`, `MaxMessengerClient`. */
-const MAX_INTEGRATION_BASE_URL = "https://api.max.ru";
-/** Long poll `GET /updates` идёт на platform API, см. `max_platform_api_base` / `MAX_PLATFORM_API_BASE`. */
-const MAX_PLATFORM_API_BASE_DEFAULT = "https://platform-api.max.ru";
-
 const FERNET_KEY_GENERATE_CMD =
   'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"';
 
@@ -30,7 +24,7 @@ function isIntegrationFernetKeyError(message) {
   return typeof message === "string" && message.includes("INTEGRATION_FERNET_KEY");
 }
 
-/** Подсистемы панели: в таблице вместе с API-интеграциями; якоря = id секций ниже. */
+/** Подсистемы панели: в таблице вместе с API-интеграциями; anchor — ключ модального окна и hash. */
 const BUILTIN_INTEGRATION_ROWS = [
   { key: "sys-chats", name: "Чаты с агентом", anchor: "chats" },
   { key: "sys-max", name: "Мессенджер MAX", anchor: "max" },
@@ -38,6 +32,10 @@ const BUILTIN_INTEGRATION_ROWS = [
   { key: "sys-vk", name: "VK", anchor: "vk" },
   { key: "sys-telephony", name: "Телефония", anchor: "telephony" },
 ];
+const VALID_SYSTEM_INTEGRATION_ANCHORS = new Set(BUILTIN_INTEGRATION_ROWS.map((r) => r.anchor));
+function titleForSystemModal(anchor) {
+  return BUILTIN_INTEGRATION_ROWS.find((r) => r.anchor === anchor)?.name ?? "Интеграция";
+}
 
 function formatApiDetail(err) {
   const body = err?.response?.data;
@@ -210,6 +208,7 @@ function IntegrationReadonlySummary({ data }) {
 
 export function IntegrationsPage() {
   const location = useLocation();
+  const navigate = useNavigate();
 
   const [rows, setRows] = useState([]);
   const [listLoading, setListLoading] = useState(true);
@@ -222,6 +221,7 @@ export function IntegrationsPage() {
   const [editFormLoading, setEditFormLoading] = useState(false);
   const [builderErr, setBuilderErr] = useState("");
   const [integrationSaving, setIntegrationSaving] = useState(false);
+  const [systemModal, setSystemModal] = useState(null);
 
   const [maxForm, setMaxForm] = useState(initialMaxForm);
   const [telegramForm, setTelegramForm] = useState(initialTelegramForm);
@@ -255,28 +255,29 @@ export function IntegrationsPage() {
     loadList();
   }, [loadList]);
 
-  const scrollToSection = useCallback(
+  const closeSystemModal = useCallback(() => {
+    setSystemModal(null);
+    navigate(
+      { pathname: location.pathname, search: location.search, hash: "" },
+      { replace: true },
+    );
+  }, [navigate, location.pathname, location.search]);
+
+  const openSystemIntegrationModal = useCallback(
     (anchor) => {
-      const id = String(anchor || "").replace(/^#/, "");
-      if (!id) return;
-      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-      try {
-        const path = window.location.pathname + (window.location.search || "");
-        window.history.replaceState(null, "", `${path}#${id}`);
-      } catch {
-        /* ignore */
-      }
+      if (!VALID_SYSTEM_INTEGRATION_ANCHORS.has(anchor)) return;
+      setBuilderOpen(false);
+      setSystemModal(anchor);
     },
     [],
   );
 
   useEffect(() => {
-    const hash = location.hash?.replace(/^#/, "");
-    if (!hash) return;
-    const t = window.setTimeout(() => {
-      document.getElementById(hash)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 0);
-    return () => window.clearTimeout(t);
+    const h = (location.hash || "").replace(/^#/, "");
+    if (h && VALID_SYSTEM_INTEGRATION_ANCHORS.has(h)) {
+      setBuilderOpen(false);
+      setSystemModal(h);
+    }
   }, [location.hash, location.key]);
 
   const loadMessengerSettings = useCallback(async () => {
@@ -369,6 +370,7 @@ export function IntegrationsPage() {
   );
 
   const openCreate = () => {
+    setSystemModal(null);
     setEditingId(null);
     setEditSource(null);
     setEditFormLoading(false);
@@ -378,6 +380,7 @@ export function IntegrationsPage() {
   };
 
   const openEdit = async (id) => {
+    setSystemModal(null);
     setBuilderErr("");
     setEditingId(id);
     setEditSource(null);
@@ -521,9 +524,9 @@ export function IntegrationsPage() {
                   <td className="px-4 py-3 font-medium text-slate-200">{row.name}</td>
                   <td className="px-4 py-3 text-right">
                     <IconEditButton
-                      title="Перейти к настройкам"
-                      aria-label={`Перейти к настройкам: ${row.name}`}
-                      onClick={() => scrollToSection(row.anchor)}
+                      title="Редактировать"
+                      aria-label={`Редактировать: ${row.name}`}
+                      onClick={() => openSystemIntegrationModal(row.anchor)}
                     />
                   </td>
                 </tr>
@@ -632,250 +635,59 @@ export function IntegrationsPage() {
           )
         : null}
 
-      <section id="chats" className="space-y-4 scroll-mt-4">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-200">Чаты с агентом</h2>
-          <p className="mt-1 text-sm text-slate-400">
-            Потоковый ответ (SSE) с эндпоинта <code className="text-slate-300">POST /api/v1/chat/stream</code>. В запрос
-            передаются идентификаторы интеграций из таблицы выше.
-          </p>
-          {chatIntegrationIds.length === 0 ? (
-            <p className="mt-2 rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-2 text-sm text-amber-100/90">
-              Нет интеграций с UUID в списке — чат откроется без инструментов. Создайте интеграцию через «Добавить».
-            </p>
-          ) : null}
-        </div>
-        <AgentChat integrationIds={chatIntegrationIds} />
-      </section>
-
-      <section id="max" className="w-full min-w-0 space-y-4 scroll-mt-4">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-200">Мессенджер MAX</h2>
-        </div>
-        {messengerLoadError ? (
-          <p className="rounded-lg border border-red-900/40 bg-red-950/20 px-3 py-2 text-sm text-red-200/95">
-            {messengerLoadError}
-          </p>
-        ) : null}
-        <p
-          className={`min-h-[1.25rem] text-sm ${maxStatusError ? "text-red-400" : "text-emerald-400"}`}
-          aria-live="polite"
-        >
-          {maxStatusMsg}
-        </p>
-        {messengerLoading ? (
-          <p className="text-slate-400">Загрузка…</p>
-        ) : (
-          <form
-            className="space-y-4 rounded-xl border border-slate-700/80 bg-slate-800/40 p-5 shadow-sm"
-            onSubmit={onMaxSubmit}
-          >
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-200" htmlFor="int-max-base-url">
-                base_url
-              </label>
-              <p className="text-sm text-slate-400">
-                Базовый URL HTTP API бота (отправка сообщений, вызовы и т.д.) — тот же, что использует сервер. Изменение
-                только через переменные окружения <code className="text-slate-300">MAX_API_BASE</code> /{" "}
-                <code className="text-slate-300">MAX_PLATFORM_API_BASE</code> (по умолчанию:{" "}
-                <code className="text-slate-300">{MAX_INTEGRATION_BASE_URL}</code> и{" "}
-                <code className="text-slate-300">{MAX_PLATFORM_API_BASE_DEFAULT}</code> для long poll).
-              </p>
-              <input
-                id="int-max-base-url"
-                className="w-full cursor-default rounded-lg border border-slate-600 bg-slate-950/80 px-3 py-2 text-sm text-slate-300"
-                type="url"
-                readOnly
-                autoComplete="off"
-                name="max_base_url"
-                value={MAX_INTEGRATION_BASE_URL}
-                title="MAX Bot API: значение по умолчанию сервера"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-200" htmlFor="int-max-bot-username">
-                Ник бота MAX (<code className="text-xs">@id…_bot</code>)
-              </label>
-              <p className="text-sm text-slate-400">
-                Подстрока в тексте (например <code className="text-xs">@id…_bot</code>). В групповых чатах бот
-                обрабатывает сообщение только при наличии этого упоминания.
-              </p>
-              <input
-                id="int-max-bot-username"
-                className="w-full rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                type="text"
-                autoComplete="off"
-                placeholder="@id6451417302_bot"
-                value={maxForm.maxBotUsername}
-                onChange={(e) => setMaxField("maxBotUsername", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-200" htmlFor="int-max-bot-token">
-                Токен бота MAX
-              </label>
-              <p className="text-sm text-slate-400">{maxForm.maxBotHint}</p>
-              <input
-                id="int-max-bot-token"
-                className="w-full rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                type="password"
-                autoComplete="off"
-                placeholder="Оставьте пустым, чтобы не менять сохранённый токен"
-                value={maxForm.maxBotToken}
-                onChange={(e) => setMaxField("maxBotToken", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-200">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-slate-500 bg-slate-900 accent-emerald-500"
-                  checked={maxForm.maxUsePolling}
-                  onChange={(e) => setMaxField("maxUsePolling", e.target.checked)}
-                />
-                Использовать Long Polling (для локальной отладки)
-              </label>
-              <p className="mt-1.5 text-sm text-slate-400">
-                Опрос <code className="text-xs">GET /updates</code> у MAX без публичного HTTPS. В продакшене выключайте и
-                используйте Webhook.
-              </p>
-            </div>
-
-            <div>
-              <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-200">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-slate-500 bg-slate-900 accent-emerald-500"
-                  checked={maxForm.maxVoiceReply}
-                  onChange={(e) => setMaxField("maxVoiceReply", e.target.checked)}
-                />
-                Озвучивать ответы в MAX
-              </label>
-              <p className="mt-1.5 text-sm text-slate-400">
-                После текстового ответа отправляется голосовое вложение. Нужен настроенный TTS.
-              </p>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-200" htmlFor="int-max-call-delay">
-                Задержка ответа на входящий звонок MAX, сек
-              </label>
-              <p className="text-sm text-slate-400">
-                Сколько секунд ждать перед отправкой команды «принять вызов» в API MAX.
-              </p>
-              <input
-                id="int-max-call-delay"
-                className="w-full max-w-xs rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                type="number"
-                min={0}
-                max={120}
-                step={1}
-                value={maxForm.maxCallAnswerDelay}
-                onChange={(e) => setMaxField("maxCallAnswerDelay", e.target.value)}
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-200" htmlFor="int-max-greeting">
-                Приветствие при ответе на звонок MAX
-              </label>
-              <textarea
-                id="int-max-greeting"
-                className="w-full resize-y rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                rows={2}
-                placeholder={DEFAULT_MAX_GREETING}
-                value={maxForm.maxCallGreeting}
-                onChange={(e) => setMaxField("maxCallGreeting", e.target.value)}
-              />
-            </div>
-
-            <button type="submit" className={BTN_SAVE} disabled={maxSaving}>
-              <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
-              Сохранить настройки MAX
-            </button>
-          </form>
-        )}
-      </section>
-
-      <section id="telegram" className="w-full min-w-0 space-y-4 scroll-mt-4">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-200">Мессенджер Telegram</h2>
-        </div>
-        {messengerLoadError ? (
-          <p className="rounded-lg border border-red-900/40 bg-red-950/20 px-3 py-2 text-sm text-red-200/95">
-            {messengerLoadError}
-          </p>
-        ) : null}
-        <p
-          className={`min-h-[1.25rem] text-sm ${telegramStatusError ? "text-red-400" : "text-emerald-400"}`}
-          aria-live="polite"
-        >
-          {telegramStatusMsg}
-        </p>
-        {messengerLoading ? (
-          <p className="text-slate-400">Загрузка…</p>
-        ) : (
-          <form
-            className="space-y-4 rounded-xl border border-slate-700/80 bg-slate-800/40 p-5 shadow-sm"
-            onSubmit={onTelegramSubmit}
-          >
-            <div>
-              <label
-                className="mb-1 flex items-center gap-1 text-sm font-medium text-slate-200"
-                htmlFor="int-telegram-token"
+      {systemModal && modalRoot
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/60 p-4"
+              onClick={(e) => e.target === e.currentTarget && closeSystemModal()}
+              role="presentation"
+            >
+              <div
+                className="my-4 flex max-h-[min(95vh,56rem)] w-full max-w-[100rem] flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900 shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="integration-system-modal-title"
               >
-                <span className="text-sky-400" aria-hidden>
-                  ✈
-                </span>
-                Токен Telegram-бота
-              </label>
-              <p className="text-sm text-slate-400">{telegramForm.telegramHint}</p>
-              <input
-                id="int-telegram-token"
-                className="w-full rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                type="password"
-                autoComplete="off"
-                placeholder="Оставьте пустым, чтобы не менять сохранённый токен"
-                value={telegramForm.telegramToken}
-                onChange={(e) => setTelegramField("telegramToken", e.target.value)}
-              />
-            </div>
-            <button type="submit" className={BTN_SAVE} disabled={telegramSaving}>
-              <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
-              Сохранить токен
-            </button>
-          </form>
-        )}
-      </section>
+                <div className="flex shrink-0 items-center justify-between border-b border-slate-800 px-5 py-3">
+                  <h2 id="integration-system-modal-title" className="text-lg font-semibold text-white">
+                    {titleForSystemModal(systemModal)}
+                  </h2>
+                  <button
+                    type="button"
+                    className="text-slate-400 hover:text-white"
+                    onClick={closeSystemModal}
+                    aria-label="Закрыть"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-4">
+                  <IntegrationsSystemModalBody
+                    systemModal={systemModal}
+                    chatIntegrationIds={chatIntegrationIds}
+                    messengerLoadError={messengerLoadError}
+                    messengerLoading={messengerLoading}
+                    maxForm={maxForm}
+                    setMaxField={setMaxField}
+                    onMaxSubmit={onMaxSubmit}
+                    maxSaving={maxSaving}
+                    maxStatusMsg={maxStatusMsg}
+                    maxStatusError={maxStatusError}
+                    telegramForm={telegramForm}
+                    setTelegramField={setTelegramField}
+                    onTelegramSubmit={onTelegramSubmit}
+                    telegramSaving={telegramSaving}
+                    telegramStatusMsg={telegramStatusMsg}
+                    telegramStatusError={telegramStatusError}
+                  />
+                </div>
+              </div>
+            </div>,
+            modalRoot,
+          )
+        : null}
 
-      <section id="vk" className="w-full min-w-0 space-y-4 scroll-mt-4">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-200">VK</h2>
-          <p className="mt-1 text-sm text-slate-400">
-            Настройки сообщества и Callback API для ВКонтакте — позже появятся здесь (аналогично MAX и Telegram).
-          </p>
-        </div>
-        <div className="rounded-xl border border-slate-700/80 bg-slate-800/40 p-5 shadow-sm">
-          <p className="m-0 text-sm text-slate-300">
-            <span className="text-blue-400" aria-hidden>
-              VK{" "}
-            </span>
-            Интеграция VK — <strong>в разработке</strong>. Вкладка зарезервирована под токены, подтверждение сервера и
-            сценарии диалогов.
-          </p>
-        </div>
-      </section>
-
-      <section id="telephony" className="space-y-4 scroll-mt-4">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-200">Телефония</h2>
-          <p className="mt-1 text-sm text-slate-400">Проверка голосового потока через WebSocket (раньше раздел «Тестер»).</p>
-        </div>
-        <VoiceTelephonyTestPanel />
-      </section>
     </div>
   );
 }
