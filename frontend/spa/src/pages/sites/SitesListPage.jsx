@@ -100,7 +100,7 @@ export function SitesListPage({ misMode = false }) {
     <div className={`w-full min-w-0 space-y-6 ${PAGE_TEXT}`}>
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-600/20 text-sky-300">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300">
             <Globe className="h-5 w-5" strokeWidth={1.75} aria-hidden />
           </div>
           <h1 className={PAGE_H1}>{misMode ? "МИС" : "Сайты"}</h1>
