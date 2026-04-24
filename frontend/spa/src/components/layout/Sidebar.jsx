@@ -5,6 +5,7 @@ import {
   Calendar,
   CalendarDays,
   ClipboardList,
+  FileCode2,
   FileText,
   Globe,
   Layers,
@@ -92,42 +93,50 @@ function SidebarContent({ onNavigate, headerAction }) {
         </div>
       </div>
       <nav
-        className="flex flex-1 flex-col gap-1 overflow-y-auto p-3"
+        className="flex min-h-0 flex-1 flex-col overflow-hidden p-3"
         aria-label="Основная навигация"
       >
-        {user?.role === "super_admin" ? (
-          <NavLink to="/portal/organizations" className={linkClass} onClick={() => onNavigate?.()}>
-            <Building2 className="mr-2 h-4 w-4 shrink-0 opacity-90" strokeWidth={1.75} aria-hidden />
-            Организации
-          </NavLink>
-        ) : null}
-        <OrganizationScopeSelect />
-        {(user?.role === "org_admin" || user?.role === "director") && (
-          <NavLink to="/portal/users" className={linkClass} onClick={() => onNavigate?.()}>
-            <UserCog className="mr-2 h-4 w-4 shrink-0 opacity-90" strokeWidth={1.75} aria-hidden />
-            Пользователи
-          </NavLink>
-        )}
-        {mainItems.map((item) => {
-          const { to, label, icon: Icon, scenariosGroup, end } = item;
-          const scenariosActive = Boolean(scenariosGroup && pathname.startsWith("/scenarios"));
-          const misActive = Boolean(item.section === "mis" && pathname.startsWith("/mis"));
-          const documentsActive = Boolean(item.section === "documents" && pathname.startsWith("/documents"));
-          return (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                linkClass({ isActive: isActive || scenariosActive || misActive || documentsActive })
-              }
-              end={Boolean(end) && !scenariosGroup}
-              onClick={() => onNavigate?.()}
-            >
-              <Icon className="mr-2 h-4 w-4 shrink-0 opacity-90" strokeWidth={1.75} aria-hidden />
-              {label}
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+          {user?.role === "super_admin" ? (
+            <NavLink to="/portal/organizations" className={linkClass} onClick={() => onNavigate?.()}>
+              <Building2 className="mr-2 h-4 w-4 shrink-0 opacity-90" strokeWidth={1.75} aria-hidden />
+              Организации
             </NavLink>
-          );
-        })}
+          ) : null}
+          <OrganizationScopeSelect />
+          {(user?.role === "org_admin" || user?.role === "director") && (
+            <NavLink to="/portal/users" className={linkClass} onClick={() => onNavigate?.()}>
+              <UserCog className="mr-2 h-4 w-4 shrink-0 opacity-90" strokeWidth={1.75} aria-hidden />
+              Пользователи
+            </NavLink>
+          )}
+          {mainItems.map((item) => {
+            const { to, label, icon: Icon, scenariosGroup, end } = item;
+            const scenariosActive = Boolean(scenariosGroup && pathname.startsWith("/scenarios"));
+            const misActive = Boolean(item.section === "mis" && pathname.startsWith("/mis"));
+            const documentsActive = Boolean(item.section === "documents" && pathname.startsWith("/documents"));
+            return (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) =>
+                  linkClass({ isActive: isActive || scenariosActive || misActive || documentsActive })
+                }
+                end={Boolean(end) && !scenariosGroup}
+                onClick={() => onNavigate?.()}
+              >
+                <Icon className="mr-2 h-4 w-4 shrink-0 opacity-90" strokeWidth={1.75} aria-hidden />
+                {label}
+              </NavLink>
+            );
+          })}
+        </div>
+        <div className="mt-2 shrink-0 border-t border-slate-800 pt-2">
+          <NavLink to="/swagger" className={linkClass} onClick={() => onNavigate?.()}>
+            <FileCode2 className="mr-2 h-4 w-4 shrink-0 opacity-90" strokeWidth={1.75} aria-hidden />
+            Swagger
+          </NavLink>
+        </div>
       </nav>
     </>
   );

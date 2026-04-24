@@ -30,6 +30,19 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           ws: true,
         },
+        // Swagger / OpenAPI (FastAPI: docs_url, openapi_url, redoc_url)
+        '/docs': {
+          target: apiTarget,
+          changeOrigin: true,
+        },
+        '/openapi.json': {
+          target: apiTarget,
+          changeOrigin: true,
+        },
+        '/redoc': {
+          target: apiTarget,
+          changeOrigin: true,
+        },
       },
     },
   }

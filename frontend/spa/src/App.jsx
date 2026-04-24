@@ -42,6 +42,7 @@ import { SiteBuilderPage } from "./pages/sites/SiteBuilderPage.jsx";
 import { SitesListPage } from "./pages/sites/SitesListPage.jsx";
 import { DocumentsListPage } from "./pages/documents/DocumentsListPage.jsx";
 import { DocumentEditorPage } from "./pages/documents/DocumentEditorPage.jsx";
+import { SwaggerPage } from "./pages/SwaggerPage.jsx";
 import { TesterPage } from "./pages/TesterPage.jsx";
 
 export default function App() {
@@ -113,6 +114,7 @@ export default function App() {
           <Route path="documents/:id" element={<DocumentEditorPage />} />
           <Route path="portal/organizations" element={<OrganizationsPage />} />
           <Route path="portal/users" element={<OrgUsersPage />} />
+          <Route path="swagger" element={<SwaggerPage />} />
         </Route>
       </Route>
       <Route path="*" element={<NavigateUnknown />} />
