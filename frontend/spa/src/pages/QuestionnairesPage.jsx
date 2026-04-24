@@ -325,10 +325,10 @@ export function QuestionnairesPage() {
           <button
             type="button"
             onClick={load}
-            disabled={loading}
+            disabled={listLoading}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60"
           >
-            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} aria-hidden />
+            <RefreshCcw className={`h-3.5 w-3.5 ${listLoading ? "animate-spin" : ""}`} aria-hidden />
             Обновить
           </button>
           <button
