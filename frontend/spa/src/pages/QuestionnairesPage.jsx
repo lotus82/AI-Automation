@@ -324,7 +324,7 @@ export function QuestionnairesPage() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={load}
+            onClick={loadList}
             disabled={listLoading}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/70 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-60"
           >
