@@ -298,12 +298,16 @@ export function SchedulePage() {
         : "text-slate-400";
 
   return (
-    <div className="w-full min-w-0 text-slate-100">
-      <h1 className="mb-2 flex items-center gap-2 text-2xl font-bold text-white">
-        <span aria-hidden>📅</span>
-        Расписание
-      </h1>
-
+    <div className={`w-full min-w-0 space-y-6 ${PAGE_TEXT}`}>
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300">
+            <span aria-hidden>📅</span>
+          </div>
+          <h1 className={PAGE_H1}>Расписания</h1>
+        </div>
+      </header>
+      
       <section className={panelClass} aria-labelledby="sch-new-title">
         <h2 id="sch-new-title" className="mb-4 text-lg font-semibold text-slate-100">
           ➕ Новое расписание
