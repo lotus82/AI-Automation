@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { BookOpen, Pencil, Plus, RefreshCcw, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
@@ -57,6 +58,20 @@ export function DocumentsListPage() {
   useEffect(() => {
     if (canAccess) load();
   }, [canAccess, load]);
+
+  const closeCreate = useCallback(() => {
+    setShowCreate(false);
+    setCreateTitle("");
+  }, []);
+
+  useEffect(() => {
+    if (!showCreate) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") closeCreate();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showCreate, closeCreate]);
 
   if (!user) return null;
   if (!canAccess) return <Navigate to="/scenarios/qa-analytics" replace />;
@@ -131,6 +146,8 @@ export function DocumentsListPage() {
     }
   };
 
+  const modalRoot = typeof document !== "undefined" ? document.body : null;
+
   return (
     <div className={`w-full min-w-0 space-y-6 ${PAGE_TEXT}`}>
       <header className={PAGE_HEADER_BETWEEN}>
@@ -150,7 +167,10 @@ export function DocumentsListPage() {
           </button>
           <button
             type="button"
-            onClick={() => setShowCreate(true)}
+            onClick={() => {
+              setCreateTitle("");
+              setShowCreate(true);
+            }}
             className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
           >
             <Plus className="h-3.5 w-3.5" aria-hidden />
@@ -178,43 +198,6 @@ export function DocumentsListPage() {
 
       {error ? (
         <div className="mb-4 rounded-lg border border-red-600/40 bg-red-600/10 p-3 text-sm text-red-200">{error}</div>
-      ) : null}
-
-      {showCreate ? (
-        <form
-          onSubmit={onCreate}
-          className="mb-6 rounded-lg border border-slate-700 bg-slate-900/50 p-4"
-        >
-          <div className="text-sm font-medium text-slate-200">Новый документ</div>
-          <div className="mt-3 flex flex-wrap items-end gap-3">
-            <label className="block min-w-[200px] flex-1 text-xs text-slate-400">
-              Название
-              <input
-                type="text"
-                value={createTitle}
-                onChange={(e) => setCreateTitle(e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
-                placeholder="Например, Библия"
-                maxLength={512}
-                required
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={creating}
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
-            >
-              {creating ? "Создание…" : "Создать"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowCreate(false)}
-              className="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
-            >
-              Отмена
-            </button>
-          </div>
-        </form>
       ) : null}
 
       <section className="rounded-2xl border border-slate-800 bg-slate-900/70">
@@ -293,6 +276,65 @@ export function DocumentsListPage() {
         className="hidden"
         onChange={onUploadFile}
       />
+
+      {showCreate && modalRoot
+        ? createPortal(
+            <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/60 p-4">
+              <div
+                className="my-8 w-full max-w-lg overflow-hidden rounded-xl border border-slate-800 bg-slate-900 shadow-xl"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="documents-new-title"
+              >
+                <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+                  <h2 id="documents-new-title" className="text-lg font-semibold text-white">
+                    Новый документ
+                  </h2>
+                  <button
+                    type="button"
+                    className="text-slate-400 hover:text-white"
+                    onClick={closeCreate}
+                    aria-label="Закрыть"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <form onSubmit={onCreate} className="space-y-4 p-4">
+                  <label className="block text-xs text-slate-400">
+                    Название
+                    <input
+                      type="text"
+                      value={createTitle}
+                      onChange={(e) => setCreateTitle(e.target.value)}
+                      className="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-600 focus:outline-none"
+                      placeholder="Например, Библия"
+                      maxLength={512}
+                      required
+                      autoFocus
+                    />
+                  </label>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={closeCreate}
+                      className="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={creating}
+                      className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                    >
+                      {creating ? "Создание…" : "Создать"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>,
+            modalRoot,
+          )
+        : null}
 
     </div>
   );
