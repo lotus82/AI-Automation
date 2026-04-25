@@ -83,6 +83,7 @@ class ScheduleType(str, Enum):
     DATABASE = "DATABASE"
     INTERVAL = "INTERVAL"
     REMINDER = "REMINDER"
+    MINIAPP_BIRTHDAYS = "MINIAPP_BIRTHDAYS"
 
 
 @dataclass(frozen=True, slots=True)

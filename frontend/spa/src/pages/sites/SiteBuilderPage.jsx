@@ -1168,7 +1168,15 @@ const ALL_MIS_PAGE_KINDS = [...MIS_DOCTOR_PAGE_KINDS, ...MIS_PATIENT_PAGE_KINDS]
 
 function normalizeSitePageKind(raw) {
   const s = String(raw || "content").toLowerCase();
-  if (ALL_MIS_PAGE_KINDS.includes(s) || s === "booking" || s === "content" || s === "document_reader") return s;
+  if (
+    ALL_MIS_PAGE_KINDS.includes(s) ||
+    s === "booking" ||
+    s === "content" ||
+    s === "document_reader" ||
+    s === "profile"
+  ) {
+    return s;
+  }
   return "content";
 }
 
@@ -1688,6 +1696,7 @@ function misPageEditorContentLabel(pageKind, isMisSite, misAudiencePatient) {
     const pk = String(pageKind || "").toLowerCase();
     if (pk === "booking") return "Текст над формой записи (необязательно)";
     if (pk === "document_reader") return "Вступление (HTML) над текстом читалки (необязательно)";
+    if (pk === "profile") return "Вступительный текст (HTML) над датой рождения (необязательно)";
     return "Контент";
   }
   const pk = coerceMisPageKindForAudience(pageKind, misAudiencePatient);
@@ -1911,6 +1920,7 @@ function PageEditorTab({
                 className={`${inputClass} max-w-md`}
               >
                 <option value="content">Текст и медиа (как обычно)</option>
+                <option value="profile">Профиль (дата рождения в Mini App)</option>
                 <option value="booking">Запись на приём к сотруднику</option>
                 <option value="document_reader">Читатель (документ)</option>
               </select>
@@ -2156,7 +2166,8 @@ function MiniAppPreview({
                   : p.booking_staff_user_id,
             embed_module: (() => {
               const k = (pageForm?.page_kind || p.page_kind || "content").toLowerCase();
-              if (k === "booking" || k.startsWith("mis_") || k === "document_reader") return null;
+              if (k === "booking" || k.startsWith("mis_") || k === "document_reader" || k === "profile")
+                return null;
               return (pageForm?.embed_module || "").trim() || null;
             })(),
             linked_document_id: (() => {
@@ -2364,7 +2375,7 @@ function PagePreviewBody({ page }) {
     pk === "booking" &&
     page.booking_staff_user_id;
   const embedKey =
-    page && !isBooking && !pk.startsWith("mis_") ? String(page.embed_module || "").trim() : "";
+    page && !isBooking && !pk.startsWith("mis_") && pk !== "profile" ? String(page.embed_module || "").trim() : "";
 
   if (pk === "mis_patients") {
     return (
@@ -2428,6 +2439,24 @@ function PagePreviewBody({ page }) {
         ) : null}
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-950">
           {hint} Доступ при роли <span className="font-medium">пациент</span> в Mini App.
+        </div>
+      </article>
+    );
+  }
+
+  if (pk === "profile") {
+    return (
+      <article className="text-slate-800">
+        <h2 className="mb-2 text-lg font-semibold text-slate-900">{(page.title || "").trim() || "Профиль"}</h2>
+        {page.content ? (
+          <div
+            ref={previewContentRef}
+            className="miniapp-preview-content mb-3 space-y-2 text-[14px] leading-relaxed"
+            dangerouslySetInnerHTML={{ __html: page.content }}
+          />
+        ) : null}
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-950">
+          В Mini App — выбор даты рождения (календарь) и сохранение в профиле.
         </div>
       </article>
     );

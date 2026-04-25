@@ -17,7 +17,7 @@ import hashlib
 import hmac
 import json
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Any
 from urllib.parse import parse_qsl
 from uuid import UUID
@@ -89,6 +89,7 @@ class MiniAppUserPublic(BaseModel):
     id: UUID
     chat_id: str
     name: str | None
+    birth_date: date | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -102,6 +103,13 @@ class MiniAppMe(BaseModel):
     name: str | None
     organization_name: str
     organization_display_name: str | None = None
+    birth_date: date | None = None
+
+
+class MiniAppMePatch(BaseModel):
+    """Частичное обновление профиля Mini App (дата рождения)."""
+
+    birth_date: date | None = None
 
 
 # --- init_data parsing / validation -------------------------------------
@@ -472,6 +480,7 @@ async def list_miniapp_users(
             id=u.id,
             chat_id=u.chat_id,
             name=u.name,
+            birth_date=getattr(u, "birth_date", None),
             created_at=u.created_at,
             updated_at=u.updated_at,
         )
@@ -736,6 +745,32 @@ async def miniapp_me(user: MiniAppUserDep) -> MiniAppMe:
         name=user.name,
         organization_name=org.name if org else "",
         organization_display_name=(org.display_name or "").strip() or None if org else None,
+        birth_date=getattr(user, "birth_date", None),
+    )
+
+
+@router.patch("/me", response_model=MiniAppMe)
+async def miniapp_patch_me(
+    body: MiniAppMePatch,
+    user: MiniAppUserDep,
+    session: AsyncSessionDep,
+) -> MiniAppMe:
+    """Сохранение даты рождения (страница «Профиль» в Mini App)."""
+    fs = body.model_fields_set
+    if "birth_date" in fs:
+        user.birth_date = body.birth_date
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    org = user.organization
+    return MiniAppMe(
+        user_id=user.id,
+        organization_id=user.organization_id,
+        chat_id=user.chat_id,
+        name=user.name,
+        organization_name=org.name if org else "",
+        organization_display_name=(org.display_name or "").strip() or None if org else None,
+        birth_date=getattr(user, "birth_date", None),
     )
 
 

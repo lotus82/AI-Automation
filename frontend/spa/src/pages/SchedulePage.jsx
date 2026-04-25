@@ -11,7 +11,10 @@ import {
   PAGE_TEXT,
   PAGE_TITLE_ICON,
 } from "../styles/pageLayout.js";
+import { useAuthStore } from "../store/authStore.js";
 import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
+
+const MINIAPP_BIRTHDAYS_CHAT_PLACEHOLDER = "__MINIAPP_BIRTHDAYS__";
 
 function formatDetail(detail) {
   if (detail == null) return "";
@@ -28,7 +31,7 @@ function formatApiError(err) {
 function buildCreateBody(form) {
   const t = form.type;
   const body = {
-    chat_id: form.chatId.trim(),
+    chat_id: t === "MINIAPP_BIRTHDAYS" ? MINIAPP_BIRTHDAYS_CHAT_PLACEHOLDER : form.chatId.trim(),
     is_active: form.active,
     type: t,
     prompt: form.prompt,
@@ -46,13 +49,21 @@ function buildCreateBody(form) {
   if (t === "REMINDER") {
     body.reminder_offset_minutes = parseInt(form.offset || "0", 10) || 0;
   }
+  if (t === "MINIAPP_BIRTHDAYS") {
+    const oid = (form.organizationId || "").trim();
+    const gt = (form.greetingTime || "10:00").trim() || "10:00";
+    body.interval_settings = {
+      organization_id: oid,
+      greeting_time: gt,
+    };
+  }
   return body;
 }
 
 function buildPatchBody(edit) {
   const t = edit.type;
   const body = {
-    chat_id: edit.chatId.trim(),
+    chat_id: t === "MINIAPP_BIRTHDAYS" ? MINIAPP_BIRTHDAYS_CHAT_PLACEHOLDER : edit.chatId.trim(),
     is_active: edit.active,
     type: t,
     prompt: edit.prompt,
@@ -70,6 +81,14 @@ function buildPatchBody(edit) {
   if (t === "REMINDER") {
     body.reminder_offset_minutes = parseInt(edit.offset || "0", 10) || 0;
   }
+  if (t === "MINIAPP_BIRTHDAYS") {
+    const oid = (edit.organizationId || "").trim();
+    const gt = (edit.greetingTime || "10:00").trim() || "10:00";
+    body.interval_settings = {
+      organization_id: oid,
+      greeting_time: gt,
+    };
+  }
   return body;
 }
 
@@ -81,6 +100,8 @@ const initialCreate = {
   hours: "0",
   minutes: "60",
   offset: "60",
+  greetingTime: "10:00",
+  organizationId: "",
   prompt: "",
   content: "",
 };
@@ -94,12 +115,17 @@ const emptyEdit = {
   hours: "0",
   minutes: "0",
   offset: "0",
+  greetingTime: "10:00",
+  organizationId: "",
   prompt: "",
   content: "",
 };
 
 function rowToEditState(r) {
   const intv = r.interval_settings || {};
+  const gtRaw = intv.greeting_time != null ? String(intv.greeting_time) : "";
+  const greetingTime =
+    gtRaw && gtRaw.length >= 5 ? gtRaw.slice(0, 5) : gtRaw || "10:00";
   return {
     id: String(r.id),
     chatId: r.chat_id || "",
@@ -112,12 +138,19 @@ function rowToEditState(r) {
       r.reminder_offset_minutes != null
         ? String(r.reminder_offset_minutes)
         : "0",
+    greetingTime,
+    organizationId: (intv.organization_id && String(intv.organization_id)) || "",
     prompt: r.prompt != null ? r.prompt : "",
     content: r.content_template != null ? r.content_template : "",
   };
 }
 
 export function SchedulePage() {
+  const user = useAuthStore((s) => s.user);
+  const settingsOrgId = useAuthStore((s) => s.settingsOrganizationId);
+  const resolvedOrgId =
+    user?.role === "super_admin" ? settingsOrgId || "" : user?.organization_id || "";
+
   const [rows, setRows] = useState([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState(false);
@@ -158,18 +191,21 @@ export function SchedulePage() {
   }, [loadList]);
 
   const openCreateModal = useCallback(() => {
-    setCreate({ ...initialCreate });
+    setCreate({
+      ...initialCreate,
+      organizationId: resolvedOrgId || "",
+    });
     setCreateMsg("");
     setCreateMsgKind(null);
     setCreateModalOpen(true);
-  }, []);
+  }, [resolvedOrgId]);
 
   const closeCreateModal = useCallback(() => {
     setCreateModalOpen(false);
-    setCreate({ ...initialCreate });
+    setCreate({ ...initialCreate, organizationId: resolvedOrgId || "" });
     setCreateMsg("");
     setCreateMsgKind(null);
-  }, []);
+  }, [resolvedOrgId]);
 
   useEffect(() => {
     if (!editOpen) return;
@@ -195,20 +231,39 @@ export function SchedulePage() {
 
   const showInterval = create.type === "INTERVAL";
   const showReminder = create.type === "REMINDER";
+  const showBirthdaysCreate = create.type === "MINIAPP_BIRTHDAYS";
   const showDbHintCreate = create.type === "DATABASE";
 
   const showIntervalEdit = edit.type === "INTERVAL";
   const showReminderEdit = edit.type === "REMINDER";
+  const showBirthdaysEdit = edit.type === "MINIAPP_BIRTHDAYS";
   const showDbHintEdit = edit.type === "DATABASE";
 
   const onCreateSubmit = async (ev) => {
     ev.preventDefault();
+    if (create.type === "MINIAPP_BIRTHDAYS") {
+      const oid = (create.organizationId || "").trim() || resolvedOrgId;
+      if (!oid) {
+        setCreateMsg(
+          "Укажите организацию: для super_admin выберите организацию в шапке панели или введите UUID организации в поле ниже.",
+        );
+        setCreateMsgKind("err");
+        return;
+      }
+    }
     setCreating(true);
     setCreateMsg("Сохранение…");
     setCreateMsgKind(null);
     try {
-      await api.post("/schedules", buildCreateBody(create));
-      setCreate({ ...initialCreate });
+      const payload =
+        create.type === "MINIAPP_BIRTHDAYS"
+          ? buildCreateBody({
+              ...create,
+              organizationId: (create.organizationId || "").trim() || resolvedOrgId,
+            })
+          : buildCreateBody(create);
+      await api.post("/schedules", payload);
+      setCreate({ ...initialCreate, organizationId: resolvedOrgId || "" });
       setCreateMsg("");
       setCreateMsgKind(null);
       setCreateModalOpen(false);
@@ -240,11 +295,23 @@ export function SchedulePage() {
   const onEditSubmit = async (ev) => {
     ev.preventDefault();
     if (!edit.id) return;
+    if (edit.type === "MINIAPP_BIRTHDAYS") {
+      const oid = (edit.organizationId || "").trim() || resolvedOrgId;
+      if (!oid) {
+        setEditMsg("Укажите UUID организации для расписания дней рождения.");
+        setEditMsgKind("err");
+        return;
+      }
+    }
     setSavingEdit(true);
     setEditMsg("Сохранение…");
     setEditMsgKind(null);
     try {
-      await api.patch(`/schedules/${encodeURIComponent(edit.id)}`, buildPatchBody(edit));
+      const ePayload =
+        edit.type === "MINIAPP_BIRTHDAYS"
+          ? { ...edit, organizationId: (edit.organizationId || "").trim() || resolvedOrgId }
+          : edit;
+      await api.patch(`/schedules/${encodeURIComponent(edit.id)}`, buildPatchBody(ePayload));
       closeEditModal();
       await loadList();
     } catch (e) {
@@ -490,8 +557,13 @@ export function SchedulePage() {
                       id="sch-chat-id"
                       type="text"
                       className={inputClass}
-                      required
-                      placeholder="Например 123456789"
+                      required={!showBirthdaysCreate}
+                      disabled={showBirthdaysCreate}
+                      placeholder={
+                        showBirthdaysCreate
+                          ? "Для дней рождения Mini App не используется (поздравления уходят в личные чаты)"
+                          : "Например 123456789"
+                      }
                       value={create.chatId}
                       onChange={(e) => setCreateField("chatId", e.target.value)}
                     />
@@ -511,6 +583,9 @@ export function SchedulePage() {
                       </option>
                       <option value="INTERVAL">INTERVAL — повтор с интервалом</option>
                       <option value="REMINDER">REMINDER — напоминание до event_datetime</option>
+                      <option value="MINIAPP_BIRTHDAYS">
+                        Дни рождения пользователей Mini App
+                      </option>
                     </select>
                   </div>
                   <div>
@@ -593,6 +668,50 @@ export function SchedulePage() {
                       <span className={`${helpClass} mt-1.5 block`}>
                         Момент события в файле — по <strong>Саратову (UTC+4)</strong>, если в дате нет часового пояса.
                       </span>
+                    </div>
+                  )}
+
+                  {showBirthdaysCreate && (
+                    <div
+                      className="space-y-3 rounded-lg border border-slate-700/60 bg-slate-900/30 p-3"
+                      id="sch-birthdays-block"
+                    >
+                      <p className={`${helpClass} mb-1`}>
+                        В выбранное локальное время (часовой пояс приложения) бот отправит поздравление в{" "}
+                        <strong>личный чат</strong> каждого пользователя Mini App, у кого сегодня день рождения и
+                        указана дата в профиле.
+                      </p>
+                      <div>
+                        <label className={labelClass} htmlFor="sch-greeting-time">
+                          Время поздравления
+                        </label>
+                        <input
+                          id="sch-greeting-time"
+                          type="time"
+                          className={inputClass}
+                          value={create.greetingTime}
+                          onChange={(e) => setCreateField("greetingTime", e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className={labelClass} htmlFor="sch-birthday-org">
+                          Организация (UUID)
+                        </label>
+                        <input
+                          id="sch-birthday-org"
+                          type="text"
+                          className={inputClass}
+                          required
+                          autoComplete="off"
+                          placeholder="UUID организации, чьих пользователей Mini App перебирать"
+                          value={create.organizationId}
+                          onChange={(e) => setCreateField("organizationId", e.target.value)}
+                        />
+                        <span className={`${helpClass} mt-1.5 block`}>
+                          Предзаполняется из контекста панели; при необходимости отредактируйте (например для
+                          super_admin).
+                        </span>
+                      </div>
                     </div>
                   )}
 
@@ -699,7 +818,8 @@ export function SchedulePage() {
                   id="sch-edit-chat-id"
                   type="text"
                   className={inputClass}
-                  required
+                  required={!showBirthdaysEdit}
+                  disabled={showBirthdaysEdit}
                   value={edit.chatId}
                   onChange={(e) => setEditField("chatId", e.target.value)}
                 />
@@ -717,6 +837,7 @@ export function SchedulePage() {
                   <option value="DATABASE">DATABASE — по дате события</option>
                   <option value="INTERVAL">INTERVAL — повтор с интервалом</option>
                   <option value="REMINDER">REMINDER — напоминание</option>
+                  <option value="MINIAPP_BIRTHDAYS">Дни рождения пользователей Mini App</option>
                 </select>
               </div>
               <div>
@@ -792,6 +913,39 @@ export function SchedulePage() {
                     value={edit.offset}
                     onChange={(e) => setEditField("offset", e.target.value)}
                   />
+                </div>
+              )}
+
+              {showBirthdaysEdit && (
+                <div
+                  className="space-y-3 rounded-lg border border-slate-700/60 bg-slate-800/40 p-3"
+                  id="sch-edit-birthdays-block"
+                >
+                  <div>
+                    <label className={labelClass} htmlFor="sch-edit-greeting-time">
+                      Время поздравления
+                    </label>
+                    <input
+                      id="sch-edit-greeting-time"
+                      type="time"
+                      className={inputClass}
+                      value={edit.greetingTime}
+                      onChange={(e) => setEditField("greetingTime", e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass} htmlFor="sch-edit-birthday-org">
+                      Организация (UUID)
+                    </label>
+                    <input
+                      id="sch-edit-birthday-org"
+                      type="text"
+                      className={inputClass}
+                      required
+                      value={edit.organizationId}
+                      onChange={(e) => setEditField("organizationId", e.target.value)}
+                    />
+                  </div>
                 </div>
               )}
 

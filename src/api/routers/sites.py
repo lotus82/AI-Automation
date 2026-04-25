@@ -100,7 +100,7 @@ _PAGE_KINDS_MIS_SPECIAL = frozenset(
         "mis_patient_tips",
     },
 )
-_ALLOWED_PAGE_KINDS = frozenset({"content", "booking", "document_reader", *_PAGE_KINDS_MIS_SPECIAL})
+_ALLOWED_PAGE_KINDS = frozenset({"content", "booking", "document_reader", "profile", *_PAGE_KINDS_MIS_SPECIAL})
 
 
 def _mis_audience_from_page_kind(pk: str) -> str | None:
@@ -329,6 +329,13 @@ class SitePageCreateRequest(BaseModel):
                 raise ValueError("Для страницы «Читатель» встраиваемый модуль не используется")
             if self.booking_staff_user_id is not None:
                 raise ValueError("Для страницы «Читатель» не указывайте сотрудника записи")
+        if self.page_kind == "profile":
+            if self.booking_staff_user_id is not None:
+                raise ValueError("Для страницы «Профиль» не указывайте сотрудника записи")
+            if self.embed_module:
+                raise ValueError("Для страницы «Профиль» встраиваемый модуль не используется")
+            if self.linked_document_id is not None:
+                raise ValueError("Для страницы «Профиль» не укажите документ (linked_document_id)")
         return self
 
 
@@ -894,7 +901,13 @@ async def create_site_page(
 ) -> SitePageItem:
     scope = _resolve_site_org_scope(user, organization_id)
     site_row = await _get_site_for_user(session, site_id, scope)
+    sk0 = _site_kind_str(site_row)
     pk = (body.page_kind or "content").strip().lower()
+    if sk0 == "mis" and pk == "profile":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Тип страницы «профиль» доступен только для обычного (не МИС) сайта",
+        )
     sid = body.booking_staff_user_id if pk == "booking" else None
     if sid is not None:
         await _validate_booking_staff_for_site(session, scope, sid)
@@ -960,6 +973,11 @@ async def update_site_page(
     row = await session.get(SitePageModel, page_id)
     if row is None or row.site_id != site_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Страница не найдена")
+    if _site_kind_str(site_row) == "mis" and (body.page_kind or "").strip().lower() == "profile":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Тип страницы «профиль» доступен только для обычного (не МИС) сайта",
+        )
 
     if body.title is not None:
         row.title = body.title.strip()

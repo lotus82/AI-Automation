@@ -27,3 +27,10 @@ export function formatDateTimeRu(value) {
   if (!d) return "—";
   return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
+
+/** @param {string|number|Date|null|undefined} value */
+export function formatDateRu(value) {
+  const d = parseToLocalDate(value);
+  if (!d) return "—";
+  return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()}`;
+}

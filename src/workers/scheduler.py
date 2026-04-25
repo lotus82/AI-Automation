@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from redis.asyncio import Redis
+from sqlalchemy import select
 
 from src.core.config import get_settings
-from src.domain.entities import ScheduleType
+from src.domain.entities import Schedule, ScheduleType
 from src.infrastructure.database import AsyncSessionLocal
+from src.infrastructure.models import MiniAppUserModel
 from src.infrastructure.monitoring import get_chat_events_broadcaster
 from src.infrastructure.repositories import (
     HybridChatMemoryRepository,
@@ -87,6 +91,30 @@ def _same_minute_as_last_interval_run(schedule, tz: ZoneInfo, now: datetime) -> 
     if schedule.last_run_at is None:
         return False
     return _minute_bucket_in_tz(tz, schedule.last_run_at) == _minute_bucket_in_tz(tz, now)
+
+
+def _local_hhmm_matches(now: datetime, tz: ZoneInfo, time_s: str) -> bool:
+    """Сравнение локального времени приложения с строкой «ЧЧ:ММ» (для дней рождения)."""
+    raw = (time_s or "10:00").strip() or "10:00"
+    parts = raw.split(":")
+    try:
+        h = int(parts[0])
+        m = int(parts[1]) if len(parts) > 1 else 0
+    except (TypeError, ValueError, IndexError):
+        h, m = 10, 0
+    h = max(0, min(23, h))
+    m = max(0, min(59, m))
+    local = now.astimezone(tz)
+    return local.hour == h and local.minute == m
+
+
+def _schedule_already_fired_today(sch: Schedule, tz: ZoneInfo, now: datetime) -> bool:
+    if sch.last_run_at is None:
+        return False
+    last = sch.last_run_at
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return last.astimezone(tz).date() == now.astimezone(tz).date()
 
 
 def _build_use_case(
@@ -216,6 +244,80 @@ async def _check_and_execute_schedules_async() -> str:
                                 picked.id,
                             )
                             break
+                    continue
+
+                if sch.type == ScheduleType.MINIAPP_BIRTHDAYS:
+                    cfg = sch.interval_settings or {}
+                    org_id_s = (cfg.get("organization_id") or "").strip()
+                    if not org_id_s:
+                        continue
+                    try:
+                        org_uid = UUID(org_id_s)
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            "Расписание [MINIAPP_BIRTHDAYS]: неверный organization_id schedule_id=%s",
+                            sid,
+                        )
+                        continue
+                    if not _local_hhmm_matches(now, tz, str(cfg.get("greeting_time") or "10:00")):
+                        continue
+                    if _schedule_already_fired_today(sch, tz, now):
+                        continue
+                    time_label = (cfg.get("greeting_time") or "10:00").strip() or "10:00"
+                    try:
+                        u_rows = (
+                            await session.execute(
+                                select(MiniAppUserModel).where(
+                                    MiniAppUserModel.organization_id == org_uid,
+                                ),
+                            )
+                        ).scalars().all()
+                    except Exception:
+                        logger.exception("Расписание [MINIAPP_BIRTHDAYS]: запрос users schedule_id=%s", sid)
+                        continue
+                    now_local = now.astimezone(tz)
+                    ran_ok = False
+                    for u in u_rows:
+                        bd = getattr(u, "birth_date", None)
+                        if bd is None:
+                            continue
+                        if (bd.month, bd.day) != (now_local.month, now_local.day):
+                            continue
+                        name = (u.name or "Пользователь").strip() or "Пользователь"
+                        extra_ctx = (
+                            f"Сегодня день рождения у пользователя Mini App ({name}). "
+                            f"Сформируй тёплое краткое поздравление в личный чат. "
+                        )
+                        sch_user: Schedule = replace(
+                            sch,
+                            chat_id=str(u.chat_id).strip(),
+                            content_template=extra_ctx + (sch.content_template or "").strip(),
+                        )
+                        try:
+                            logger.info(
+                                "Расписание [MINIAPP_BIRTHDAYS]: запуск schedule_id=%s user_chat_id=%s org=%s time=%s",
+                                sid,
+                                u.chat_id,
+                                org_id_s,
+                                time_label,
+                            )
+                            await use_case.execute(sch_user, event=None)
+                            ran_ok = True
+                        except Exception:
+                            await session.rollback()
+                            logger.exception(
+                                "Расписание [MINIAPP_BIRTHDAYS]: ошибка schedule_id=%s chat_id=%s",
+                                sid,
+                                u.chat_id,
+                            )
+                    try:
+                        await repo.update_last_run_at(sid, now)
+                        await session.commit()
+                    except Exception:
+                        await session.rollback()
+                        if ran_ok:
+                            logger.exception("Расписание [MINIAPP_BIRTHDAYS]: commit last_run id=%s", sid)
+                    continue
     finally:
         # Celery вызывает asyncio.run() на каждый тик: пул asyncpg привязан к loop — сбрасываем до уничтожения цикла.
         try:

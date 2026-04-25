@@ -9,7 +9,7 @@ import {
 } from "../components/ui/IconActionButtons.jsx";
 import { useAuthStore } from "../store/authStore.js";
 import { PAGE_H1, PAGE_HEADER, PAGE_SHELL, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
-import { formatDateTimeRu } from "../utils/dateTimeFormat.js";
+import { formatDateRu, formatDateTimeRu } from "../utils/dateTimeFormat.js";
 
 /** FastAPI detail → строка. */
 function formatApiDetail(d) {
@@ -312,19 +312,20 @@ export function ApplicationsPage() {
               <tr>
                 <th className="px-4 py-2 text-left font-medium">ID чата</th>
                 <th className="px-4 py-2 text-left font-medium">Имя</th>
+                <th className="px-4 py-2 text-left font-medium">Дата рождения</th>
                 <th className="px-4 py-2 text-left font-medium">Дата регистрации</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {loading ? (
                 <tr>
-                  <td className="px-4 py-4 text-slate-400" colSpan={3}>
+                  <td className="px-4 py-4 text-slate-400" colSpan={4}>
                     Загрузка…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-6 text-center text-slate-500" colSpan={3}>
+                  <td className="px-4 py-6 text-center text-slate-500" colSpan={4}>
                     Пока никто не открывал Mini App организации.
                   </td>
                 </tr>
@@ -333,6 +334,7 @@ export function ApplicationsPage() {
                   <tr key={u.id} className="hover:bg-slate-800/40">
                     <td className="px-4 py-2 font-mono text-slate-100">{u.chat_id}</td>
                     <td className="px-4 py-2 text-slate-200">{u.name || <span className="text-slate-500">—</span>}</td>
+                    <td className="px-4 py-2 text-slate-300">{formatDateRu(u.birth_date)}</td>
                     <td className="px-4 py-2 text-slate-400">{formatDateTimeRu(u.created_at)}</td>
                   </tr>
                 ))

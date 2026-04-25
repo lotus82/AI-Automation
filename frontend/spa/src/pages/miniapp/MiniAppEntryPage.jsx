@@ -25,6 +25,126 @@ import {
 import { PAGE_H1, PAGE_TEXT } from "../../styles/pageLayout.js";
 import "./miniappPageContent.css";
 
+/** Страница «Профиль»: дата рождения (нативный календарь) и вступительный HTML. */
+function MiniAppProfileContent({ page, miniToken, themeColor }) {
+  const [birthDate, setBirthDate] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const introRef = useMiniAppHtmlLinkDelegate(page?.content);
+
+  const accent = (themeColor || "#2563eb").trim() || "#2563eb";
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!miniToken) {
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      setErr("");
+      try {
+        const { data } = await axios.get("/api/miniapp/me", {
+          headers: { Authorization: `Bearer ${miniToken}` },
+        });
+        if (cancelled) return;
+        const raw = data?.birth_date;
+        if (raw && String(raw).length >= 10) {
+          setBirthDate(String(raw).slice(0, 10));
+        } else {
+          setBirthDate("");
+        }
+      } catch {
+        if (!cancelled) setErr("Не удалось загрузить данные профиля.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [miniToken]);
+
+  const onSave = async () => {
+    if (!miniToken) return;
+    setSaving(true);
+    setErr("");
+    try {
+      const body = { birth_date: birthDate ? birthDate : null };
+      await axios.patch("/api/miniapp/me", body, {
+        headers: { Authorization: `Bearer ${miniToken}` },
+      });
+    } catch {
+      setErr("Не удалось сохранить дату рождения.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: "16px 16px 24px" }}>
+      <h2
+        style={{
+          margin: "0 0 12px",
+          fontSize: 20,
+          fontWeight: 600,
+          lineHeight: 1.3,
+          color: "#111827",
+        }}
+      >
+        {(page?.title || "").trim() || "Профиль"}
+      </h2>
+      {page?.content ? (
+        <div
+          ref={introRef}
+          className="miniapp-page-content mb-4"
+          style={{ lineHeight: 1.55, fontSize: 15, color: "#1f2937" }}
+          dangerouslySetInnerHTML={{ __html: page.content }}
+        />
+      ) : null}
+      {loading ? (
+        <Typography.Body style={{ color: "#6b7280" }}>Загрузка…</Typography.Body>
+      ) : (
+        <div className="space-y-3" style={{ maxWidth: 360 }}>
+          {err ? (
+            <Typography.Body style={{ color: "#b91c1c" }}>{err}</Typography.Body>
+          ) : null}
+          <label style={{ display: "block" }}>
+            <span style={{ display: "block", fontSize: 13, color: "#374151", marginBottom: 6 }}>Дата рождения</span>
+            <input
+              type="date"
+              value={birthDate}
+              onChange={(e) => setBirthDate(e.target.value)}
+              max="2100-12-31"
+              style={{
+                width: "100%",
+                maxWidth: 280,
+                padding: "10px 12px",
+                fontSize: 16,
+                borderRadius: 8,
+                border: "1px solid #e5e7eb",
+                color: "#111827",
+                background: "#fff",
+              }}
+            />
+          </label>
+          <Button
+            onClick={onSave}
+            disabled={saving}
+            size="m"
+            style={{ background: accent, borderColor: accent }}
+            mode="primary"
+            title="Сохранить дату рождения"
+          >
+            {saving ? "Сохранение…" : "Сохранить"}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Нижнее меню МИС по роли (если в конфиге задано отдельно). */
 function pickMisNavForRole(cfg, role) {
   if (!cfg || cfg.site_kind !== "mis" || !role) return null;
@@ -401,7 +521,9 @@ function MiniAppPageContent({ page, organizationId, miniToken, misRole, themeCol
     pk === "mis_doctor_card" ||
     pk.startsWith("mis_patient_");
   const embedKey =
-    page && !isBooking && !isMisBuiltIn ? String(page.embed_module || "").trim() : "";
+    page && !isBooking && !isMisBuiltIn && pk !== "profile"
+      ? String(page.embed_module || "").trim()
+      : "";
 
   if (!page) {
     return (
@@ -446,6 +568,10 @@ function MiniAppPageContent({ page, organizationId, miniToken, misRole, themeCol
         themeColor={themeColor}
       />
     );
+  }
+
+  if (pk === "profile") {
+    return <MiniAppProfileContent page={page} miniToken={miniToken} themeColor={themeColor} />;
   }
 
   if (pk === "document_reader") {
