@@ -108,13 +108,37 @@ def _local_hhmm_matches(now: datetime, tz: ZoneInfo, time_s: str) -> bool:
     return local.hour == h and local.minute == m
 
 
-def _schedule_already_fired_today(sch: Schedule, tz: ZoneInfo, now: datetime) -> bool:
+def _miniapp_birthday_already_fired_this_greeting_minute(
+    sch: Schedule,
+    tz: ZoneInfo,
+    now: datetime,
+    greeting_time_s: str,
+) -> bool:
+    """
+    True, если last_run относится к тому же локальному дню и той же «минуте поздравления» (ЧЧ:ММ).
+
+    Иначе срабатывание в 02:09 (тест, старый greeting_time) блокировало бы реальный слот 02:55
+    в тот же календарный день.
+    """
     if sch.last_run_at is None:
         return False
     last = sch.last_run_at
     if last.tzinfo is None:
         last = last.replace(tzinfo=timezone.utc)
-    return last.astimezone(tz).date() == now.astimezone(tz).date()
+    last_local = last.astimezone(tz)
+    now_local = now.astimezone(tz)
+    if last_local.date() != now_local.date():
+        return False
+    raw = (greeting_time_s or "10:00").strip() or "10:00"
+    parts = raw.split(":")
+    try:
+        gh = int(parts[0])
+        gm = int(parts[1]) if len(parts) > 1 else 0
+    except (TypeError, ValueError, IndexError):
+        gh, gm = 10, 0
+    gh = max(0, min(23, gh))
+    gm = max(0, min(59, gm))
+    return (last_local.hour, last_local.minute) == (gh, gm)
 
 
 def _build_use_case(
@@ -277,9 +301,11 @@ async def _check_and_execute_schedules_async() -> str:
                         continue
                     time_label = (str(cfg.get("greeting_time") or "10:00").strip() or "10:00")
                     time_ok = _local_hhmm_matches(now, tz, time_label)
-                    already = _schedule_already_fired_today(sch, tz, now)
+                    already = _miniapp_birthday_already_fired_this_greeting_minute(
+                        sch, tz, now, time_label
+                    )
                     logger.info(
-                        "MINIAPP_BIRTHDAYS: проверка schedule_id=%s org=%s greeting_time=%r now_local=%s time_match=%s already_fired_today=%s last_run_at=%s",
+                        "MINIAPP_BIRTHDAYS: проверка schedule_id=%s org=%s greeting_time=%r now_local=%s time_match=%s already_fired_this_greeting_minute=%s last_run_at=%s",
                         sid,
                         org_id_s,
                         time_label,
@@ -292,8 +318,9 @@ async def _check_and_execute_schedules_async() -> str:
                         continue
                     if already:
                         logger.info(
-                            "MINIAPP_BIRTHDAYS: пропуск schedule_id=%s — уже срабатывало сегодня (last_run_at=%s)",
+                            "MINIAPP_BIRTHDAYS: пропуск schedule_id=%s — в этот день поздравление на этой минуте(%s) уже отмечено (last_run_at=%s)",
                             sid,
+                            time_label,
                             sch.last_run_at,
                         )
                         continue
