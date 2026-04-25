@@ -52,9 +52,11 @@ function buildCreateBody(form) {
   if (t === "MINIAPP_BIRTHDAYS") {
     const oid = (form.organizationId || "").trim();
     const gt = (form.greetingTime || "10:00").trim() || "10:00";
+    const gGroup = (form.groupChatId || "").trim();
     body.interval_settings = {
       organization_id: oid,
       greeting_time: gt,
+      ...(gGroup ? { group_chat_id: gGroup } : {}),
     };
   }
   return body;
@@ -84,9 +86,11 @@ function buildPatchBody(edit) {
   if (t === "MINIAPP_BIRTHDAYS") {
     const oid = (edit.organizationId || "").trim();
     const gt = (edit.greetingTime || "10:00").trim() || "10:00";
+    const gGroup = (edit.groupChatId || "").trim();
     body.interval_settings = {
       organization_id: oid,
       greeting_time: gt,
+      ...(gGroup ? { group_chat_id: gGroup } : {}),
     };
   }
   return body;
@@ -102,6 +106,7 @@ const initialCreate = {
   offset: "60",
   greetingTime: "10:00",
   organizationId: "",
+  groupChatId: "",
   prompt: "",
   content: "",
 };
@@ -117,6 +122,7 @@ const emptyEdit = {
   offset: "0",
   greetingTime: "10:00",
   organizationId: "",
+  groupChatId: "",
   prompt: "",
   content: "",
 };
@@ -140,6 +146,7 @@ function rowToEditState(r) {
         : "0",
     greetingTime,
     organizationId: (intv.organization_id && String(intv.organization_id)) || "",
+    groupChatId: intv.group_chat_id != null && intv.group_chat_id !== "" ? String(intv.group_chat_id) : "",
     prompt: r.prompt != null ? r.prompt : "",
     content: r.content_template != null ? r.content_template : "",
   };
@@ -260,6 +267,7 @@ export function SchedulePage() {
           ? buildCreateBody({
               ...create,
               organizationId: (create.organizationId || "").trim() || resolvedOrgId,
+              groupChatId: (create.groupChatId || "").trim(),
             })
           : buildCreateBody(create);
       await api.post("/schedules", payload);
@@ -677,9 +685,10 @@ export function SchedulePage() {
                       id="sch-birthdays-block"
                     >
                       <p className={`${helpClass} mb-1`}>
-                        В выбранное локальное время (часовой пояс приложения) бот отправит поздравление в{" "}
-                        <strong>личный чат</strong> каждого пользователя Mini App, у кого сегодня день рождения и
-                        указана дата в профиле.
+                        В выбранное локальное время (часовой пояс приложения) бот поздравляет в{" "}
+                        <strong>личный чат</strong> каждого подходящего пользователя Mini App. Если задан
+                        <strong> групповой chat_id</strong>, для того же именинника дополнительно уходит
+                        поздравление в этот групповой чат MAX.
                       </p>
                       <div>
                         <label className={labelClass} htmlFor="sch-greeting-time">
@@ -710,6 +719,23 @@ export function SchedulePage() {
                         <span className={`${helpClass} mt-1.5 block`}>
                           Предзаполняется из контекста панели; при необходимости отредактируйте (например для
                           super_admin).
+                        </span>
+                      </div>
+                      <div>
+                        <label className={labelClass} htmlFor="sch-birthday-group-chat">
+                          Групповой чат (chat_id MAX), необязательно
+                        </label>
+                        <input
+                          id="sch-birthday-group-chat"
+                          type="text"
+                          className={inputClass}
+                          autoComplete="off"
+                          placeholder="Например, ID группового чата, куда дублировать поздравление"
+                          value={create.groupChatId}
+                          onChange={(e) => setCreateField("groupChatId", e.target.value)}
+                        />
+                        <span className={`${helpClass} mt-1.5 block`}>
+                          Оставьте пустым, если нужен только личный чат пользователя.
                         </span>
                       </div>
                     </div>
@@ -944,6 +970,20 @@ export function SchedulePage() {
                       required
                       value={edit.organizationId}
                       onChange={(e) => setEditField("organizationId", e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass} htmlFor="sch-edit-birthday-group-chat">
+                      Групповой чат (chat_id MAX), необязательно
+                    </label>
+                    <input
+                      id="sch-edit-birthday-group-chat"
+                      type="text"
+                      className={inputClass}
+                      autoComplete="off"
+                      placeholder="ID группового чата"
+                      value={edit.groupChatId}
+                      onChange={(e) => setEditField("groupChatId", e.target.value)}
                     />
                   </div>
                 </div>

@@ -276,6 +276,8 @@ async def _check_and_execute_schedules_async() -> str:
                         logger.exception("Расписание [MINIAPP_BIRTHDAYS]: запрос users schedule_id=%s", sid)
                         continue
                     now_local = now.astimezone(tz)
+                    group_raw = (cfg.get("group_chat_id") or "").strip()
+                    group_chat_id = group_raw or None
                     ran_ok = False
                     for u in u_rows:
                         bd = getattr(u, "birth_date", None)
@@ -284,31 +286,60 @@ async def _check_and_execute_schedules_async() -> str:
                         if (bd.month, bd.day) != (now_local.month, now_local.day):
                             continue
                         name = (u.name or "Пользователь").strip() or "Пользователь"
-                        extra_ctx = (
+                        base_template = (sch.content_template or "").strip()
+                        extra_personal = (
                             f"Сегодня день рождения у пользователя Mini App ({name}). "
                             f"Сформируй тёплое краткое поздравление в личный чат. "
                         )
-                        sch_user: Schedule = replace(
+                        sch_personal: Schedule = replace(
                             sch,
                             chat_id=str(u.chat_id).strip(),
-                            content_template=extra_ctx + (sch.content_template or "").strip(),
+                            content_template=extra_personal + base_template,
                         )
                         try:
                             logger.info(
-                                "Расписание [MINIAPP_BIRTHDAYS]: запуск schedule_id=%s user_chat_id=%s org=%s time=%s",
+                                "Расписание [MINIAPP_BIRTHDAYS]: личный чат schedule_id=%s user_chat_id=%s org=%s time=%s",
                                 sid,
                                 u.chat_id,
                                 org_id_s,
                                 time_label,
                             )
-                            await use_case.execute(sch_user, event=None)
+                            await use_case.execute(sch_personal, event=None)
                             ran_ok = True
                         except Exception:
                             await session.rollback()
                             logger.exception(
-                                "Расписание [MINIAPP_BIRTHDAYS]: ошибка schedule_id=%s chat_id=%s",
+                                "Расписание [MINIAPP_BIRTHDAYS]: ошибка (личный) schedule_id=%s chat_id=%s",
                                 sid,
                                 u.chat_id,
+                            )
+                        if group_chat_id is None:
+                            continue
+                        extra_group = (
+                            f"Сегодня день рождения у пользователя Mini App: {name}. "
+                            f"Сообщение пойдёт в групповой чат. Сформируй короткое уместное поздравление "
+                            f"для группы: обязательно укажи имя именинника, тон нейтральный или на «вы», без излишней личной интимности. "
+                        )
+                        sch_group: Schedule = replace(
+                            sch,
+                            chat_id=group_chat_id,
+                            content_template=extra_group + base_template,
+                        )
+                        try:
+                            logger.info(
+                                "Расписание [MINIAPP_BIRTHDAYS]: группа schedule_id=%s group_chat_id=%s именинник=%s",
+                                sid,
+                                group_chat_id,
+                                name,
+                            )
+                            await use_case.execute(sch_group, event=None)
+                            ran_ok = True
+                        except Exception:
+                            await session.rollback()
+                            logger.exception(
+                                "Расписание [MINIAPP_BIRTHDAYS]: ошибка (группа) schedule_id=%s group_chat_id=%s",
+                                sid,
+                                group_chat_id,
                             )
                     try:
                         await repo.update_last_run_at(sid, now)

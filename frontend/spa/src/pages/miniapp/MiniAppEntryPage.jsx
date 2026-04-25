@@ -1,4 +1,5 @@
 import { Button, Container, Flex, Panel, Spinner, Typography } from "@maxhub/max-ui";
+import { Save } from "lucide-react";
 import axios from "axios";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
@@ -129,16 +130,38 @@ function MiniAppProfileContent({ page, miniToken, themeColor }) {
               }}
             />
           </label>
-          <Button
+          <button
+            type="button"
             onClick={onSave}
             disabled={saving}
-            size="m"
-            style={{ background: accent, borderColor: accent }}
-            mode="primary"
+            aria-busy={saving}
             title="Сохранить дату рождения"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              width: "100%",
+              maxWidth: 320,
+              marginTop: 6,
+              padding: "14px 20px",
+              minHeight: 50,
+              border: "1px solid rgba(255,255,255,0.2)",
+              borderRadius: 14,
+              background: accent,
+              color: "#ffffff",
+              fontSize: 16,
+              fontWeight: 600,
+              letterSpacing: "0.01em",
+              WebkitTapHighlightColor: "transparent",
+              cursor: saving ? "not-allowed" : "pointer",
+              opacity: saving ? 0.72 : 1,
+              boxShadow: "0 4px 14px rgba(15, 23, 42, 0.22), 0 1px 0 rgba(255,255,255,0.2) inset",
+            }}
           >
+            <Save size={20} strokeWidth={2.25} aria-hidden style={{ flexShrink: 0 }} />
             {saving ? "Сохранение…" : "Сохранить"}
-          </Button>
+          </button>
         </div>
       )}
     </div>
