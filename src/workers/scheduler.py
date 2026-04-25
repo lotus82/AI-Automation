@@ -253,6 +253,7 @@ async def _check_and_execute_schedules_async() -> str:
                         continue
                     try:
                         org_uid = UUID(org_id_s)
+                        org_id_s = str(org_uid)
                     except (TypeError, ValueError):
                         logger.warning(
                             "Расписание [MINIAPP_BIRTHDAYS]: неверный organization_id schedule_id=%s",
@@ -305,6 +306,7 @@ async def _check_and_execute_schedules_async() -> str:
                                 time_label,
                             )
                             await use_case.execute(sch_personal, event=None)
+                            await session.commit()
                             ran_ok = True
                         except Exception:
                             await session.rollback()
@@ -333,6 +335,7 @@ async def _check_and_execute_schedules_async() -> str:
                                 name,
                             )
                             await use_case.execute(sch_group, event=None)
+                            await session.commit()
                             ran_ok = True
                         except Exception:
                             await session.rollback()
@@ -341,6 +344,7 @@ async def _check_and_execute_schedules_async() -> str:
                                 sid,
                                 group_chat_id,
                             )
+                    # Отметка «сегодня сработали» — отдельной транзакцией, чтобы не откатывать успешные отправки.
                     try:
                         await repo.update_last_run_at(sid, now)
                         await session.commit()

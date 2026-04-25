@@ -9,7 +9,7 @@ from src.core.utils.text_cleaner import remove_markdown
 from src.domain import system_setting_keys as sk
 from src.domain.system_roles import get_default_consultant_prompt
 from src.domain.default_system_prompts import FALLBACK_DEFAULT_CONSULTANT_PROMPT
-from src.domain.entities import Schedule, ScheduledEvent
+from src.domain.entities import Schedule, ScheduleType, ScheduledEvent
 from src.use_cases.interfaces import (
     IChatMemoryRepository,
     IChatMonitoringPublisher,
@@ -99,8 +99,12 @@ class ExecuteProactiveScheduleUseCase:
         )
         reply = remove_markdown((reply or "").strip())
         if not reply:
-            logger.warning("Расписание: пустой ответ LLM, chat_id=%s", session_id)
-            return
+            if schedule.type == ScheduleType.MINIAPP_BIRTHDAYS:
+                # Расписание дней рождения не должно «молчать» из-за пустого LLM: отдаём в чат запасной текст.
+                reply = "С днём рождения! Желаем здоровья, радости и отличного настроения! 🎉"
+            else:
+                logger.warning("Расписание: пустой ответ LLM, chat_id=%s", session_id)
+                return
 
         await self._messenger.send_plain_text(schedule.chat_id, reply)
 
