@@ -153,6 +153,15 @@ async def _check_and_execute_schedules_async() -> str:
             repo = SqlAlchemyScheduleRepository(session)
             schedules = await repo.list_schedules(active_only=True)
             use_case = _build_use_case(session, redis, settings)
+            now_label = now.astimezone(tz).strftime("%Y-%m-%d %H:%M")
+            brief = [(s.id, s.type.value) for s in schedules if s.id is not None][:40]
+            logger.info(
+                "check_and_execute_schedules: активных=%s now_local=%s (APP_TIMEZONE=%s) id+type=%s",
+                len(schedules),
+                now_label,
+                settings.app_timezone,
+                brief,
+            )
 
             for sch in schedules:
                 if sch.id is None:
@@ -250,6 +259,12 @@ async def _check_and_execute_schedules_async() -> str:
                     cfg = sch.interval_settings or {}
                     org_id_s = (cfg.get("organization_id") or "").strip()
                     if not org_id_s:
+                        logger.info(
+                            "MINIAPP_BIRTHDAYS: пропуск schedule_id=%s — пустой organization_id (now_local=%s %s)",
+                            sid,
+                            now_label,
+                            settings.app_timezone,
+                        )
                         continue
                     try:
                         org_uid = UUID(org_id_s)
@@ -260,11 +275,28 @@ async def _check_and_execute_schedules_async() -> str:
                             sid,
                         )
                         continue
-                    if not _local_hhmm_matches(now, tz, str(cfg.get("greeting_time") or "10:00")):
+                    time_label = (str(cfg.get("greeting_time") or "10:00").strip() or "10:00")
+                    time_ok = _local_hhmm_matches(now, tz, time_label)
+                    already = _schedule_already_fired_today(sch, tz, now)
+                    logger.info(
+                        "MINIAPP_BIRTHDAYS: проверка schedule_id=%s org=%s greeting_time=%r now_local=%s time_match=%s already_fired_today=%s last_run_at=%s",
+                        sid,
+                        org_id_s,
+                        time_label,
+                        f"{now_label} ({settings.app_timezone})",
+                        time_ok,
+                        already,
+                        sch.last_run_at,
+                    )
+                    if not time_ok:
                         continue
-                    if _schedule_already_fired_today(sch, tz, now):
+                    if already:
+                        logger.info(
+                            "MINIAPP_BIRTHDAYS: пропуск schedule_id=%s — уже срабатывало сегодня (last_run_at=%s)",
+                            sid,
+                            sch.last_run_at,
+                        )
                         continue
-                    time_label = (cfg.get("greeting_time") or "10:00").strip() or "10:00"
                     try:
                         u_rows = (
                             await session.execute(
@@ -277,6 +309,18 @@ async def _check_and_execute_schedules_async() -> str:
                         logger.exception("Расписание [MINIAPP_BIRTHDAYS]: запрос users schedule_id=%s", sid)
                         continue
                     now_local = now.astimezone(tz)
+                    birthday_today = 0
+                    for _u in u_rows:
+                        _bd = getattr(_u, "birth_date", None)
+                        if _bd is not None and (_bd.month, _bd.day) == (now_local.month, now_local.day):
+                            birthday_today += 1
+                    logger.info(
+                        "MINIAPP_BIRTHDAYS: users schedule_id=%s org=%s total_users=%s birthday_today=%s",
+                        sid,
+                        org_id_s,
+                        len(u_rows),
+                        birthday_today,
+                    )
                     group_raw = (cfg.get("group_chat_id") or "").strip()
                     group_chat_id = group_raw or None
                     ran_ok = False

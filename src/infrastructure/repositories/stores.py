@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from redis.asyncio import Redis
@@ -62,6 +63,8 @@ from src.use_cases.interfaces import (
     ITrainingScenarioRepository,
     ITrainingSessionRepository,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _lead_to_domain(row: LeadModel) -> Lead:
@@ -699,6 +702,19 @@ def _schedule_to_domain(row: ScheduleModel) -> Schedule:
     )
 
 
+def _try_schedule_to_domain(row: ScheduleModel) -> Schedule | None:
+    try:
+        return _schedule_to_domain(row)
+    except (TypeError, ValueError) as exc:
+        logger.warning(
+            "Расписание id=%s: пропуск — несовместимый schedule_type=%r: %s",
+            getattr(row, "id", None),
+            getattr(row, "schedule_type", None),
+            exc,
+        )
+        return None
+
+
 def _event_to_domain(row: ScheduledEventModel) -> ScheduledEvent:
     return ScheduledEvent(
         id=row.id,
@@ -721,7 +737,12 @@ class SqlAlchemyScheduleRepository(IScheduleRepository):
         if active_only:
             stmt = stmt.where(ScheduleModel.is_active.is_(True))
         result = await self._session.scalars(stmt)
-        return [_schedule_to_domain(r) for r in result.all()]
+        out: list[Schedule] = []
+        for r in result.all():
+            s = _try_schedule_to_domain(r)
+            if s is not None:
+                out.append(s)
+        return out
 
     async def get_by_id(self, schedule_id: UUID) -> Schedule | None:
         row = await self._session.get(ScheduleModel, schedule_id)
