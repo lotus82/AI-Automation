@@ -313,19 +313,25 @@ export function ApplicationsPage() {
                 <th className="px-4 py-2 text-left font-medium">ID чата</th>
                 <th className="px-4 py-2 text-left font-medium">Имя</th>
                 <th className="px-4 py-2 text-left font-medium">Дата рождения</th>
+                <th
+                  className="px-4 py-2 text-left font-medium"
+                  title="Оставшееся время до ближайшего момента поздравления по расписанию «Дни рождения пользователей Mini App» (часовой пояс сервера / приложения)"
+                >
+                  До поздравления
+                </th>
                 <th className="px-4 py-2 text-left font-medium">Дата регистрации</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {loading ? (
                 <tr>
-                  <td className="px-4 py-4 text-slate-400" colSpan={4}>
+                  <td className="px-4 py-4 text-slate-400" colSpan={5}>
                     Загрузка…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-6 text-center text-slate-500" colSpan={4}>
+                  <td className="px-4 py-6 text-center text-slate-500" colSpan={5}>
                     Пока никто не открывал Mini App организации.
                   </td>
                 </tr>
@@ -335,6 +341,9 @@ export function ApplicationsPage() {
                     <td className="px-4 py-2 font-mono text-slate-100">{u.chat_id}</td>
                     <td className="px-4 py-2 text-slate-200">{u.name || <span className="text-slate-500">—</span>}</td>
                     <td className="px-4 py-2 text-slate-300">{formatDateRu(u.birth_date)}</td>
+                    <td className="max-w-[14rem] whitespace-normal break-words px-4 py-2 text-slate-300">
+                      {u.birthday_greeting_countdown ? u.birthday_greeting_countdown : <span className="text-slate-500">—</span>}
+                    </td>
                     <td className="px-4 py-2 text-slate-400">{formatDateTimeRu(u.created_at)}</td>
                   </tr>
                 ))

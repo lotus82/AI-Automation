@@ -17,10 +17,11 @@ import hashlib
 import hmac
 import json
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, time as time_cls, timedelta
 from typing import Annotated, Any
 from urllib.parse import parse_qsl
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -34,7 +35,13 @@ from src.domain import system_setting_keys as sk
 from src.domain.portal_roles import ROLE_DIRECTOR, ROLE_ORG_ADMIN, ROLE_SUPER_ADMIN
 from src.domain.site_logo_url import normalize_site_logo_url
 from src.domain.site_menu import nav_items_for_miniapp
-from src.infrastructure.models import MiniAppUserModel, OrganizationModel, SiteModel, SitePageModel
+from src.infrastructure.models import (
+    MiniAppUserModel,
+    OrganizationModel,
+    ScheduleModel,
+    SiteModel,
+    SitePageModel,
+)
 from src.infrastructure.portal_security import (
     create_miniapp_access_token,
     decode_miniapp_token,
@@ -92,6 +99,8 @@ class MiniAppUserPublic(BaseModel):
     birth_date: date | None = None
     created_at: datetime
     updated_at: datetime
+    #: До ближайшего срабатывания расписания «Дни рождения» (тот же пояс, что и у планировщика).
+    birthday_greeting_countdown: str | None = None
 
 
 class MiniAppMe(BaseModel):
@@ -458,6 +467,63 @@ def _resolve_admin_org_id(actor, override: UUID | None) -> UUID:
     return actor.organization_id
 
 
+def _parse_greeting_hm(time_s: str) -> tuple[int, int]:
+    raw = (time_s or "10:00").strip() or "10:00"
+    parts = raw.split(":")
+    try:
+        h = int(parts[0])
+        m = int(parts[1]) if len(parts) > 1 else 0
+    except (TypeError, ValueError, IndexError):
+        return 10, 0
+    return max(0, min(23, h)), max(0, min(59, m))
+
+
+def _birth_date_in_year(birth: date, year: int) -> date:
+    try:
+        return date(year, birth.month, birth.day)
+    except ValueError:
+        return date(year, 2, 28)
+
+
+def _next_birthday_greeting_at(
+    birth: date,
+    tz: ZoneInfo,
+    now: datetime,
+    hour: int,
+    minute: int,
+) -> datetime:
+    now_l = now.astimezone(tz)
+    for add in range(0, 4):
+        y = now_l.year + add
+        bday = _birth_date_in_year(birth, y)
+        tdt = datetime.combine(bday, time_cls(hour, minute, tzinfo=tz))
+        if tdt > now_l:
+            return tdt
+    bday = _birth_date_in_year(birth, now_l.year + 1)
+    return datetime.combine(bday, time_cls(hour, minute, tzinfo=tz))
+
+
+def _format_countdown_ru(delta: timedelta) -> str:
+    sec = max(0, int(delta.total_seconds()))
+    if sec < 60:
+        return "менее 1 мин."
+    mon_sec = 30 * 24 * 3600
+    months, r1 = divmod(sec, mon_sec)
+    days, r2 = divmod(r1, 24 * 3600)
+    hours, r3 = divmod(r2, 3600)
+    minutes = r3 // 60
+    parts: list[str] = []
+    if months:
+        parts.append(f"{months} мес.")
+    if days:
+        parts.append(f"{days} д.")
+    if hours:
+        parts.append(f"{hours} ч.")
+    if minutes or not parts:
+        parts.append(f"{minutes} мин.")
+    return " ".join(parts)
+
+
 @admin_router.get("/users", response_model=list[MiniAppUserPublic])
 async def list_miniapp_users(
     actor: PortalUserDep,
@@ -468,6 +534,28 @@ async def list_miniapp_users(
     if actor.role not in (ROLE_SUPER_ADMIN, ROLE_ORG_ADMIN, ROLE_DIRECTOR):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
     org_id = _resolve_admin_org_id(actor, organization_id)
+    settings = get_settings()
+    tz = settings.app_zoneinfo
+    now = datetime.now(tz)
+
+    sch_rows = (
+        await session.execute(
+            select(ScheduleModel).where(
+                ScheduleModel.schedule_type == "MINIAPP_BIRTHDAYS",
+                ScheduleModel.is_active.is_(True),  # noqa: E712
+            ),
+        )
+    ).scalars().all()
+    org_s = str(org_id)
+    greeting_slots: list[tuple[int, int]] = []
+    for srow in sch_rows:
+        cfg = srow.interval_settings or {}
+        if (cfg.get("organization_id") or "").strip() != org_s:
+            continue
+        h, m = _parse_greeting_hm(str(cfg.get("greeting_time") or "10:00"))
+        if (h, m) not in greeting_slots:
+            greeting_slots.append((h, m))
+
     rows = (
         await session.execute(
             select(MiniAppUserModel)
@@ -475,17 +563,30 @@ async def list_miniapp_users(
             .order_by(MiniAppUserModel.created_at.desc())
         )
     ).scalars().all()
-    return [
-        MiniAppUserPublic(
-            id=u.id,
-            chat_id=u.chat_id,
-            name=u.name,
-            birth_date=getattr(u, "birth_date", None),
-            created_at=u.created_at,
-            updated_at=u.updated_at,
+
+    out: list[MiniAppUserPublic] = []
+    for u in rows:
+        bd = getattr(u, "birth_date", None)
+        countdown: str | None = None
+        if isinstance(bd, date) and greeting_slots:
+            next_moments: list[datetime] = []
+            for h, m in greeting_slots:
+                next_moments.append(_next_birthday_greeting_at(bd, tz, now, h, m))
+            if next_moments:
+                t_next = min(next_moments)
+                countdown = _format_countdown_ru(t_next - now.astimezone(tz))
+        out.append(
+            MiniAppUserPublic(
+                id=u.id,
+                chat_id=u.chat_id,
+                name=u.name,
+                birth_date=bd,
+                created_at=u.created_at,
+                updated_at=u.updated_at,
+                birthday_greeting_countdown=countdown,
+            ),
         )
-        for u in rows
-    ]
+    return out
 
 
 # --- Схемы конфига Mini App (public) -------------------------------------
