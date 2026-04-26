@@ -21,9 +21,9 @@ from typing import Annotated, Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from src.api.dependencies import AsyncSessionDep, RedisDep
@@ -34,6 +34,7 @@ from src.domain.portal_roles import ROLE_DIRECTOR, ROLE_ORG_ADMIN, ROLE_SUPER_AD
 from src.domain.site_logo_url import normalize_site_logo_url
 from src.domain.site_menu import nav_items_for_miniapp
 from src.infrastructure.models import (
+    ChatMessageModel,
     MiniAppUserModel,
     OrganizationModel,
     ScheduleModel,
@@ -567,6 +568,53 @@ async def list_miniapp_users(
             ),
         )
     return out
+
+
+_MINIAPP_CHAT_REDIS_PREFIX = "chat_session:"
+
+
+@admin_router.delete(
+    "/users/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_miniapp_user(
+    user_id: UUID,
+    actor: PortalUserDep,
+    session: AsyncSessionDep,
+    redis: RedisDep,
+    organization_id: UUID | None = Query(
+        default=None,
+        description="Организация (для super_admin; иначе из профиля)",
+    ),
+) -> Response:
+    """Удаляет пользователя Mini App, связанные сообщения чата (БД) и кэш диалога в Redis."""
+    if actor.role not in (ROLE_SUPER_ADMIN, ROLE_ORG_ADMIN, ROLE_DIRECTOR):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
+    org_id = _resolve_admin_org_id(actor, organization_id)
+
+    row = await session.get(MiniAppUserModel, user_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    if row.organization_id != org_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к этому пользователю")
+
+    sid = (row.chat_id or "").strip()
+    await session.execute(
+        delete(ChatMessageModel).where(
+            ChatMessageModel.session_id == sid,
+            ChatMessageModel.organization_id == org_id,
+        ),
+    )
+    if sid:
+        try:
+            await redis.delete(f"{_MINIAPP_CHAT_REDIS_PREFIX}{sid}")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Mini App: не удалось сбросить Redis chat_session %s: %s", sid, exc)
+
+    await session.delete(row)
+    await session.commit()
+    logger.info("Mini App: удалён пользователь id=%s org=%s chat_id=%s", user_id, org_id, sid)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # --- Схемы конфига Mini App (public) -------------------------------------

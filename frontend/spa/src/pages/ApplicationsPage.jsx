@@ -1,4 +1,4 @@
-import { Check, Globe, LayoutGrid, Link as LinkIcon, RefreshCcw, Save } from "lucide-react";
+import { Check, Globe, LayoutGrid, Link as LinkIcon, RefreshCcw, Save, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import QRCode from "react-qr-code";
@@ -56,6 +56,7 @@ export function ApplicationsPage() {
   const [savingActiveSite, setSavingActiveSite] = useState(false);
   const [activeSiteJustSaved, setActiveSiteJustSaved] = useState(false);
   const [activeSiteError, setActiveSiteError] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
 
   const orgInn = useMemo(() => {
     const raw = (user?.organization_inn || "").trim();
@@ -85,6 +86,34 @@ export function ApplicationsPage() {
       setLoading(false);
     }
   }, [role, settingsOrgId]);
+
+  const deleteUser = useCallback(
+    async (u) => {
+      if (!u?.id) return;
+      if (
+        !window.confirm(
+          "Удалить пользователя Mini App? Будут удалены запись в базе и история переписки с ботом. Повторный вход в приложение оформит регистрацию заново. Действие необратимо.",
+        )
+      ) {
+        return;
+      }
+      setDeletingId(u.id);
+      setError("");
+      try {
+        const params = {};
+        if (role === "super_admin" && settingsOrgId) {
+          params.organization_id = settingsOrgId;
+        }
+        await api.delete(`/portal/miniapp/users/${u.id}`, { params });
+        await load();
+      } catch (e) {
+        setError(formatApiDetail(e?.response?.data?.detail) || e?.message || String(e));
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [load, role, settingsOrgId],
+  );
 
   const loadSitesAndActive = useCallback(async () => {
     setSitesLoading(true);
@@ -320,18 +349,19 @@ export function ApplicationsPage() {
                   До поздравления
                 </th>
                 <th className="px-4 py-2 text-left font-medium">Дата регистрации</th>
+                <th className="w-20 px-4 py-2 text-left font-medium">Действия</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {loading ? (
                 <tr>
-                  <td className="px-4 py-4 text-slate-400" colSpan={5}>
+                  <td className="px-4 py-4 text-slate-400" colSpan={6}>
                     Загрузка…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-6 text-center text-slate-500" colSpan={5}>
+                  <td className="px-4 py-6 text-center text-slate-500" colSpan={6}>
                     Пока никто не открывал Mini App организации.
                   </td>
                 </tr>
@@ -345,6 +375,22 @@ export function ApplicationsPage() {
                       {u.birthday_greeting_countdown ? u.birthday_greeting_countdown : <span className="text-slate-500">—</span>}
                     </td>
                     <td className="px-4 py-2 text-slate-400">{formatDateTimeRu(u.created_at)}</td>
+                    <td className="px-2 py-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => deleteUser(u)}
+                        disabled={deletingId === u.id}
+                        className="inline-flex items-center justify-center rounded-lg border border-red-500/30 bg-slate-800/50 p-2 text-red-300 hover:border-red-400/60 hover:bg-red-900/20 disabled:opacity-50"
+                        title="Удалить пользователя"
+                        aria-label="Удалить пользователя"
+                      >
+                        {deletingId === u.id ? (
+                          <RefreshCcw className="h-4 w-4 animate-spin" aria-hidden />
+                        ) : (
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                        )}
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
