@@ -315,6 +315,13 @@ class Settings(BaseSettings):
         validation_alias="MIS_MAX_INIT_DATA_MAX_AGE_SEC",
         description="Допустимый возраст auth_date в initData MAX (секунды), см. dev.max.ru/docs/webapps/validation.",
     )
+    miniapp_init_data_max_age_sec: int = Field(
+        default=604800,
+        ge=60,
+        le=2_592_000,
+        validation_alias="MINIAPP_INIT_DATA_MAX_AGE_SEC",
+        description="Допустимый возраст auth_date в initData для /api/miniapp/auth (секунды); по умолчанию 7 суток.",
+    )
     mis_max_patient_mini_app_base_url: str | None = Field(
         default=None,
         validation_alias="MIS_MAX_PATIENT_MINI_APP_BASE_URL",

@@ -4,8 +4,8 @@
 1. Пользователь открывает Web App бота организации по ссылке ``https://<host>/inn/<inn>``.
 2. Фронтенд собирает параметры запуска мессенджера (строка ``init_data``) и отправляет
    на ``POST /api/miniapp/auth`` вместе с ``inn``.
-3. Бэкенд находит организацию, проверяет ``init_data`` (TODO: криптоподпись через токен
-   бота этой организации), делает upsert в ``mini_app_users`` по (organization_id, chat_id)
+3. Бэкенд находит организацию, проверяет ``init_data`` (HMAC как dev.max.ru, токен
+   бота из настроек организации), делает upsert в ``mini_app_users`` по (organization_id, chat_id)
    и возвращает JWT с ``typ/aud=miniapp``.
 4. Фронт передаёт JWT в заголовке ``Authorization: Bearer …`` для последующих вызовов
    ``/api/miniapp/me`` и т.п.
@@ -13,13 +13,11 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import logging
+import re
 from datetime import date, datetime, time as time_cls, timedelta
 from typing import Annotated, Any
-from urllib.parse import parse_qsl
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -42,6 +40,7 @@ from src.infrastructure.models import (
     SiteModel,
     SitePageModel,
 )
+from src.infrastructure.max_webapp_validation import validate_max_webapp_init_data
 from src.infrastructure.portal_security import (
     create_miniapp_access_token,
     decode_miniapp_token,
@@ -123,24 +122,18 @@ class MiniAppMePatch(BaseModel):
 
 # --- init_data parsing / validation -------------------------------------
 
-# Константа для HMAC secret_key (стандарт Telegram Web Apps).
-# Если документация MAX предписывает другую константу — поменять здесь в одном месте.
-_INIT_DATA_HMAC_KEY = b"WebAppData"
+
+def _raw_init_data_has_hash_param(raw: str) -> bool:
+    return bool(re.search(r"(?:^|&)hash=", raw or ""))
 
 
 async def _verify_init_data_signature(init_data: str, bot_token: str) -> dict[str, str]:
-    """HMAC-SHA256 верификация ``init_data`` Web App мессенджера.
+    """HMAC-SHA256 верификация ``init_data`` (алгоритм dev.max.ru, как в MIS).
 
-    Алгоритм (совместим с Telegram Web Apps, ожидаемый контракт MAX):
-      1. Разбираем query-string ``init_data`` в dict ``parsed_data``.
-      2. Извлекаем и удаляем поле ``hash`` (иначе 401).
-      3. Строим ``data_check_string`` — отсортированные по ключу пары ``key=value``,
-         соединённые символом ``\\n``.
-      4. ``secret_key = HMAC_SHA256(key="WebAppData", msg=bot_token)``.
-      5. ``calculated_hash = HMAC_SHA256(key=secret_key, msg=data_check_string).hexdigest()``.
-      6. Сравниваем с ``received_hash`` через ``hmac.compare_digest`` (защита от timing-атак).
-
-    Возвращает dict ПРОВЕРЕННЫХ полей (без ``hash``).
+    Не используем ``urllib.parse.parse_qsl`` для расчёта подписи: в режиме
+    ``application/x-www-form-urlencoded`` он превращает ``+`` в значениях в
+    пробел, тогда как MAX/пример в доке декодируют значения как ``decodeURIComponent`` /
+    ``urllib.parse.unquote`` — плюс в JSON и др. тогда не совпадут, подпись ломается.
     """
     if not bot_token or not str(bot_token).strip():
         # Токен организации не задан — без него верификация невозможна.
@@ -162,13 +155,7 @@ async def _verify_init_data_signature(init_data: str, bot_token: str) -> dict[st
             ),
         )
 
-    # parse_qsl: разбивает по '&', URL-декодирует значения — соответствует шагам 1-4
-    # валидации MAX (https://dev.max.ru/docs/webapps/validation).
-    parsed_data = dict(parse_qsl(raw, keep_blank_values=True))
-
-    if "hash" not in parsed_data:
-        # Попадаем сюда, если с фронта пришла строка без hash (например, содержимое
-        # ``#WebAppData=…`` не было извлечено и прилетел dev-fallback `chat_id=…`).
+    if not _raw_init_data_has_hash_param(raw):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=(
@@ -178,30 +165,23 @@ async def _verify_init_data_signature(init_data: str, bot_token: str) -> dict[st
             ),
         )
 
-    received_hash = parsed_data.pop("hash")
-
-    sorted_keys = sorted(parsed_data.keys())
-    data_check_string = "\n".join(f"{k}={parsed_data[k]}" for k in sorted_keys)
-
-    secret_key = hmac.new(
-        key=_INIT_DATA_HMAC_KEY,
-        msg=bot_token.encode("utf-8"),
-        digestmod=hashlib.sha256,
-    ).digest()
-
-    calculated_hash = hmac.new(
-        key=secret_key,
-        msg=data_check_string.encode("utf-8"),
-        digestmod=hashlib.sha256,
-    ).hexdigest()
-
-    if not hmac.compare_digest(calculated_hash, received_hash):
+    settings = get_settings()
+    fields = validate_max_webapp_init_data(
+        raw,
+        (bot_token or "").strip(),
+        max_age_sec=settings.miniapp_init_data_max_age_sec,
+    )
+    if not fields:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Недействительная подпись данных (Invalid Signature)",
+            detail=(
+                "Недействительная подпись данных (Invalid Signature) или неверный срок "
+                "auth_date. Убедитесь, что в настройках организации указан тот же "
+                "MAX_BOT_TOKEN, что у бота, с которого открыто приложение."
+            ),
         )
-
-    return parsed_data
+    out = {k: v for k, v in fields.items() if k != "hash"}
+    return out
 
 
 def _json_object_from_parsed(parsed: dict[str, str], key: str) -> dict:

@@ -2,7 +2,7 @@ import { Button, Container, Flex, Panel, Spinner, Typography } from "@maxhub/max
 import { Save } from "lucide-react";
 import axios from "axios";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams, useLocation } from "react-router-dom";
 import { useMiniAppAuthStore } from "../../store/miniAppAuthStore.js";
 import { useMiniAppConfigStore } from "../../store/miniAppConfigStore.js";
 import { useMiniAppMisStore } from "../../store/miniAppMisStore.js";
@@ -690,6 +690,7 @@ function MiniAppPageContent({ page, organizationId, miniToken, misRole, themeCol
 export function MiniAppEntryPage() {
   const { inn } = useParams();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const setAuth = useMiniAppAuthStore((s) => s.setAuth);
   const clearAuth = useMiniAppAuthStore((s) => s.clearAuth);
   const miniToken = useMiniAppAuthStore((s) => s.token);
@@ -713,7 +714,7 @@ export function MiniAppEntryPage() {
   const [staffMenu, setStaffMenu] = useState(false);
   const startedRef = useRef(false);
 
-  const initData = useMemo(() => extractInitData(searchParams), [searchParams]);
+  const initData = useMemo(() => extractInitData(searchParams), [searchParams, location.hash]);
 
   const bootstrap = useCallback(async () => {
     setStatus("loading");
