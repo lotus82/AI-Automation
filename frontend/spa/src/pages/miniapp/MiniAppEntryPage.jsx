@@ -1,5 +1,5 @@
 import { Button, Container, Flex, Panel, Spinner, Typography } from "@maxhub/max-ui";
-import { Save } from "lucide-react";
+import { Calendar, Save } from "lucide-react";
 import axios from "axios";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useLocation } from "react-router-dom";
@@ -24,15 +24,39 @@ import {
   misSitePageVisibleInNav,
 } from "../../utils/misMiniAppNav.js";
 import { PAGE_H1, PAGE_TEXT } from "../../styles/pageLayout.js";
+import { isoYmdToRuDotted, parseRuDottedToIsoYmd } from "../../utils/dateTimeFormat.js";
 import "./miniappPageContent.css";
 
-/** Страница «Профиль»: дата рождения (нативный календарь) и вступительный HTML. */
+function splitLegacyFullName(full) {
+  const t = (full || "").trim();
+  if (!t) return { first: "", last: "" };
+  const parts = t.split(/\s+/);
+  if (parts.length === 1) return { first: parts[0], last: "" };
+  return { first: parts[0], last: parts.slice(1).join(" ") };
+}
+
+const inputFieldStyle = {
+  width: "100%",
+  maxWidth: 320,
+  padding: "10px 12px",
+  fontSize: 16,
+  borderRadius: 8,
+  border: "1px solid #e5e7eb",
+  color: "#111827",
+  background: "#fff",
+  boxSizing: "border-box",
+};
+
+/** Страница «Профиль»: имя, фамилия, дата рождения (текст ДД.ММ.ГГГГ + календарь) и вступительный HTML. */
 function MiniAppProfileContent({ page, miniToken, themeColor }) {
-  const [birthDate, setBirthDate] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [birthText, setBirthText] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const introRef = useMiniAppHtmlLinkDelegate(page?.content);
+  const dateInputRef = useRef(null);
 
   const accent = (themeColor || "#2563eb").trim() || "#2563eb";
 
@@ -50,11 +74,20 @@ function MiniAppProfileContent({ page, miniToken, themeColor }) {
           headers: { Authorization: `Bearer ${miniToken}` },
         });
         if (cancelled) return;
+        let fn = (data?.first_name != null && data.first_name !== "" ? String(data.first_name) : "").trim();
+        let ln = (data?.last_name != null && data.last_name !== "" ? String(data.last_name) : "").trim();
+        if (!fn && !ln && data?.name) {
+          const sp = splitLegacyFullName(data.name);
+          fn = sp.first;
+          ln = sp.last;
+        }
+        setFirstName(fn);
+        setLastName(ln);
         const raw = data?.birth_date;
         if (raw && String(raw).length >= 10) {
-          setBirthDate(String(raw).slice(0, 10));
+          setBirthText(isoYmdToRuDotted(String(raw).slice(0, 10)));
         } else {
-          setBirthDate("");
+          setBirthText("");
         }
       } catch {
         if (!cancelled) setErr("Не удалось загрузить данные профиля.");
@@ -67,21 +100,66 @@ function MiniAppProfileContent({ page, miniToken, themeColor }) {
     };
   }, [miniToken]);
 
+  const openDatePicker = () => {
+    const el = dateInputRef.current;
+    if (!el) return;
+    if (typeof el.showPicker === "function") {
+      try {
+        el.showPicker();
+        return;
+      } catch {
+        /* ignore */
+      }
+    }
+    el.click();
+  };
+
+  const onBirthTextChange = (v) => {
+    const next = v.replace(/[^\d.]/g, "");
+    if (next.length > 10) return;
+    if ((next.match(/\./g) || []).length > 2) return;
+    setBirthText(next);
+  };
+
+  const onPickerChange = (e) => {
+    const v = e.target.value;
+    if (v) setBirthText(isoYmdToRuDotted(v));
+  };
+
   const onSave = async () => {
     if (!miniToken) return;
+    const t = String(birthText).trim();
+    if (t) {
+      const parsed = parseRuDottedToIsoYmd(t);
+      if (!parsed) {
+        setErr("Неверный формат даты. Используйте ДД.ММ.ГГГГ (например, 15.03.1990).");
+        return;
+      }
+    }
     setSaving(true);
     setErr("");
     try {
-      const body = { birth_date: birthDate ? birthDate : null };
+      const body = {
+        first_name: firstName.trim() || null,
+        last_name: lastName.trim() || null,
+        birth_date: t ? parseRuDottedToIsoYmd(t) : null,
+      };
       await axios.patch("/api/miniapp/me", body, {
         headers: { Authorization: `Bearer ${miniToken}` },
       });
     } catch {
-      setErr("Не удалось сохранить дату рождения.");
+      setErr("Не удалось сохранить профиль.");
     } finally {
       setSaving(false);
     }
   };
+
+  const hiddenDateValue = (() => {
+    const p = parseRuDottedToIsoYmd(birthText);
+    return p || "";
+  })();
+
+  const todayIsoMax = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   return (
     <div style={{ padding: "16px 16px 24px" }}>
@@ -112,30 +190,89 @@ function MiniAppProfileContent({ page, miniToken, themeColor }) {
             <Typography.Body style={{ color: "#b91c1c" }}>{err}</Typography.Body>
           ) : null}
           <label style={{ display: "block" }}>
-            <span style={{ display: "block", fontSize: 13, color: "#374151", marginBottom: 6 }}>Дата рождения</span>
+            <span style={{ display: "block", fontSize: 13, color: "#374151", marginBottom: 6 }}>Имя</span>
             <input
-              type="date"
-              value={birthDate}
-              onChange={(e) => setBirthDate(e.target.value)}
-              max="2100-12-31"
-              style={{
-                width: "100%",
-                maxWidth: 280,
-                padding: "10px 12px",
-                fontSize: 16,
-                borderRadius: 8,
-                border: "1px solid #e5e7eb",
-                color: "#111827",
-                background: "#fff",
-              }}
+              type="text"
+              autoComplete="given-name"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              maxLength={128}
+              style={inputFieldStyle}
             />
           </label>
+          <label style={{ display: "block" }}>
+            <span style={{ display: "block", fontSize: 13, color: "#374151", marginBottom: 6 }}>Фамилия</span>
+            <input
+              type="text"
+              autoComplete="family-name"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              maxLength={128}
+              style={inputFieldStyle}
+            />
+          </label>
+          <div>
+            <span style={{ display: "block", fontSize: 13, color: "#374151", marginBottom: 6 }}>Дата рождения</span>
+            <div
+              style={{
+                display: "flex",
+                width: "100%",
+                maxWidth: 320,
+                alignItems: "stretch",
+                gap: 8,
+              }}
+            >
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="ДД.ММ.ГГГГ"
+                value={birthText}
+                onChange={(e) => onBirthTextChange(e.target.value)}
+                aria-label="Дата рождения (ДД.ММ.ГГГГ)"
+                style={{ ...inputFieldStyle, flex: 1, maxWidth: "none" }}
+              />
+              <input
+                ref={dateInputRef}
+                type="date"
+                className="sr-only"
+                tabIndex={-1}
+                aria-hidden
+                value={hiddenDateValue}
+                onChange={onPickerChange}
+                min="1900-01-01"
+                max={todayIsoMax}
+              />
+              <button
+                type="button"
+                onClick={openDatePicker}
+                title="Открыть календарь"
+                aria-label="Открыть календарь"
+                style={{
+                  flexShrink: 0,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 44,
+                  minWidth: 44,
+                  height: 44,
+                  borderRadius: 8,
+                  border: `1px solid ${accent}`,
+                  background: "rgba(255,255,255,0.95)",
+                  color: accent,
+                  cursor: "pointer",
+                }}
+              >
+                <Calendar className="h-5 w-5" strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+            <p style={{ margin: "6px 0 0", fontSize: 12, color: "#6b7280" }}>Формат: ДД.ММ.ГГГГ или кнопка календаря</p>
+          </div>
           <button
             type="button"
             onClick={onSave}
             disabled={saving}
             aria-busy={saving}
-            title="Сохранить дату рождения"
+            title="Сохранить профиль"
             style={{
               display: "inline-flex",
               alignItems: "center",

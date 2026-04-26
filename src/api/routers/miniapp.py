@@ -96,6 +96,8 @@ class MiniAppUserPublic(BaseModel):
     id: UUID
     chat_id: str
     name: str | None
+    first_name: str | None = None
+    last_name: str | None = None
     birth_date: date | None = None
     created_at: datetime
     updated_at: datetime
@@ -110,14 +112,18 @@ class MiniAppMe(BaseModel):
     organization_id: UUID
     chat_id: str
     name: str | None
+    first_name: str | None = None
+    last_name: str | None = None
     organization_name: str
     organization_display_name: str | None = None
     birth_date: date | None = None
 
 
 class MiniAppMePatch(BaseModel):
-    """Частичное обновление профиля Mini App (дата рождения)."""
+    """Частичное обновление профиля Mini App (имя, фамилия, дата рождения)."""
 
+    first_name: str | None = Field(default=None, max_length=128)
+    last_name: str | None = Field(default=None, max_length=128)
     birth_date: date | None = None
 
 
@@ -278,6 +284,19 @@ def _extract_name(parsed: dict[str, str], name_hint: str | None) -> str | None:
     return None
 
 
+def _first_last_from_init_user(parsed: dict[str, str]) -> tuple[str | None, str | None]:
+    uo = _user_object_from_parsed(parsed)
+    fn = (str(uo.get("first_name") or "").strip()[:128]) or None
+    ln = (str(uo.get("last_name") or "").strip()[:128]) or None
+    return fn, ln
+
+
+def _recompute_miniapp_user_display_name(user: MiniAppUserModel) -> None:
+    """Склеивает ``name`` из ``first_name``/``last_name`` для совместимости с RAG, админкой и планировщиком."""
+    parts = [p for p in ((user.first_name or "").strip(), (user.last_name or "").strip()) if p]
+    user.name = " ".join(parts)[:255] if parts else None
+
+
 async def _resolve_org_bot_token(
     session: AsyncSessionDep,
     redis: RedisDep,
@@ -377,6 +396,8 @@ async def miniapp_auth(
     # 4) Извлекаем chat_id и имя из ПРОВЕРЕННЫХ полей
     chat_id = _extract_chat_id(parsed)
     name = _extract_name(parsed, body.name_hint)
+    fn_init, ln_init = _first_last_from_init_user(parsed)
+    from_init_composed = " ".join(p for p in (fn_init, ln_init) if p).strip() or None
 
     # 5) Upsert MiniAppUserModel по (organization_id, chat_id)
     existing = (
@@ -389,19 +410,26 @@ async def miniapp_auth(
     ).scalar_one_or_none()
 
     if existing is None:
+        dis = from_init_composed or name
         user = MiniAppUserModel(
             organization_id=org.id,
             chat_id=chat_id,
-            name=name,
+            name=dis,
+            first_name=fn_init,
+            last_name=ln_init,
         )
         session.add(user)
         await session.flush()
         logger.info("Mini App: создан пользователь org=%s chat_id=%s", org.id, chat_id)
     else:
         user = existing
-        if name and name != user.name:
+        if fn_init or ln_init:
+            user.first_name = fn_init
+            user.last_name = ln_init
+            _recompute_miniapp_user_display_name(user)
+        elif name and name != user.name:
             user.name = name
-            session.add(user)
+        session.add(user)
 
     await session.commit()
     await session.refresh(user)
@@ -561,6 +589,8 @@ async def list_miniapp_users(
                 id=u.id,
                 chat_id=u.chat_id,
                 name=u.name,
+                first_name=getattr(u, "first_name", None),
+                last_name=getattr(u, "last_name", None),
                 birth_date=bd,
                 created_at=u.created_at,
                 updated_at=u.updated_at,
@@ -872,6 +902,8 @@ async def miniapp_me(user: MiniAppUserDep) -> MiniAppMe:
         organization_id=user.organization_id,
         chat_id=user.chat_id,
         name=user.name,
+        first_name=getattr(user, "first_name", None),
+        last_name=getattr(user, "last_name", None),
         organization_name=org.name if org else "",
         organization_display_name=(org.display_name or "").strip() or None if org else None,
         birth_date=getattr(user, "birth_date", None),
@@ -884,8 +916,14 @@ async def miniapp_patch_me(
     user: MiniAppUserDep,
     session: AsyncSessionDep,
 ) -> MiniAppMe:
-    """Сохранение даты рождения (страница «Профиль» в Mini App)."""
+    """Сохранение ФИО и даты рождения (страница «Профиль» в Mini App)."""
     fs = body.model_fields_set
+    if "first_name" in fs:
+        user.first_name = (body.first_name or "").strip()[:128] or None
+    if "last_name" in fs:
+        user.last_name = (body.last_name or "").strip()[:128] or None
+    if "first_name" in fs or "last_name" in fs:
+        _recompute_miniapp_user_display_name(user)
     if "birth_date" in fs:
         user.birth_date = body.birth_date
     session.add(user)
@@ -897,6 +935,8 @@ async def miniapp_patch_me(
         organization_id=user.organization_id,
         chat_id=user.chat_id,
         name=user.name,
+        first_name=getattr(user, "first_name", None),
+        last_name=getattr(user, "last_name", None),
         organization_name=org.name if org else "",
         organization_display_name=(org.display_name or "").strip() or None if org else None,
         birth_date=getattr(user, "birth_date", None),
