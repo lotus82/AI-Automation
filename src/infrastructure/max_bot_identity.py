@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from typing import Any
 from uuid import UUID
 
@@ -216,3 +217,58 @@ async def enumerate_max_bot_long_poll_org_ids(session: AsyncSession) -> list[UUI
         by_token[t] = oid
 
     return list(by_token.values())
+
+
+async def resolve_max_long_poll_bot_token(
+    session: AsyncSession,
+    redis: Redis,
+    settings: Settings,
+    organization_id: UUID | None,
+) -> str:
+    """То же, что ``MaxMessengerClient._resolve_bot_token`` — избежать рассинхрона с long poll.
+
+    ``organization_id=None`` — область system_settings, иначе organization_settings. Fallback — ``.env`` ``MAX_BOT_TOKEN``.
+    """
+    repo = PostgresSettingsRepository(session, redis, organization_id=organization_id)
+    db = (await repo.get_value(sk.MAX_BOT_TOKEN) or "").strip()
+    if db:
+        return db
+    return (settings.max_bot_token or "").strip()
+
+
+async def deduplicate_max_long_poll_targets(
+    session: AsyncSession,
+    redis: Redis,
+    settings: Settings,
+    candidates: list[UUID | None],
+) -> list[UUID | None]:
+    """
+    Схлопывает воркеры, если фактически один и тот же бот: ``enumerate`` смотрит только
+    сырые строки в ``organization_settings`` / ``system_settings``, тогда как при старте
+    токен может дублироваться через ``.env`` (глобальная область = токен из env, у орг. —
+    тот же в БД) → в списке целей два id, в рантайме — одинаковый ``Authorization`` и
+    дубли ответа в /updates.
+    """
+    if len(candidates) < 2:
+        return candidates
+
+    groups: defaultdict[str, list[UUID | None]] = defaultdict(list)
+    for oid in candidates:
+        t = (await resolve_max_long_poll_bot_token(session, redis, settings, oid)).strip()
+        if not t:
+            t = f"__unconfigured_token__:{oid if oid is not None else 'global'}"
+        groups[t].append(oid)
+
+    out: list[UUID | None] = []
+    for t, oids in groups.items():
+        chosen = next((o for o in oids if o is not None), None)
+        out.append(chosen)
+        if len(oids) > 1:
+            show = t[-4:] if len(t) >= 4 and not t.startswith("__unconfigured") else t
+            logger.info(
+                "MAX long poll: схлопывание: resolved «%s» → org_id=%s, кандидаты %s",
+                show,
+                chosen,
+                oids,
+            )
+    return out

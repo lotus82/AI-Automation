@@ -159,6 +159,19 @@ def _max_poll_marker_storage_key(token: str) -> str:
     return f"max:long_poll:marker:{digest}"
 
 
+def _max_update_event_dedup_id(raw: dict[str, Any]) -> str | None:
+    """Стабильный id для защиты от повторной обработки (два long poll, вебхук+poll, гонка marker)."""
+    u = raw.get("update_id") or raw.get("id") or raw.get("updateId")
+    if u is not None and str(u).strip() != "":
+        return f"u:{u}"
+    msg = raw.get("message")
+    if isinstance(msg, dict):
+        m = msg.get("id") or msg.get("message_id")
+        if m is not None and str(m).strip() != "":
+            return f"m:{m}"
+    return None
+
+
 def _max_updates_type_counts(updates: list[Any]) -> str:
     c: Counter[str] = Counter()
     for u in updates:
@@ -670,6 +683,18 @@ class MaxMessengerClient:
                 if not isinstance(raw_update, dict):
                     continue
                 raw_update = unwrap_max_update_body(raw_update)
+                dedup_id = _max_update_event_dedup_id(raw_update)
+                if dedup_id and token:
+                    td = hashlib.sha256((token or "").strip().encode("utf-8")).hexdigest()[:16]
+                    dkey = f"max:evt:{td}:{dedup_id}"
+                    try:
+                        first_owner = await redis.set(dkey, "1", ex=120, nx=True)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("MAX long poll: Redis dedup %s: %s", dkey, exc)
+                        first_owner = True
+                    if not first_owner:
+                        logger.info("MAX long poll: пропуск — событие уже обработано %s", dedup_id)
+                        continue
                 parsed_call = parse_max_voice_call_incoming(raw_update)
                 if parsed_call is not None:
                     call_id_v, user_label_v = parsed_call

@@ -48,6 +48,7 @@ from src.core.config import get_settings
 from src.core.logging import setup_logging
 from src.infrastructure.database import AsyncSessionLocal
 from src.infrastructure.max_bot_identity import (
+    deduplicate_max_long_poll_targets,
     enumerate_max_bot_long_poll_org_ids,
     sync_all_max_bot_user_ids_from_stored_tokens,
 )
@@ -94,6 +95,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             app_settings=settings,
         )
         targets = await enumerate_max_bot_long_poll_org_ids(bootstrap_session)
+        targets = await deduplicate_max_long_poll_targets(
+            bootstrap_session,
+            app.state.redis,
+            settings,
+            targets,
+        )
         await bootstrap_session.commit()
 
     if settings.max_long_poll_organization_id is not None:
