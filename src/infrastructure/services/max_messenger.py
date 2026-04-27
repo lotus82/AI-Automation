@@ -63,9 +63,9 @@ def _max_poll_types_query_value() -> str:
     return ",".join(parts)
 
 
-# Лимит текста в POST /messages: платформа MAX считает **байты UTF-8** (часто ≤4096), не «символы».
-# Обрезка [:4000] по символам для кириллицы даёт >8000 байт → 400 Bad Request.
-_MAX_OUTGOING_MESSAGE_UTF8_BYTES = 3800
+# Один фрагмент POST /messages: MAX считает **байты UTF-8** (лимит ~4096), не «символы».
+# Длинный ответ **не усечь**, а разбить на несколько последовательных POST (см. _split_utf8_for_max_api_chunks).
+_MAX_OUTGOING_MESSAGE_UTF8_BYTES = 4090
 # MAX CDN для type=audio: сжатый поток; синтез SaluteSpeech REST — Opus в OGG (не WAV).
 _MAX_VOICE_UPLOAD_FILENAME = "voice.ogg"
 _MAX_VOICE_UPLOAD_MIME = "audio/ogg"
@@ -82,26 +82,55 @@ def _max_cdn_attachment_token(body: Any) -> str | None:
     return None
 
 
-def _truncate_utf8_for_max_api(text: str, max_bytes: int = _MAX_OUTGOING_MESSAGE_UTF8_BYTES) -> str:
-    """Укладывает текст в лимит байт UTF-8, не ломая суррогаты и многобайтовые символы."""
+def _utf8_byte_slice_end_valid(raw: bytes, start: int, max_len: int) -> int:
+    """Конец (exclusive) среза ``raw`` от ``start``: не длиннее ``max_len`` байт в UTF-8, без обрыва символа."""
+    n = len(raw)
+    if start >= n:
+        return n
+    end = min(n, start + max_len)
+    while end > start:
+        try:
+            raw[start:end].decode("utf-8")
+            return end
+        except UnicodeDecodeError:
+            end -= 1
+    return start + 1
+
+
+def _split_utf8_for_max_api_chunks(text: str, max_bytes: int = _MAX_OUTGOING_MESSAGE_UTF8_BYTES) -> list[str]:
+    """Нарезка на несколько исходящих сообщений (лимит API на **одно** ``POST /messages``)."""
     s = (text or "").strip()
     if not s:
-        return ""
+        return []
     raw = s.encode("utf-8")
-    if len(raw) <= max_bytes:
-        return s
-    suffix = "…"
-    suf_b = suffix.encode("utf-8")
-    budget = max_bytes - len(suf_b)
-    if budget <= 0:
-        return suffix if max_bytes >= len(suf_b) else raw[:max_bytes].decode("utf-8", errors="ignore")
-    cut = budget
-    while cut > 0:
-        try:
-            return raw[:cut].decode("utf-8") + suffix
-        except UnicodeDecodeError:
-            cut -= 1
-    return suffix
+    n = len(raw)
+    if n <= max_bytes:
+        return [s]
+    out: list[str] = []
+    i = 0
+    while i < n:
+        if n - i <= max_bytes:
+            out.append(raw[i:].decode("utf-8"))
+            break
+        end_max = _utf8_byte_slice_end_valid(raw, i, max_bytes)
+        window = raw[i:end_max]
+        cut = end_max
+        p2 = window.rfind(b"\n\n")
+        if p2 >= 0:
+            cut = i + p2 + 2
+        else:
+            p1 = window.rfind(b"\n")
+            if p1 >= 0:
+                cut = i + p1 + 1
+            else:
+                ps = window.rfind(b" ")
+                if ps >= 24:
+                    cut = i + ps + 1
+        if cut <= i or cut > end_max:
+            cut = end_max
+        out.append(raw[i:cut].decode("utf-8"))
+        i = cut
+    return [c.lstrip() for c in out if c]
 
 
 _MAX_MD_LINK_RE = re.compile(
@@ -904,43 +933,48 @@ class MaxMessengerClient:
             "Content-Type": "application/json",
         }
         raw_text = (text or "").strip()
-        safe = _truncate_utf8_for_max_api(raw_text)
-        if safe != raw_text:
-            logger.info(
-                "MAX send_message: текст усечён по UTF-8 до %s байт (было %s байт), chat_id=%s",
-                _MAX_OUTGOING_MESSAGE_UTF8_BYTES,
-                len(raw_text.encode("utf-8")),
-                chat_id,
-            )
+        if not raw_text:
+            return
+        chunks = _split_utf8_for_max_api_chunks(raw_text, _MAX_OUTGOING_MESSAGE_UTF8_BYTES)
+        if not chunks:
+            return
         fmt: str | None
         if text_format in (None, "plain"):
             fmt = None
         elif text_format == "auto":
-            fmt = _infer_max_api_text_format(safe)
+            fmt = _infer_max_api_text_format(raw_text)
         else:
             fmt = text_format
-        payload: dict[str, Any] = {"text": safe}
-        if fmt:
-            payload["format"] = fmt
+        if len(chunks) > 1:
+            logger.info(
+                "MAX send_message: длинный ответ разбит на %s сообщений (≤%s UTF-8 байт/шт.), chat_id=%s",
+                len(chunks),
+                _MAX_OUTGOING_MESSAGE_UTF8_BYTES,
+                chat_id,
+            )
 
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    url,
-                    params=params,
-                    json=payload,
-                    headers=headers,
-                )
-                try:
-                    response.raise_for_status()
-                except httpx.HTTPStatusError as exc:
-                    logger.error(
-                        "MAX send_message: HTTP %s chat_id=%s тело ответа: %s",
-                        exc.response.status_code,
-                        chat_id,
-                        (exc.response.text or "")[:800],
+                for part in chunks:
+                    payload: dict[str, Any] = {"text": part}
+                    if fmt:
+                        payload["format"] = fmt
+                    response = await client.post(
+                        url,
+                        params=params,
+                        json=payload,
+                        headers=headers,
                     )
-                    raise
+                    try:
+                        response.raise_for_status()
+                    except httpx.HTTPStatusError as exc:
+                        logger.error(
+                            "MAX send_message: HTTP %s chat_id=%s тело ответа: %s",
+                            exc.response.status_code,
+                            chat_id,
+                            (exc.response.text or "")[:800],
+                        )
+                        raise
         except httpx.ConnectError as exc:
             logger.error(
                 "MAX send_message: нет TCP/TLS до %s (DNS, файрвол, прокси Docker). Подробности: %s",
