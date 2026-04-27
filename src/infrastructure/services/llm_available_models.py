@@ -13,13 +13,18 @@ _OPENAI_BASE = "https://api.openai.com"
 
 logger = logging.getLogger(__name__)
 
-# Если GET /models недоступен — подсказки (актуальные id см. в консоли провайдера)
-_FALLBACK_DEEPSEEK: tuple[str, ...] = (
-    "deepseek-chat",
-    "deepseek-reasoner",
+# Актуальные идентификаторы чат-моделей по документации DeepSeek (см. Quick Start + Models & Pricing);
+# эндпоинт ``GET /v1/models`` нередко отдаёт только устаревшее имя — дополняем ответ вручную.
+# https://api-docs.deepseek.com/
+_DEEPSEEK_KNOWN_CHAT_MODELS: tuple[str, ...] = (
     "deepseek-v4-flash",
     "deepseek-v4-pro",
+    "deepseek-chat",
+    "deepseek-reasoner",
 )
+
+# Если GET не удался вовсе — тот же порядок (v4 → legacy)
+_FALLBACK_DEEPSEEK: tuple[str, ...] = _DEEPSEEK_KNOWN_CHAT_MODELS
 
 _FALLBACK_OPENAI: tuple[str, ...] = (
     "gpt-4o-mini",
@@ -43,6 +48,21 @@ def _parse_models_payload(data: Any) -> list[str]:
     for it in items:
         if isinstance(it, dict) and it.get("id"):
             out.append(str(it["id"]).strip())
+    return out
+
+
+def _merge_deepseek_with_documented_ids(from_api: list[str]) -> list[str]:
+    """API может вернуть один ``deepseek-chat``; в список для UI добавляем все id из доков DeepSeek
+    и лишние id с API, если появятся в будущем."""
+    known_lower = {m.lower() for m in _DEEPSEEK_KNOWN_CHAT_MODELS}
+    out: list[str] = list(_DEEPSEEK_KNOWN_CHAT_MODELS)
+    for m in from_api:
+        t = str(m).strip()
+        if not t:
+            continue
+        if t.lower() in known_lower:
+            continue
+        out.append(t)
     return out
 
 
@@ -123,8 +143,15 @@ async def fetch_llm_model_ids(
                 if not j:
                     continue
                 ids = _parse_models_payload(j)
-                if ids:
-                    return sorted(set(ids), key=str.lower), "api"
+                merged = _merge_deepseek_with_documented_ids(ids)
+                if ids and len(merged) > len({str(m).strip().lower() for m in ids if m}):
+                    logger.debug(
+                        "LLM list models: DeepSeek %s: в ответе %s id(ов), после доп. по доке — %s",
+                        path,
+                        len(ids),
+                        len(merged),
+                    )
+                return merged, "api"
             return list(_FALLBACK_DEEPSEEK), "fallback"
 
         j = await _get_json(client, f"{_OPENAI_BASE}/v1/models", api_key=key)
