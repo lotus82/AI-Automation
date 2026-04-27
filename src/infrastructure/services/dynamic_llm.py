@@ -46,12 +46,21 @@ class DynamicLLMService(ILLMService):
         self._client: AsyncOpenAI | None = None
         self._client_sig: str = ""
 
+    async def _resolve_chat_model(self, provider: str) -> str:
+        """Ключ **LLM_MODEL** в system_settings; иначе дефолт для провайдера (как в проекте до панели)."""
+        raw = (await self._repo.get_value(sk.LLM_MODEL) or "").strip()
+        default = _OPENAI_CHAT_MODEL if provider == "openai" else _DEEPSEEK_CHAT_MODEL
+        if not raw or len(raw) > 128:
+            return default
+        return raw
+
     async def _build_client(self) -> tuple[AsyncOpenAI | None, str, str]:
         """Возвращает (клиент или None, имя модели чата, подпись для кэша клиента)."""
         raw_provider = await self._repo.get_value(sk.LLM_PROVIDER)
         provider = (raw_provider or "deepseek").strip().lower()
         if provider not in ("deepseek", "openai"):
             provider = "deepseek"
+        model = await self._resolve_chat_model(provider)
 
         if provider == "deepseek":
             key = (await self._repo.get_value(sk.DEEPSEEK_API_KEY) or "").strip()
@@ -59,17 +68,17 @@ class DynamicLLMService(ILLMService):
                 key = self._settings.deepseek_api_key.strip()
             sig = f"deepseek:{key[:12]}:{len(key)}"
             if not key:
-                return None, _DEEPSEEK_CHAT_MODEL, sig
+                return None, model, sig
             client = AsyncOpenAI(api_key=key, base_url=_DEEPSEEK_BASE_URL)
-            return client, _DEEPSEEK_CHAT_MODEL, sig
+            return client, model, sig
 
         key = (await self._repo.get_value(sk.OPENAI_API_KEY) or "").strip()
         if not key and self._settings.openai_api_key:
             key = self._settings.openai_api_key.strip()
         sig = f"openai:{key[:12]}:{len(key)}"
         if not key:
-            return None, _OPENAI_CHAT_MODEL, sig
-        return AsyncOpenAI(api_key=key), _OPENAI_CHAT_MODEL, sig
+            return None, model, sig
+        return AsyncOpenAI(api_key=key), model, sig
 
     async def _client_and_model(self) -> tuple[AsyncOpenAI | None, str]:
         client, model, sig = await self._build_client()

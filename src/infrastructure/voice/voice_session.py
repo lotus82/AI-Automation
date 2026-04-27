@@ -26,6 +26,7 @@ from src.infrastructure.services.web_search import DuckDuckGoSearchService
 from src.infrastructure.services.dynamic_llm import DynamicLLMService
 from src.infrastructure.services.openai_embedding import OpenAIEmbeddingService
 from src.infrastructure.services.salute_auth import SaluteSpeechAuthManager
+from src.infrastructure.voice.tbank_voicekit_config import TbankVoiceKitCredentials, load_tbank_voicekit_stt_credentials, load_tbank_voicekit_tts_credentials
 from src.infrastructure.training_session_redis import (
     encode_trainer_meta,
     trainer_session_redis_key,
@@ -69,6 +70,15 @@ async def resolve_effective_voice_stt_provider(
     """
     salute = await load_salutespeech_auth_key(settings, redis, organization_id=organization_id)
     effective = settings.voice_stt_provider
+    if effective == "tbank_voicekit":
+        tb = await load_tbank_voicekit_stt_credentials(
+            settings, redis, organization_id=organization_id
+        )
+        if not tb:
+            return effective, (
+                "T-Bank VoiceKit STT: задайте TBANK_VOICEKIT_API_KEY и TBANK_VOICEKIT_SECRET_KEY в .env "
+                "либо запись tbank_voicekit_stt в настройках панели (PANEL)"
+            )
     if effective == "deepgram" and not (settings.deepgram_api_key or "").strip():
         if salute:
             effective = "salutespeech"
@@ -82,6 +92,15 @@ async def resolve_effective_voice_stt_provider(
         return effective, (
             "Не задан ключ SaluteSpeech (SALUTESPEECH_AUTH_KEY или панель настроек)"
         )
+    if settings.voice_tts_provider == "tbank_voicekit":
+        tbt = await load_tbank_voicekit_tts_credentials(
+            settings, redis, organization_id=organization_id
+        )
+        if not tbt:
+            return effective, (
+                "T-Bank VoiceKit TTS: задайте TBANK_VOICEKIT_API_KEY и TBANK_VOICEKIT_SECRET_KEY в .env "
+                "либо запись tbank_voicekit_tts в настройках панели (PANEL)"
+            )
     return effective, None
 
 
@@ -220,6 +239,17 @@ async def run_voice_pipeline_session(
         )
         salute_voice = raw_voice
 
+    tbank_stt: TbankVoiceKitCredentials | None = None
+    tbank_tts: TbankVoiceKitCredentials | None = None
+    if stt_eff == "tbank_voicekit":
+        tbank_stt = await load_tbank_voicekit_stt_credentials(
+            settings, redis, organization_id=organization_id
+        )
+    if (settings.voice_tts_provider or "").strip().lower() == "tbank_voicekit":
+        tbank_tts = await load_tbank_voicekit_tts_credentials(
+            settings, redis, organization_id=organization_id
+        )
+
     orchestrator = VoicePipelineOrchestrator(settings)
     await orchestrator.run(
         voice_transport=voice_transport,
@@ -231,6 +261,8 @@ async def run_voice_pipeline_session(
         voice_stt_provider_effective=stt_eff,
         recording_session_id=session_id,
         fixed_greeting_phrase=fixed_greeting_phrase,
+        tbank_stt_credentials=tbank_stt,
+        tbank_tts_credentials=tbank_tts,
     )
 
 

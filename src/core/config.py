@@ -119,7 +119,7 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="ELEVENLABS_VOICE_ID",
     )
-    # Провайдер синтеза: openai | elevenlabs | salutespeech (без локального TTS)
+    # Провайдер синтеза: openai | elevenlabs | salutespeech | tbank_voicekit
     voice_tts_provider: str = Field(
         default="openai",
         validation_alias="VOICE_TTS_PROVIDER",
@@ -137,7 +137,7 @@ class Settings(BaseSettings):
         default="ru",
         validation_alias="VOICE_STT_LANGUAGE",
     )
-    # STT: deepgram | salutespeech (SaluteSpeech — gRPC Recognize, поток PCM)
+    # STT: deepgram | salutespeech | tbank_voicekit
     voice_stt_provider: str = Field(
         default="deepgram",
         validation_alias="VOICE_STT_PROVIDER",
@@ -196,6 +196,25 @@ class Settings(BaseSettings):
     salutespeech_smartspeech_verify_ssl: bool = Field(
         default=False,
         validation_alias="SALUTESPEECH_SMARTSPEECH_VERIFY_SSL",
+    )
+
+    # T-Bank VoiceKit: ключи в .env или в PANEL (см. developer.tbank.ru/voicekit)
+    tbank_voicekit_api_key: str | None = Field(
+        default=None,
+        validation_alias="TBANK_VOICEKIT_API_KEY",
+    )
+    tbank_voicekit_secret_key: str | None = Field(
+        default=None,
+        validation_alias="TBANK_VOICEKIT_SECRET_KEY",
+    )
+    tbank_voicekit_endpoint: str | None = Field(
+        default=None,
+        validation_alias="TBANK_VOICEKIT_ENDPOINT",
+        description="gRPC: host:port (например api.tinkoff.ai:443); пусто — дефолт VoiceKit.",
+    )
+    tbank_voicekit_tts_voice: str = Field(
+        default="filipp",
+        validation_alias="TBANK_VOICEKIT_TTS_VOICE",
     )
 
     # Bitrix24: полный URL входящего вебхука для crm.lead.add
@@ -413,6 +432,8 @@ class Settings(BaseSettings):
         "asterisk_ari_user",
         "asterisk_ari_password",
         "salutespeech_auth_key",
+        "tbank_voicekit_api_key",
+        "tbank_voicekit_secret_key",
         "deepseek_api_key",
         "telegram_bot_token",
         "vk_api_access_token",
@@ -434,8 +455,10 @@ class Settings(BaseSettings):
         if not isinstance(v, str):
             return "deepgram"
         v = v.strip().lower()
-        if v not in ("deepgram", "salutespeech"):
-            raise ValueError("VOICE_STT_PROVIDER должен быть 'deepgram' или 'salutespeech'")
+        if v not in ("deepgram", "salutespeech", "tbank_voicekit"):
+            raise ValueError(
+                "VOICE_STT_PROVIDER должен быть 'deepgram', 'salutespeech' или 'tbank_voicekit'"
+            )
         return v
 
     @field_validator("call_recordings_dir", mode="before")
@@ -455,8 +478,11 @@ class Settings(BaseSettings):
         if not isinstance(v, str):
             return "openai"
         v = v.strip().lower()
-        if v not in ("openai", "elevenlabs", "salutespeech"):
-            raise ValueError("VOICE_TTS_PROVIDER должен быть 'openai', 'elevenlabs' или 'salutespeech'")
+        if v not in ("openai", "elevenlabs", "salutespeech", "tbank_voicekit"):
+            raise ValueError(
+                "VOICE_TTS_PROVIDER должен быть 'openai', 'elevenlabs', 'salutespeech' "
+                "или 'tbank_voicekit'"
+            )
         return v
 
     @property

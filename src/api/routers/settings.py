@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from uuid import UUID
 
@@ -13,15 +14,18 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from src.api.dependencies import AsyncSessionDep, RedisDep
 from src.api.dependencies_portal import PortalUserDep
-from src.api.schemas.settings import SettingsUpdateRequest, SystemSettingPublic
+from src.api.schemas.settings import LlmModelsResponse, SettingsUpdateRequest, SystemSettingPublic
+from src.infrastructure.services.llm_available_models import fetch_llm_model_ids
 from src.domain import system_setting_keys as sk
 from src.api.org_scope import resolve_organization_scope
+from src.api.panel_settings_extras import mask_panel_extras_json, process_panel_extras_incoming
 from src.core.config import get_settings
 from src.domain.entities import SystemSetting
 from src.infrastructure.max_bot_identity import sync_max_bot_user_id_for_token
 from src.infrastructure.repositories import PostgresSettingsRepository
 
 router = APIRouter(tags=["settings"])
+logger = logging.getLogger(__name__)
 
 
 def _mask_setting_value(key: str, value: str) -> str:
@@ -36,7 +40,12 @@ def _mask_setting_value(key: str, value: str) -> str:
 
 
 def _to_public(row: SystemSetting, *, masked: bool) -> SystemSettingPublic:
-    v = _mask_setting_value(row.key, row.value) if masked else row.value
+    if masked and row.key == sk.PANEL_SETTINGS_EXTRAS:
+        v = mask_panel_extras_json(row.value or "")
+    elif masked:
+        v = _mask_setting_value(row.key, row.value)
+    else:
+        v = row.value
     return SystemSettingPublic(
         key=row.key,
         value=v,
@@ -60,6 +69,38 @@ async def list_settings(
     repo = PostgresSettingsRepository(session, redis, organization_id=scope)
     rows = await repo.list_all()
     return [_to_public(r, masked=True) for r in rows]
+
+
+@router.get("/settings/llm-models", response_model=LlmModelsResponse)
+async def list_llm_model_ids(
+    user: PortalUserDep,
+    session: AsyncSessionDep,
+    redis: RedisDep,
+    provider: str = Query(
+        "deepseek",
+        description="Провайдер, для которого запрашивается список (deepseek | openai)",
+    ),
+    organization_id: UUID | None = Query(
+        None,
+        description="Супер-админ: id организации; иначе глобальные ключи",
+    ),
+) -> LlmModelsResponse:
+    """Список моделей с API провайдера (при валидном ключе) или фиксированный fallback."""
+    p = (provider or "deepseek").strip().lower()
+    if p not in ("deepseek", "openai"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="query provider должен быть deepseek или openai",
+        )
+    scope = resolve_organization_scope(user, organization_id)
+    repo = PostgresSettingsRepository(session, redis, organization_id=scope)
+    s = get_settings()
+    if p == "deepseek":
+        key = (await repo.get_value(sk.DEEPSEEK_API_KEY) or "").strip() or (s.deepseek_api_key or "").strip()
+    else:
+        key = (await repo.get_value(sk.OPENAI_API_KEY) or "").strip() or (s.openai_api_key or "").strip()
+    models, source = await fetch_llm_model_ids(provider=p, api_key=key)
+    return LlmModelsResponse(models=models, source=source)
 
 
 @router.put("/settings", status_code=status.HTTP_200_OK)
@@ -110,6 +151,15 @@ async def update_settings(
             )
         # Шаг 0.1 для предсказуемости в UI
         normalized[sk.LLM_TEMPERATURE] = str(round(temp * 10) / 10)
+
+    if sk.LLM_MODEL in normalized:
+        m = (normalized[sk.LLM_MODEL] or "").strip()
+        if len(m) > 128:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="LLM_MODEL: не более 128 символов",
+            )
+        normalized[sk.LLM_MODEL] = m
 
     if sk.SALUTESPEECH_SCOPE in normalized:
         sc = (normalized[sk.SALUTESPEECH_SCOPE] or "").strip()
@@ -424,7 +474,34 @@ async def update_settings(
             )
 
     scope = resolve_organization_scope(user, organization_id)
-    repo = PostgresSettingsRepository(session, redis, organization_id=scope)
+    settings_repo = PostgresSettingsRepository(session, redis, organization_id=scope)
+
+    if sk.PANEL_SETTINGS_EXTRAS in normalized:
+        raw_ex = (normalized[sk.PANEL_SETTINGS_EXTRAS] or "").strip()
+        if not raw_ex:
+            normalized[sk.PANEL_SETTINGS_EXTRAS] = '{"llm":[],"stt":[],"tts":[]}'
+        else:
+            if len(raw_ex) > 262144:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="PANEL_SETTINGS_EXTRAS слишком большой (максимум 256 КБ)",
+                )
+            try:
+                old_ex = await settings_repo.get_value(sk.PANEL_SETTINGS_EXTRAS)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("PANEL_SETTINGS_EXTRAS: чтение старого значения: %s", exc)
+                old_ex = None
+            try:
+                normalized[sk.PANEL_SETTINGS_EXTRAS] = process_panel_extras_incoming(
+                    raw_ex, old_raw=old_ex
+                )
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(e),
+                ) from e
+
+    repo = settings_repo
     try:
         await repo.upsert_values(normalized)
     except KeyError as e:

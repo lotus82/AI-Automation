@@ -1,14 +1,26 @@
-import { Save, Settings } from "lucide-react";
+import { Plus, RefreshCcw, Save, Settings } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import api from "../api/client.js";
 import { SK } from "../constants/systemSettingsKeys.js";
+import { PANEL_EXTRA_KIND } from "../constants/voiceProviderKinds.js";
+import { IconDeleteButton } from "../components/ui/IconActionButtons.jsx";
+import {
+  BTN_ADD,
+  BTN_SAVE,
+  ICON_BTN,
+  PAGE_H1,
+  PAGE_HEADER_BETWEEN,
+  PAGE_TEXT,
+  PAGE_TITLE_ICON,
+  tabBtn,
+} from "../styles/pageLayout.js";
 import {
   clampLlmTemp,
   hintForSecretRow,
   mapFromList,
   parseTruthy,
 } from "../utils/systemSettingsForm.js";
-import { BTN_SAVE, ICON_BTN, PAGE_H1, PAGE_HEADER, PAGE_TEXT, PAGE_TITLE_ICON } from "../styles/pageLayout.js";
 
 function DeepSeekGlyph() {
   return (
@@ -28,16 +40,13 @@ function DeepSeekGlyph() {
   );
 }
 
-const tabBtn = (active) =>
-  `rounded-t-lg border px-4 py-2 text-sm font-medium transition-colors ${
-    active
-      ? "border-slate-600 border-b-transparent bg-slate-800/90 text-white"
-      : "border-transparent text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
-  }`;
+const BTN_RELOAD_ICON =
+  "inline-flex items-center justify-center rounded-lg border border-slate-600 bg-slate-800/70 p-2 text-slate-200 hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60 disabled:opacity-60";
 
 function initialFormState() {
   return {
     llmProvider: "deepseek",
+    llmModel: "deepseek-chat",
     llmTemp: 0.2,
     deepseekKey: "",
     openaiKey: "",
@@ -54,13 +63,83 @@ function initialFormState() {
   };
 }
 
+function emptyExtras() {
+  return { llm: [], stt: [], tts: [] };
+}
+
+function newExtraId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      /* ignore */
+    }
+  }
+  return `x-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function normalizeExtraRow(r) {
+  if (!r || typeof r !== "object") return null;
+  const kind = r.kind || PANEL_EXTRA_KIND.NOTE;
+  if (kind === PANEL_EXTRA_KIND.TBANK_VK_STT || kind === PANEL_EXTRA_KIND.TBANK_VK_TTS) {
+    const c = r.config && typeof r.config === "object" ? r.config : {};
+    return {
+      ...r,
+      kind,
+      value: typeof r.value === "string" ? r.value : "",
+      config: {
+        api_key: String(c.api_key ?? ""),
+        secret_key: String(c.secret_key ?? ""),
+        endpoint: String(c.endpoint ?? ""),
+      },
+    };
+  }
+  return {
+    ...r,
+    kind: PANEL_EXTRA_KIND.NOTE,
+    name: String(r.name ?? ""),
+    value: typeof r.value === "string" ? r.value : "",
+  };
+}
+
+function parseExtrasFromMap(map) {
+  const raw = map[SK.PANEL_SETTINGS_EXTRAS]?.value;
+  if (raw == null || String(raw).trim() === "") {
+    return emptyExtras();
+  }
+  try {
+    const o = JSON.parse(String(raw));
+    if (!o || typeof o !== "object") return emptyExtras();
+    const norm = (arr) => (Array.isArray(arr) ? arr.map((x) => normalizeExtraRow(x)).filter(Boolean) : []);
+    return {
+      llm: norm(o.llm),
+      stt: norm(o.stt),
+      tts: norm(o.tts),
+    };
+  } catch {
+    return emptyExtras();
+  }
+}
+
 export function SettingsPage() {
   const [settingsTab, setSettingsTab] = useState("llm");
   const [form, setForm] = useState(initialFormState);
+  const [extras, setExtras] = useState(emptyExtras);
   const [statusMsg, setStatusMsg] = useState("");
   const [statusError, setStatusError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addName, setAddName] = useState("");
+  const [addValue, setAddValue] = useState("");
+  /** ``note`` | ``voicekit`` — только для вкладок STT/TTS */
+  const [sttTtsAddMode, setSttTtsAddMode] = useState("voicekit");
+  const [vkApiKey, setVkApiKey] = useState("");
+  const [vkSecretKey, setVkSecretKey] = useState("");
+  const [vkEndpoint, setVkEndpoint] = useState("");
+  const [llmModelOptions, setLlmModelOptions] = useState([]);
+  const [llmModelsSource, setLlmModelsSource] = useState("");
+  const [llmModelsLoading, setLlmModelsLoading] = useState(false);
 
   const applyMap = useCallback((map) => {
     let tv = 0.2;
@@ -77,9 +156,15 @@ export function SettingsPage() {
         ? String(mxc.value).trim()
         : "10";
 
+    const prov = (map[SK.LLM_PROVIDER]?.value || "deepseek").toLowerCase();
+    const fromDb = (map[SK.LLM_MODEL]?.value || "").trim();
+    const defModel = prov === "openai" ? "gpt-4o-mini" : "deepseek-chat";
+    const llmModel = fromDb || defModel;
+
     setForm({
       ...initialFormState(),
-      llmProvider: (map[SK.LLM_PROVIDER]?.value || "deepseek").toLowerCase(),
+      llmProvider: prov,
+      llmModel,
       llmTemp: tv,
       hints: {
         deepseek: hintForSecretRow(map[SK.DEEPSEEK_API_KEY]),
@@ -91,6 +176,7 @@ export function SettingsPage() {
       maxContextLimit: ctx,
       enableWebSearch: parseTruthy(map[SK.ENABLE_WEB_SEARCH]?.value, true),
     });
+    setExtras(parseExtrasFromMap(map));
   }, []);
 
   const loadSettings = useCallback(async () => {
@@ -115,6 +201,28 @@ export function SettingsPage() {
     loadSettings();
   }, [loadSettings]);
 
+  const loadLlmModelList = useCallback(async () => {
+    setLlmModelsLoading(true);
+    try {
+      const { data } = await api.get("/settings/llm-models", {
+        params: { provider: form.llmProvider },
+      });
+      setLlmModelOptions(Array.isArray(data?.models) ? data.models : []);
+      setLlmModelsSource(String(data?.source || ""));
+    } catch (e) {
+      console.error(e);
+      setLlmModelOptions([]);
+      setLlmModelsSource("fallback");
+    } finally {
+      setLlmModelsLoading(false);
+    }
+  }, [form.llmProvider]);
+
+  useEffect(() => {
+    if (settingsTab !== "llm") return;
+    loadLlmModelList();
+  }, [settingsTab, form.llmProvider, loadLlmModelList]);
+
   const setField = (key, value) => {
     setForm((f) => ({ ...f, [key]: value }));
   };
@@ -126,18 +234,17 @@ export function SettingsPage() {
   };
 
   const onLlmNumberInput = (e) => {
-    const v = parseFloat(e.target.value, 10);
-    setField("llmTemp", clampLlmTemp(v));
+    const v = parseFloat(e.target.value);
+    setField("llmTemp", clampLlmTemp(Number.isNaN(v) ? 0.2 : v));
   };
 
   const collectPayload = () => {
     const values = {};
     values[SK.LLM_PROVIDER] = form.llmProvider.trim();
+    values[SK.LLM_MODEL] = form.llmModel.trim();
     values[SK.LLM_TEMPERATURE] = String(form.llmTemp);
-    values[SK.SALUTESPEECH_SCOPE] =
-      form.salutespeechScope.trim() || "SALUTE_SPEECH_PERS";
-    values[SK.SALUTESPEECH_VOICE] =
-      form.salutespeechVoice.trim() || "Ost_24000";
+    values[SK.SALUTESPEECH_SCOPE] = form.salutespeechScope.trim() || "SALUTE_SPEECH_PERS";
+    values[SK.SALUTESPEECH_VOICE] = form.salutespeechVoice.trim() || "Ost_24000";
 
     let lim = parseInt(form.maxContextLimit, 10);
     if (Number.isNaN(lim)) lim = 10;
@@ -155,6 +262,7 @@ export function SettingsPage() {
       if (v.trim()) values[k] = v.trim();
     });
 
+    values[SK.PANEL_SETTINGS_EXTRAS] = JSON.stringify(extras);
     return values;
   };
 
@@ -183,21 +291,116 @@ export function SettingsPage() {
     }
   };
 
+  const openAddModal = () => {
+    setAddName("");
+    setAddValue("");
+    setSttTtsAddMode("voicekit");
+    setVkApiKey("");
+    setVkSecretKey("");
+    setVkEndpoint("");
+    setAddModalOpen(true);
+  };
+
+  const closeAddModal = () => setAddModalOpen(false);
+
+  const confirmAddModal = () => {
+    const name = addName.trim();
+    if (!name) {
+      setStatusMsg("Укажите название записи.");
+      setStatusError(true);
+      return;
+    }
+    const tab = settingsTab;
+    if (tab === "llm") {
+      setExtras((x) => ({
+        ...x,
+        llm: [...x.llm, { id: newExtraId(), name, kind: PANEL_EXTRA_KIND.NOTE, value: addValue }],
+      }));
+    } else if (tab === "stt" || tab === "tts") {
+      if (sttTtsAddMode === "note") {
+        const row = { id: newExtraId(), name, kind: PANEL_EXTRA_KIND.NOTE, value: addValue };
+        if (tab === "stt") setExtras((x) => ({ ...x, stt: [...x.stt, row] }));
+        else setExtras((x) => ({ ...x, tts: [...x.tts, row] }));
+      } else {
+        const ak = vkApiKey.trim();
+        const sk = vkSecretKey.trim();
+        if (!ak || !sk) {
+          setStatusMsg("Для T-Bank VoiceKit укажите API key и secret key.");
+          setStatusError(true);
+          return;
+        }
+        const kind = tab === "stt" ? PANEL_EXTRA_KIND.TBANK_VK_STT : PANEL_EXTRA_KIND.TBANK_VK_TTS;
+        const row = {
+          id: newExtraId(),
+          name,
+          kind,
+          value: "",
+          config: {
+            api_key: ak,
+            secret_key: sk,
+            endpoint: vkEndpoint.trim(),
+          },
+        };
+        if (tab === "stt") setExtras((x) => ({ ...x, stt: [...x.stt, row] }));
+        else setExtras((x) => ({ ...x, tts: [...x.tts, row] }));
+      }
+    }
+    setAddModalOpen(false);
+    setStatusMsg("Запись добавлена. Не забудьте нажать «Сохранить».");
+    setStatusError(false);
+  };
+
+  const removeExtra = (tab, id) => {
+    if (tab === "llm") setExtras((x) => ({ ...x, llm: x.llm.filter((r) => r.id !== id) }));
+    else if (tab === "stt") setExtras((x) => ({ ...x, stt: x.stt.filter((r) => r.id !== id) }));
+    else setExtras((x) => ({ ...x, tts: x.tts.filter((r) => r.id !== id) }));
+  };
+
   const llmRangeValue = Math.round(form.llmTemp * 10);
   const inputClass =
     "w-full rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500";
-  const labelClass = "mb-1 block text-sm font-medium text-slate-200";
-  const helpClass = "mt-0 text-sm text-slate-400";
-  const sectionClass =
-    "mb-8 rounded-xl border border-slate-700/80 bg-slate-800/40 p-5 shadow-sm";
-  const sectionTitleClass =
-    "mb-4 flex items-center gap-2 text-lg font-semibold text-slate-100";
+  const labelClass = "text-sm font-medium text-slate-200";
+  const helpClass = "text-xs text-slate-500";
+  const tableShell = "overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/70";
+  const th = "px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500";
+  const td = "px-4 py-3 align-top text-sm text-slate-200";
+
+  const modalRoot = typeof document !== "undefined" ? document.body : null;
+  const activeExtras =
+    settingsTab === "llm" ? extras.llm : settingsTab === "stt" ? extras.stt : extras.tts;
 
   return (
-    <div className="w-full min-w-0 text-slate-100">
-      <header className={PAGE_HEADER}>
-        <Settings className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
-        <h1 className={PAGE_H1}>Настройки системы</h1>
+    <div className={`w-full min-w-0 ${PAGE_TEXT}`}>
+      <header className={PAGE_HEADER_BETWEEN}>
+        <div className="flex items-center gap-3">
+          <Settings className={PAGE_TITLE_ICON} strokeWidth={1.5} aria-hidden />
+          <h1 className={PAGE_H1}>Настройки системы</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={loadSettings}
+            disabled={loading}
+            className={BTN_RELOAD_ICON}
+            aria-label="Обновить"
+            title="Обновить"
+          >
+            <RefreshCcw
+              className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+              strokeWidth={2}
+              aria-hidden
+            />
+          </button>
+          <button
+            type="button"
+            className={BTN_ADD}
+            onClick={openAddModal}
+            title="Добавить запись"
+          >
+            <Plus className={ICON_BTN} strokeWidth={2} aria-hidden />
+            Добавить
+          </button>
+        </div>
       </header>
 
       <p
@@ -210,7 +413,7 @@ export function SettingsPage() {
       {loading ? (
         <p className="text-slate-400">Загрузка формы…</p>
       ) : (
-        <form className="space-y-2" onSubmit={onSubmit}>
+        <form className="space-y-4" onSubmit={onSubmit}>
           <div className="flex flex-wrap gap-1 border-b border-slate-700/80">
             <button type="button" className={tabBtn(settingsTab === "llm")} onClick={() => setSettingsTab("llm")}>
               LLM
@@ -224,189 +427,414 @@ export function SettingsPage() {
           </div>
 
           {settingsTab === "llm" ? (
-            <section className={sectionClass} aria-labelledby="settings-llm-title">
-              <h2 id="settings-llm-title" className={sectionTitleClass}>
-                <span aria-hidden>🧠</span> LLM
-              </h2>
-
-              <div className="mb-4">
-                <label className={labelClass} htmlFor="llm-provider">
-                  Провайдер LLM
-                </label>
-                <select
-                  id="llm-provider"
-                  name="LLM_PROVIDER"
-                  className={inputClass}
-                  value={form.llmProvider}
-                  onChange={(e) => setField("llmProvider", e.target.value)}
-                >
-                  <option value="deepseek">DeepSeek</option>
-                  <option value="openai">OpenAI</option>
-                </select>
+            <div className="space-y-2">
+              <h2 className="text-lg font-semibold text-slate-100">LLM (DeepSeek / OpenAI)</h2>
+              <p className="text-sm text-slate-400">Основные параметры модели и API-ключи.</p>
+              <div className={tableShell}>
+                <table className="min-w-full divide-y divide-slate-800 text-left">
+                  <thead className="bg-slate-900/60">
+                    <tr>
+                      <th className={th}>Параметр</th>
+                      <th className={th}>Значение</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    <tr className="hover:bg-slate-800/20">
+                      <td className={`${td} w-[min(12rem,30vw)] font-medium`}>Провайдер LLM</td>
+                      <td className={td}>
+                        <select
+                          id="llm-provider"
+                          className={inputClass}
+                          value={form.llmProvider}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setForm((f) => ({
+                              ...f,
+                              llmProvider: v,
+                              llmModel: v === "openai" ? "gpt-4o-mini" : "deepseek-chat",
+                            }));
+                          }}
+                        >
+                          <option value="deepseek">DeepSeek</option>
+                          <option value="openai">OpenAI</option>
+                        </select>
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-slate-800/20">
+                      <td className={`${td} w-[min(12rem,30vw)] font-medium`}>Модель</td>
+                      <td className={td}>
+                        <p className={helpClass}>
+                          Идентификатор chat-модели для выбранного провайдера. Список обновляется с API, если
+                          задан ключ.{" "}
+                          {llmModelsSource === "api" ? (
+                            <span className="text-emerald-400/90">(загружено с API)</span>
+                          ) : llmModelsSource === "fallback" ? (
+                            <span className="text-amber-400/90">(статический список: нет ключа или ошибка)</span>
+                          ) : null}
+                        </p>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <input
+                            id="llm-model"
+                            className={`${inputClass} min-w-[12rem] flex-1 font-mono text-sm`}
+                            list="llm-model-suggestions"
+                            type="text"
+                            autoComplete="off"
+                            placeholder={form.llmProvider === "openai" ? "gpt-4o-mini" : "deepseek-chat"}
+                            value={form.llmModel}
+                            onChange={(e) => setField("llmModel", e.target.value)}
+                            maxLength={128}
+                            aria-label="Модель LLM"
+                          />
+                          <datalist id="llm-model-suggestions">
+                            {llmModelOptions.map((m) => (
+                              <option key={m} value={m} />
+                            ))}
+                          </datalist>
+                          <button
+                            type="button"
+                            className={BTN_RELOAD_ICON}
+                            title="Обновить список моделей"
+                            onClick={() => loadLlmModelList()}
+                            disabled={llmModelsLoading}
+                            aria-label="Обновить список моделей"
+                          >
+                            <RefreshCcw
+                              className={`h-4 w-4 ${llmModelsLoading ? "animate-spin" : ""}`}
+                              aria-hidden
+                            />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-slate-800/20">
+                      <td className={`${td} font-medium`}>
+                        <span aria-hidden>🌡</span> Температура LLM
+                      </td>
+                      <td className={td}>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <input
+                            type="range"
+                            min={0}
+                            max={10}
+                            step={1}
+                            value={llmRangeValue}
+                            onChange={onLlmRangeInput}
+                            className="min-w-[10rem] flex-1 accent-sky-500"
+                            aria-label="Температура LLM"
+                          />
+                          <input
+                            className={`${inputClass} w-20 shrink-0`}
+                            type="number"
+                            min={0}
+                            max={1}
+                            step={0.1}
+                            value={form.llmTemp}
+                            onInput={onLlmNumberInput}
+                            onChange={onLlmNumberInput}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-slate-800/20">
+                      <td className={`${td} font-medium`}>
+                        <span className="inline-flex items-center">
+                          <DeepSeekGlyph />
+                          Ключ DeepSeek API
+                        </span>
+                      </td>
+                      <td className={td}>
+                        <p className={helpClass}>{form.hints.deepseek}</p>
+                        <input
+                          className={inputClass}
+                          type="password"
+                          autoComplete="off"
+                          placeholder="Пусто — не менять ключ"
+                          value={form.deepseekKey}
+                          onChange={(e) => setField("deepseekKey", e.target.value)}
+                        />
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-slate-800/20">
+                      <td className={`${td} font-medium`}>Ключ OpenAI API</td>
+                      <td className={td}>
+                        <p className={helpClass}>{form.hints.openai}</p>
+                        <input
+                          className={inputClass}
+                          type="password"
+                          autoComplete="off"
+                          placeholder="Пусто — не менять ключ"
+                          value={form.openaiKey}
+                          onChange={(e) => setField("openaiKey", e.target.value)}
+                        />
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-slate-800/20">
+                      <td className={`${td} font-medium`}>Лимит сообщений в контексте</td>
+                      <td className={td}>
+                        <p className={helpClass}>Сколько последних реплик (user/assistant) подмешивать в запрос</p>
+                        <input
+                          className={`${inputClass} max-w-[12rem]`}
+                          type="number"
+                          min={1}
+                          max={200}
+                          step={1}
+                          value={form.maxContextLimit}
+                          onChange={(e) => setField("maxContextLimit", e.target.value)}
+                        />
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-slate-800/20">
+                      <td className={`${td} font-medium`}>Веб-поиск</td>
+                      <td className={td}>
+                        <label className="inline-flex cursor-pointer items-center gap-2 text-slate-200">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-slate-500 bg-slate-900 accent-sky-500"
+                            checked={form.enableWebSearch}
+                            onChange={(e) => setField("enableWebSearch", e.target.checked)}
+                          />
+                          Разрешить веб-поиск
+                        </label>
+                      </td>
+                    </tr>
+                    {activeExtras.map((r) => (
+                      <tr key={r.id} className="hover:bg-slate-800/20">
+                        <td className={`${td} font-medium`}>{r.name}</td>
+                        <td className={td}>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <span className="whitespace-pre-wrap break-words text-slate-300">{r.value}</span>
+                            <IconDeleteButton
+                              title="Удалить запись"
+                              onClick={() => removeExtra("llm", r.id)}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-
-              <div className="mb-4">
-                <label className={labelClass} htmlFor="llm-temperature">
-                  <span aria-hidden>🌡</span> Температура LLM
-                </label>
-                <div className="flex flex-wrap items-center gap-3">
-                  <input
-                    type="range"
-                    id="llm-temperature-range"
-                    min={0}
-                    max={10}
-                    step={1}
-                    value={llmRangeValue}
-                    onChange={onLlmRangeInput}
-                    aria-label="Температура LLM ползунок"
-                    className="min-w-[10rem] flex-1 accent-sky-500"
-                  />
-                  <input
-                    className={`${inputClass} w-20 shrink-0`}
-                    type="number"
-                    id="llm-temperature"
-                    name="LLM_TEMPERATURE"
-                    min={0}
-                    max={1}
-                    step={0.1}
-                    value={form.llmTemp}
-                    onInput={onLlmNumberInput}
-                    onChange={onLlmNumberInput}
-                  />
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <label className={`${labelClass} inline-flex items-center`} htmlFor="deepseek-key">
-                  <DeepSeekGlyph />
-                  Ключ DeepSeek API
-                </label>
-                <p className={helpClass}>{form.hints.deepseek}</p>
-                <input
-                  className={inputClass}
-                  type="password"
-                  id="deepseek-key"
-                  autoComplete="off"
-                  placeholder="Оставьте пустым, чтобы не менять сохранённый ключ"
-                  value={form.deepseekKey}
-                  onChange={(e) => setField("deepseekKey", e.target.value)}
-                />
-              </div>
-
-              <div className="mb-4">
-                <label className={labelClass} htmlFor="openai-key">
-                  Ключ OpenAI API
-                </label>
-                <p className={helpClass}>{form.hints.openai}</p>
-                <input
-                  className={inputClass}
-                  type="password"
-                  id="openai-key"
-                  autoComplete="off"
-                  placeholder="Оставьте пустым, чтобы не менять сохранённый ключ"
-                  value={form.openaiKey}
-                  onChange={(e) => setField("openaiKey", e.target.value)}
-                />
-              </div>
-
-              <div className="mb-4">
-                <label className={labelClass} htmlFor="max-context-limit">
-                  Лимит сообщений в контексте LLM
-                </label>
-                <p className={helpClass}>
-                  Сколько последних реплик (user/assistant) подмешивать в запрос к модели
-                </p>
-                <input
-                  className={inputClass}
-                  type="number"
-                  id="max-context-limit"
-                  min={1}
-                  max={200}
-                  step={1}
-                  value={form.maxContextLimit}
-                  onChange={(e) => setField("maxContextLimit", e.target.value)}
-                />
-              </div>
-
-              <div className="mb-0">
-                <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-200">
-                  <input
-                    type="checkbox"
-                    id="enable-web-search"
-                    className="h-4 w-4 rounded border-slate-500 bg-slate-900 accent-sky-500"
-                    checked={form.enableWebSearch}
-                    onChange={(e) => setField("enableWebSearch", e.target.checked)}
-                  />
-                  Разрешить веб-поиск
-                </label>
-              </div>
-            </section>
+            </div>
           ) : null}
 
           {settingsTab === "stt" ? (
-            <section className={sectionClass} aria-labelledby="settings-stt-title">
-              <h2 id="settings-stt-title" className={sectionTitleClass}>
-                <span aria-hidden>🎤</span> STT (SaluteSpeech)
-              </h2>
-              
-              <div className="mb-4">
-                <label className={labelClass} htmlFor="salutespeech-key">
-                  Ключ SaluteSpeech
-                </label>
-                <p className={helpClass}>{form.hints.salutespeech}</p>
-                <input
-                  className={inputClass}
-                  type="password"
-                  id="salutespeech-key"
-                  name="SALUTESPEECH_AUTH_KEY"
-                  autoComplete="off"
-                  placeholder="Оставьте пустым, чтобы не менять сохранённый ключ"
-                  value={form.salutespeechKey}
-                  onChange={(e) => setField("salutespeechKey", e.target.value)}
-                />
+            <div className="space-y-2">
+              <h2 className="text-lg font-semibold text-slate-100">STT</h2>
+              <p className="text-sm text-slate-400">
+                SaluteSpeech (основной блок выше) и отдельные подключения, в т.ч.{" "}
+                <a
+                  className="text-emerald-400 underline decoration-emerald-600/50 underline-offset-2 hover:text-emerald-300"
+                  href="https://developer.tbank.ru/voicekit/intro"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  T-Bank VoiceKit
+                </a>{" "}
+                (gRPC/REST, см.{" "}
+                <a
+                  className="text-emerald-400 underline decoration-emerald-600/50 underline-offset-2 hover:text-emerald-300"
+                  href="https://developer.tbank.ru/voicekit/api/speech-recognition"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  распознавание речи
+                </a>
+                ; интеграция с Asterisk:{" "}
+                <a
+                  className="text-emerald-400 underline decoration-emerald-600/50 underline-offset-2 hover:text-emerald-300"
+                  href="https://github.com/Tinkoff/asterisk-voicekit-modules"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Tinkoff/asterisk-voicekit-modules
+                </a>
+                ).
+              </p>
+              <div className={tableShell}>
+                <table className="min-w-full divide-y divide-slate-800 text-left">
+                  <thead className="bg-slate-900/60">
+                    <tr>
+                      <th className={th}>Параметр</th>
+                      <th className={th}>Значение</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    <tr className="hover:bg-slate-800/20">
+                      <td className={`${td} w-[min(10rem,28vw)] font-medium`}>Ключ SaluteSpeech</td>
+                      <td className={td}>
+                        <p className={helpClass}>{form.hints.salutespeech}</p>
+                        <input
+                          className={inputClass}
+                          type="password"
+                          autoComplete="off"
+                          placeholder="Пусто — не менять ключ"
+                          value={form.salutespeechKey}
+                          onChange={(e) => setField("salutespeechKey", e.target.value)}
+                        />
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-slate-800/20">
+                      <td className={`${td} font-medium`}>OAuth scope</td>
+                      <td className={td}>
+                        <input
+                          className={inputClass}
+                          type="text"
+                          autoComplete="off"
+                          placeholder="SALUTE_SPEECH_PERS"
+                          value={form.salutespeechScope}
+                          onChange={(e) => setField("salutespeechScope", e.target.value)}
+                        />
+                      </td>
+                    </tr>
+                    {activeExtras.map((r) => (
+                      <tr key={r.id} className="hover:bg-slate-800/20">
+                        <td className={`${td} font-medium`}>
+                          {r.name}
+                          {r.kind === PANEL_EXTRA_KIND.TBANK_VK_STT ? (
+                            <span className="ml-2 inline-block rounded bg-amber-900/50 px-1.5 text-[10px] font-normal uppercase text-amber-200">
+                              T-Bank STT
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className={td}>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            {r.kind === PANEL_EXTRA_KIND.TBANK_VK_STT && r.config ? (
+                              <div className="min-w-0 text-xs text-slate-400">
+                                <p>
+                                  <span className="text-slate-500">API key:</span>{" "}
+                                  <span className="font-mono text-slate-300">
+                                    {r.config.api_key || "—"}
+                                  </span>
+                                </p>
+                                <p>
+                                  <span className="text-slate-500">Secret:</span>{" "}
+                                  <span className="font-mono text-slate-300">
+                                    {r.config.secret_key || "—"}
+                                  </span>
+                                </p>
+                                {r.config.endpoint ? (
+                                  <p>
+                                    <span className="text-slate-500">Endpoint:</span> {r.config.endpoint}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <span className="whitespace-pre-wrap break-words text-slate-300">
+                                {r.value}
+                              </span>
+                            )}
+                            <IconDeleteButton
+                              title="Удалить запись"
+                              onClick={() => removeExtra("stt", r.id)}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-
-              <div className="mb-0">
-                <label className={labelClass} htmlFor="salutespeech-scope">
-                  OAuth scope
-                </label>
-                <input
-                  className={inputClass}
-                  type="text"
-                  id="salutespeech-scope"
-                  autoComplete="off"
-                  placeholder="SALUTE_SPEECH_PERS"
-                  value={form.salutespeechScope}
-                  onChange={(e) => setField("salutespeechScope", e.target.value)}
-                />
-              </div>
-            </section>
+            </div>
           ) : null}
 
           {settingsTab === "tts" ? (
-            <section className={sectionClass} aria-labelledby="settings-tts-title">
-              <h2 id="settings-tts-title" className={sectionTitleClass}>
-                <span aria-hidden>🔊</span> TTS (SaluteSpeech)
-              </h2>
-              
-              <div className="mb-0">
-                <label className={labelClass} htmlFor="salutespeech-voice">
-                  Голос TTS
-                </label>
-                <input
-                  className={inputClass}
-                  type="text"
-                  id="salutespeech-voice"
-                  autoComplete="off"
-                  placeholder="Ost_24000"
-                  value={form.salutespeechVoice}
-                  onChange={(e) => setField("salutespeechVoice", e.target.value)}
-                />
+            <div className="space-y-2">
+              <h2 className="text-lg font-semibold text-slate-100">TTS</h2>
+              <p className="text-sm text-slate-400">
+                SaluteSpeech (поле «Голос TTS») и варианты на базе{" "}
+                <a
+                  className="text-emerald-400 underline decoration-emerald-600/50 underline-offset-2 hover:text-emerald-300"
+                  href="https://developer.tbank.ru/voicekit/intro"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  T-Bank VoiceKit
+                </a>{" "}
+                (синтез для юрлиц, см. портал T-API; Asterisk:{" "}
+                <a
+                  className="text-emerald-400 underline decoration-emerald-600/50 underline-offset-2 hover:text-emerald-300"
+                  href="https://github.com/Tinkoff/asterisk-voicekit-modules"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  модули VoiceKit
+                </a>
+                ).
+              </p>
+              <div className={tableShell}>
+                <table className="min-w-full divide-y divide-slate-800 text-left">
+                  <thead className="bg-slate-900/60">
+                    <tr>
+                      <th className={th}>Параметр</th>
+                      <th className={th}>Значение</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    <tr className="hover:bg-slate-800/20">
+                      <td className={`${td} w-[min(10rem,28vw)] font-medium`}>Голос TTS</td>
+                      <td className={td}>
+                        <input
+                          className={inputClass}
+                          type="text"
+                          autoComplete="off"
+                          placeholder="Ost_24000"
+                          value={form.salutespeechVoice}
+                          onChange={(e) => setField("salutespeechVoice", e.target.value)}
+                        />
+                      </td>
+                    </tr>
+                    {activeExtras.map((r) => (
+                      <tr key={r.id} className="hover:bg-slate-800/20">
+                        <td className={`${td} font-medium`}>
+                          {r.name}
+                          {r.kind === PANEL_EXTRA_KIND.TBANK_VK_TTS ? (
+                            <span className="ml-2 inline-block rounded bg-amber-900/50 px-1.5 text-[10px] font-normal uppercase text-amber-200">
+                              T-Bank TTS
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className={td}>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            {r.kind === PANEL_EXTRA_KIND.TBANK_VK_TTS && r.config ? (
+                              <div className="min-w-0 text-xs text-slate-400">
+                                <p>
+                                  <span className="text-slate-500">API key:</span>{" "}
+                                  <span className="font-mono text-slate-300">
+                                    {r.config.api_key || "—"}
+                                  </span>
+                                </p>
+                                <p>
+                                  <span className="text-slate-500">Secret:</span>{" "}
+                                  <span className="font-mono text-slate-300">
+                                    {r.config.secret_key || "—"}
+                                  </span>
+                                </p>
+                                {r.config.endpoint ? (
+                                  <p>
+                                    <span className="text-slate-500">Endpoint:</span> {r.config.endpoint}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <span className="whitespace-pre-wrap break-words text-slate-300">
+                                {r.value}
+                              </span>
+                            )}
+                            <IconDeleteButton
+                              title="Удалить запись"
+                              onClick={() => removeExtra("tts", r.id)}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </section>
+            </div>
           ) : null}
 
-          <div className="mt-6">
+          <div className="pt-2">
             <button type="submit" className={BTN_SAVE} disabled={saving}>
               <Save className={ICON_BTN} strokeWidth={2} aria-hidden />
               Сохранить
@@ -414,6 +842,227 @@ export function SettingsPage() {
           </div>
         </form>
       )}
+
+      {addModalOpen && modalRoot
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/60 p-4"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="settings-add-title"
+            >
+              <div
+                className={`w-full rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-xl ${
+                  settingsTab === "llm" ? "max-w-md" : "max-w-lg"
+                }`}
+              >
+                <h2 id="settings-add-title" className="mb-1 text-lg font-semibold text-white">
+                  Новая запись:{" "}
+                  {settingsTab === "llm" ? "LLM" : settingsTab === "stt" ? "STT" : "TTS"}
+                </h2>
+                {settingsTab === "llm" ? (
+                  <p className="mb-4 text-sm text-slate-400">
+                    Произвольная подпись и текст (сохраняется в таблицу).
+                  </p>
+                ) : (
+                  <p className="mb-3 text-sm text-slate-400">
+                    Текстовая заметка или подключение{" "}
+                    <a
+                      className="text-emerald-400 underline"
+                      href="https://developer.tbank.ru/voicekit/intro"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      T-Bank VoiceKit
+                    </a>{" "}
+                    (в личном кабинете T-API: пары <strong className="text-slate-200">API key / Secret key</strong>).
+                  </p>
+                )}
+
+                {settingsTab === "llm" ? (
+                  <div className="space-y-3">
+                    <div>
+                      <label className={`${labelClass} mb-1 block`} htmlFor="add-ex-name">
+                        Название
+                      </label>
+                      <input
+                        id="add-ex-name"
+                        className={inputClass}
+                        value={addName}
+                        onChange={(e) => setAddName(e.target.value)}
+                        placeholder="Например: Примечание"
+                      />
+                    </div>
+                    <div>
+                      <label className={`${labelClass} mb-1 block`} htmlFor="add-ex-val">
+                        Значение
+                      </label>
+                      <textarea
+                        id="add-ex-val"
+                        className={`${inputClass} min-h-[6rem] resize-y`}
+                        value={addValue}
+                        onChange={(e) => setAddValue(e.target.value)}
+                        placeholder="Текст"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <span className={`${labelClass} shrink-0`}>Тип</span>
+                      <div className="flex flex-wrap gap-3">
+                        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-200">
+                          <input
+                            type="radio"
+                            className="accent-sky-500"
+                            name="stt-tts-mode"
+                            checked={sttTtsAddMode === "voicekit"}
+                            onChange={() => setSttTtsAddMode("voicekit")}
+                          />
+                          T-Bank VoiceKit
+                        </label>
+                        <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-200">
+                          <input
+                            type="radio"
+                            className="accent-sky-500"
+                            name="stt-tts-mode"
+                            checked={sttTtsAddMode === "note"}
+                            onChange={() => setSttTtsAddMode("note")}
+                          />
+                          Текстовая заметка
+                        </label>
+                      </div>
+                    </div>
+                    <div>
+                      <label className={`${labelClass} mb-1 block`} htmlFor="add-ex-name">
+                        Название
+                      </label>
+                      <input
+                        id="add-ex-name"
+                        className={inputClass}
+                        value={addName}
+                        onChange={(e) => setAddName(e.target.value)}
+                        placeholder={
+                          sttTtsAddMode === "voicekit" ? "Например: Проект VoiceKit" : "Краткий заголовок"
+                        }
+                      />
+                    </div>
+                    {sttTtsAddMode === "note" ? (
+                      <div>
+                        <label className={`${labelClass} mb-1 block`} htmlFor="add-ex-val">
+                          Значение
+                        </label>
+                        <textarea
+                          id="add-ex-val"
+                          className={`${inputClass} min-h-[6rem] resize-y`}
+                          value={addValue}
+                          onChange={(e) => setAddValue(e.target.value)}
+                          placeholder="Текст"
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <label className={`${labelClass} mb-1 block`} htmlFor="vk-api">
+                            API key
+                          </label>
+                          <input
+                            id="vk-api"
+                            className={inputClass}
+                            type="password"
+                            autoComplete="off"
+                            value={vkApiKey}
+                            onChange={(e) => setVkApiKey(e.target.value)}
+                            placeholder="Публичный ключ из кабинета T-API"
+                          />
+                        </div>
+                        <div>
+                          <label className={`${labelClass} mb-1 block`} htmlFor="vk-sec">
+                            Secret key
+                          </label>
+                          <input
+                            id="vk-sec"
+                            className={inputClass}
+                            type="password"
+                            autoComplete="off"
+                            value={vkSecretKey}
+                            onChange={(e) => setVkSecretKey(e.target.value)}
+                            placeholder="Секретный ключ (показывается один раз при выпуске)"
+                          />
+                        </div>
+                        <div>
+                          <label className={`${labelClass} mb-1 block`} htmlFor="vk-endp">
+                            Endpoint (gRPC/REST, опционально)
+                          </label>
+                          <input
+                            id="vk-endp"
+                            className={inputClass}
+                            type="text"
+                            autoComplete="off"
+                            value={vkEndpoint}
+                            onChange={(e) => setVkEndpoint(e.target.value)}
+                            placeholder="По документации VoiceKit, если требуется явный хост"
+                          />
+                          <p className="mt-1 text-xs text-slate-500">
+                            Обычно хосты задаёт клиент по региону; оставьте пусто, если не требуется.
+                          </p>
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          Док:{" "}
+                          <a
+                            className="text-emerald-400 underline"
+                            href="https://developer.tbank.ru/voicekit/intro"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            введение
+                          </a>
+                          {" · "}
+                          <a
+                            className="text-emerald-400 underline"
+                            href="https://developer.tbank.ru/voicekit/api/speech-recognition"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            STT API
+                          </a>
+                          {" · "}
+                          <a
+                            className="text-emerald-400 underline"
+                            href="https://github.com/Tinkoff/asterisk-voicekit-modules"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Asterisk
+                          </a>
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                <div className="mt-5 flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800"
+                    onClick={closeAddModal}
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500"
+                    onClick={confirmAddModal}
+                  >
+                    <Plus className="h-3.5 w-3.5" aria-hidden />
+                    Добавить
+                  </button>
+                </div>
+              </div>
+            </div>,
+            modalRoot,
+          )
+        : null}
     </div>
   );
 }

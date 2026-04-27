@@ -23,3 +23,13 @@ class SettingsUpdateRequest(BaseModel):
         default_factory=dict,
         description="Словарь key → value (пустая строка допустима для очистки ключа)",
     )
+
+
+class LlmModelsResponse(BaseModel):
+    """Список идентификаторов моделей для селектора (GET **/api/settings/llm-models**)."""
+
+    models: list[str] = Field(default_factory=list, description="id модели для chat/completions")
+    source: str = Field(
+        default="fallback",
+        description="api — с сервера провайдера; fallback — статический список (нет ключа или ошибка сети)",
+    )

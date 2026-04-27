@@ -4,6 +4,8 @@ from __future__ import annotations
 
 # Ключи строк в таблице system_settings
 LLM_PROVIDER = "LLM_PROVIDER"
+# Идентификатор модели чата для выбранного LLM_PROVIDER (см. GET /api/settings/llm-models)
+LLM_MODEL = "LLM_MODEL"
 DEEPSEEK_API_KEY = "DEEPSEEK_API_KEY"
 OPENAI_API_KEY = "OPENAI_API_KEY"
 TELEGRAM_BOT_TOKEN = "TELEGRAM_BOT_TOKEN"
@@ -39,11 +41,17 @@ MAX_VOICE_REPLY_ENABLED = "MAX_VOICE_REPLY_ENABLED"
 MAX_CALL_ANSWER_DELAY = "MAX_CALL_ANSWER_DELAY"
 # Первая фраза голосового пайплайна после ответа на звонок (до первого запроса к LLM)
 MAX_CALL_GREETING_PHRASE = "MAX_CALL_GREETING_PHRASE"
+# JSON: { "llm": [...], "stt": [...], "tts": [...] } — доп. строки таблиц на странице «Настройки» (id, name, value).
+PANEL_SETTINGS_EXTRAS = "PANEL_SETTINGS_EXTRAS"
+# Необязательный id записи PANEL (вкладка stt) kind=tbank_voicekit_stt; иначе берётся первая подходящая
+VOICE_TBANK_STT_EXTRAS_ID = "VOICE_TBANK_STT_EXTRAS_ID"
+VOICE_TBANK_TTS_EXTRAS_ID = "VOICE_TBANK_TTS_EXTRAS_ID"
 
 # Разрешённые к обновлению через API (безопасность)
 UPDATABLE_KEYS = frozenset(
     {
         LLM_PROVIDER,
+        LLM_MODEL,
         LLM_TEMPERATURE,
         MAX_VOICE_REPLY_ENABLED,
         DEEPSEEK_API_KEY,
@@ -66,6 +74,9 @@ UPDATABLE_KEYS = frozenset(
         ENABLE_WEB_SEARCH,
         MAX_CALL_ANSWER_DELAY,
         MAX_CALL_GREETING_PHRASE,
+        PANEL_SETTINGS_EXTRAS,
+        VOICE_TBANK_STT_EXTRAS_ID,
+        VOICE_TBANK_TTS_EXTRAS_ID,
     }
 )
 

@@ -45,6 +45,9 @@ from src.infrastructure.voice.conversation_recording import (
 )
 from src.infrastructure.voice.salute_stt import SaluteSpeechSTTService
 from src.infrastructure.voice.salute_tts import SaluteSpeechTTSService
+from src.infrastructure.voice.tbank_stt import TbankVoiceKitSTTService
+from src.infrastructure.voice.tbank_tts import TbankVoiceKitTTSService
+from src.infrastructure.voice.tbank_voicekit_config import TbankVoiceKitCredentials
 from src.use_cases.interfaces import IVoiceTransport
 
 # TODO: Вынести выбор модели Deepgram и маппинг языков в настройки при расширении локалей.
@@ -165,9 +168,9 @@ class VoicePipelineOrchestrator:
         self,
         *,
         voice_transport: IVoiceTransport,
-        stt: DeepgramSTTService | SaluteSpeechSTTService,
+        stt: DeepgramSTTService | SaluteSpeechSTTService | TbankVoiceKitSTTService,
         aggregator: LLMUserResponseAggregator,
-        tts: OpenAITTSService | ElevenLabsHttpTTSService | SaluteSpeechTTSService,
+        tts: OpenAITTSService | ElevenLabsHttpTTSService | SaluteSpeechTTSService | TbankVoiceKitTTSService,
         stereo_recorder: ConversationStereoRecorder | None = None,
         fixed_greeting_phrase: str | None = None,
     ) -> None:
@@ -241,6 +244,8 @@ class VoicePipelineOrchestrator:
         voice_stt_provider_effective: str | None = None,
         recording_session_id: str | None = None,
         fixed_greeting_phrase: str | None = None,
+        tbank_stt_credentials: TbankVoiceKitCredentials | None = None,
+        tbank_tts_credentials: TbankVoiceKitCredentials | None = None,
     ) -> None:
         """Запускает runner до завершения сессии (браузер: WebSocket; Asterisk: UDP RTP).
 
@@ -257,7 +262,7 @@ class VoicePipelineOrchestrator:
             logger.debug("Голос: режим консультанта (ИИ-продавец)")
 
         stt_sel = (voice_stt_provider_effective or self._settings.voice_stt_provider).strip().lower()
-        if stt_sel not in ("deepgram", "salutespeech"):
+        if stt_sel not in ("deepgram", "salutespeech", "tbank_voicekit"):
             stt_sel = self._settings.voice_stt_provider
 
         uses_salute = stt_sel == "salutespeech" or self._settings.voice_tts_provider == "salutespeech"
@@ -269,7 +274,15 @@ class VoicePipelineOrchestrator:
                 )
             await auth.prewarm()
 
-        if stt_sel == "salutespeech":
+        if stt_sel == "tbank_voicekit":
+            if tbank_stt_credentials is None:
+                raise ValueError("T-Bank VoiceKit STT: задайте tbank_stt_credentials в VoicePipelineOrchestrator.run")
+            stt = TbankVoiceKitSTTService(
+                credentials=tbank_stt_credentials,
+                language=_salute_language_tag_from_voice_stt(self._settings.voice_stt_language),
+                sample_rate=16000,
+            )
+        elif stt_sel == "salutespeech":
             assert auth is not None
             stt = SaluteSpeechSTTService(
                 auth_manager=auth,
@@ -319,6 +332,21 @@ class VoicePipelineOrchestrator:
                 voice=voice_id,
                 smartspeech_verify_ssl=self._settings.salutespeech_smartspeech_verify_ssl,
                 rest_base_url=self._settings.salutespeech_rest_base_url,
+            )
+            await self._run_pipeline(
+                voice_transport=voice_transport,
+                stt=stt,
+                aggregator=aggregator,
+                tts=tts,
+                stereo_recorder=stereo_recorder,
+                fixed_greeting_phrase=fixed_greeting_phrase,
+            )
+        elif self._settings.voice_tts_provider == "tbank_voicekit":
+            if tbank_tts_credentials is None:
+                raise ValueError("T-Bank VoiceKit TTS: задайте tbank_tts_credentials в VoicePipelineOrchestrator.run")
+            tts = TbankVoiceKitTTSService(
+                credentials=tbank_tts_credentials,
+                voice=(self._settings.tbank_voicekit_tts_voice or "filipp").strip(),
             )
             await self._run_pipeline(
                 voice_transport=voice_transport,
