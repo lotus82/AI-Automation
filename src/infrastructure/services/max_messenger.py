@@ -183,21 +183,69 @@ def _max_updates_type_counts(updates: list[Any]) -> str:
     return ",".join(f"{k}:{v}" for k, v in sorted(c.items()))
 
 
-def _max_markup_mention_snippets(body: dict[str, Any]) -> str:
-    """Добавляет к поиску @username из ``markup`` (иногда клиент не дублирует их в ``body.text``)."""
-    markup = body.get("markup") or body.get("markups")
-    if not isinstance(markup, list):
-        return ""
-    parts: list[str] = []
-    for m in markup:
-        if not isinstance(m, dict):
+# Типы, для которых поле name считаем отображаемым @ником/упоминанием (а не подписью ссылки)
+_MENTION_NAME_TYPES = frozenset(
+    {
+        "user",
+        "mention",
+        "markupuser",
+        "user_mention",
+        "text_mention",
+        "usermention",
+    }
+)
+def _max_fragment_mention_tokens(fragment: dict[str, Any]) -> list[str]:
+    """Возвращает псевдо-строки @username / @id…_bot из одного фрагмента разметки MAX.
+
+    В группах клиент часто не кладёт полный @id…_bot в ``body.text`` (остаётся «+» или пусто),
+    зато в ``markup`` есть ``user_id`` / вложенный ``user`` — без этого фильтр упоминания бота ломается.
+    """
+    out: list[str] = []
+    if not isinstance(fragment, dict):
+        return out
+    mt = str(fragment.get("type") or "").lower()
+    has_uid = fragment.get("user_id") is not None or fragment.get("userId") is not None
+    u = fragment.get("username") or fragment.get("user_name")
+    if u and str(u).strip():
+        out.append("@" + str(u).strip().lstrip("@"))
+    elif (has_uid or mt in _MENTION_NAME_TYPES) and (fragment.get("name") and str(fragment.get("name")).strip()):
+        out.append("@" + str(fragment.get("name")).strip().lstrip("@"))
+    for k in ("user_id", "userId"):
+        v = fragment.get(k)
+        if v is None:
             continue
-        mt = str(m.get("type") or "").lower()
-        if mt in ("user", "mention", "markupuser"):
-            un = m.get("username") or m.get("user_name") or m.get("name")
-            if un and str(un).strip():
-                parts.append("@" + str(un).strip().lstrip("@"))
-    return " ".join(parts).strip()
+        s = str(v).strip()
+        if not s.lstrip("-").isdigit():
+            continue
+        n = int(s)
+        if n > 0:
+            out.append(f"@id{n}_bot")
+    nested = fragment.get("user")
+    if isinstance(nested, dict):
+        out.extend(_max_fragment_mention_tokens(nested))
+    return out
+
+
+def _max_markup_mention_snippets(body: dict[str, Any]) -> str:
+    """Добавляет к поиску @username / @id…_bot из ``markup`` / ``entities`` (часто не в ``body.text``)."""
+    parts: list[str] = []
+    for key in ("markup", "markups"):
+        raw = body.get(key)
+        if raw is None:
+            continue
+        blocks = [raw] if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+        for m in blocks:
+            if not isinstance(m, dict):
+                continue
+            parts.extend(_max_fragment_mention_tokens(m))
+    for key in ("entities", "message_entities"):
+        raw = body.get(key)
+        if not isinstance(raw, list):
+            continue
+        for e in raw:
+            if isinstance(e, dict):
+                parts.extend(_max_fragment_mention_tokens(e))
+    return " ".join(dict.fromkeys(parts)) if parts else ""  # без дублей, порядок сохраняем
 
 
 def extract_max_sender_display_name(sender: Any, *, _depth: int = 0) -> str | None:
