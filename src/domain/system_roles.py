@@ -6,11 +6,13 @@ import json
 import logging
 import re
 from typing import Any
+from uuid import UUID
 
 from src.domain import system_setting_keys as sk
 from src.domain.default_system_prompts import (
     FALLBACK_ANALYST_QA_PROMPT,
     FALLBACK_DEFAULT_CONSULTANT_PROMPT,
+    FALLBACK_LEGAL_AI_PROMPT,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,6 +70,16 @@ def _prompt_for_role_id(cfg: dict[str, Any], role_id: str | None) -> str | None:
     return None
 
 
+def resolve_role_prompt_from_roles_config(cfg: dict[str, Any] | None, role_id: str | None) -> str | None:
+    """Промпт роли по полю ``id`` из распарсенного **SYSTEM_ROLES_CONFIG** (или ``None``)."""
+    if cfg is None:
+        return None
+    rid = (role_id or "").strip()
+    if not rid:
+        return None
+    return _prompt_for_role_id(cfg, rid)
+
+
 async def get_effective_consultant_prompt(repo: Any, *, session_id: str) -> str:
     """Системный промпт консультанта: роль из настройки группы MAX или основная роль по умолчанию."""
     sid = (session_id or "").strip()
@@ -95,6 +107,43 @@ async def get_effective_consultant_prompt(repo: Any, *, session_id: str) -> str:
 
     legacy = (await repo.get_value(sk.DEFAULT_CONSULTANT_PROMPT) or "").strip()
     return legacy or FALLBACK_DEFAULT_CONSULTANT_PROMPT
+
+
+async def get_legal_ai_system_prompt(repo: Any, *, role_id: UUID | None = None) -> str:
+    """Системная роль для ИИ-юриста.
+
+    Приоритет: явный ``role_id`` → ``legal_role_id`` из **SYSTEM_ROLES_CONFIG** JSON → ``default_role_id``
+    из того же JSON → устаревший **DEFAULT_CONSULTANT_PROMPT** → резервный юридический промпт.
+
+    Для выделения роли юриста в JSON настройки можно задать поле ``legal_role_id`` (UUID строкой),
+    совпадающий с одним из ``roles[].id``.
+    """
+    cfg_raw = (await repo.get_value(sk.SYSTEM_ROLES_CONFIG) or "").strip()
+    cfg = parse_roles_config_raw(cfg_raw)
+
+    chosen: str | None = None
+    if role_id is not None:
+        cand = str(role_id).strip()
+        chosen = cand if cand and _UUID_RE.match(cand) else None
+
+    if not chosen and cfg:
+        lr = str(cfg.get("legal_role_id") or "").strip()
+        if lr and _UUID_RE.match(lr):
+            chosen = lr
+
+    if cfg and chosen:
+        p = _prompt_for_role_id(cfg, chosen)
+        if p:
+            return p
+
+    if cfg:
+        dr = str(cfg.get("default_role_id") or "").strip()
+        p = _prompt_for_role_id(cfg, dr)
+        if p:
+            return p
+
+    legacy = (await repo.get_value(sk.DEFAULT_CONSULTANT_PROMPT) or "").strip()
+    return legacy or FALLBACK_LEGAL_AI_PROMPT
 
 
 async def get_default_consultant_prompt(repo: Any) -> str:

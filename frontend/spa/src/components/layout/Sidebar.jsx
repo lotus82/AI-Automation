@@ -13,6 +13,7 @@ import {
   Plug,
   ScrollText,
   Settings,
+  ShieldCheck,
   Stethoscope,
   Store,
   UserCog,
@@ -50,6 +51,13 @@ const BASE_NAV = [
   { to: "/sites", section: "sites", label: "Сайты", icon: Globe, managerOnly: true },
   { to: "/shops", section: "shops", label: "Магазины", icon: Store },
   { to: "/mis", section: "mis", label: "МИС", icon: Stethoscope },
+  {
+    to: "/compliance",
+    section: "compliance",
+    label: "Комплаенс",
+    icon: ShieldCheck,
+    managerOnly: true,
+  },
   { to: "/documents", section: "documents", label: "Читатель", icon: BookOpen, managerOnly: true },
   { to: "/settings", section: "settings", label: "Настройки", icon: Settings },
   { to: "/integrations", section: "integrations", label: "Интеграции", icon: Plug },
@@ -115,12 +123,15 @@ function SidebarContent({ onNavigate, headerAction }) {
             const scenariosActive = Boolean(scenariosGroup && pathname.startsWith("/scenarios"));
             const misActive = Boolean(item.section === "mis" && pathname.startsWith("/mis"));
             const documentsActive = Boolean(item.section === "documents" && pathname.startsWith("/documents"));
+            const complianceActive = Boolean(item.section === "compliance" && pathname.startsWith("/compliance"));
             return (
               <NavLink
                 key={to}
                 to={to}
                 className={({ isActive }) =>
-                  linkClass({ isActive: isActive || scenariosActive || misActive || documentsActive })
+                  linkClass({
+                    isActive: isActive || scenariosActive || misActive || documentsActive || complianceActive,
+                  })
                 }
                 end={Boolean(end) && !scenariosGroup}
                 onClick={() => onNavigate?.()}

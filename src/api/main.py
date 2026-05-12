@@ -19,6 +19,7 @@ from src.api.routers import (
     calls,
     chat,
     chats,
+    compliance,
     dialer,
     health,
     knowledge,
@@ -206,6 +207,7 @@ def create_app() -> FastAPI:
     application.include_router(bitrix.router, prefix="/api")
     application.include_router(leads.router, prefix="/api/leads", tags=["leads"])
     application.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+    application.include_router(compliance.router, prefix="/api", tags=["compliance"])
     application.include_router(calls.router, prefix="/api")
     application.include_router(training.router, prefix="/api", tags=["training"])
     application.include_router(trainer.router, prefix="/api")

@@ -159,6 +159,7 @@ class DynamicLLMService(ILLMService):
         messages: list[dict],
         *,
         tools: list[dict],
+        temperature: float | None = None,
     ) -> tuple[str | None, list[LLMToolCall]]:
         """Передаёт ``messages`` в API как список объектов чата (system / user / assistant / tool).
 
@@ -172,11 +173,11 @@ class DynamicLLMService(ILLMService):
                 [],
             )
 
-        temperature = await self._resolve_chat_temperature()
+        temp = temperature if temperature is not None else await self._resolve_chat_temperature()
         kwargs: dict = {
             "model": model,
             "messages": messages,
-            "temperature": temperature,
+            "temperature": temp,
         }
         if tools:
             kwargs["tools"] = tools
@@ -184,7 +185,7 @@ class DynamicLLMService(ILLMService):
         logger.info(
             "LLM (продажи + инструменты): model=%s, temperature=%s, сообщений в запросе=%s, инструментов=%s",
             model,
-            temperature,
+            temp,
             len(messages),
             len(tools),
         )

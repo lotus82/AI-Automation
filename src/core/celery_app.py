@@ -25,6 +25,14 @@ app.conf.update(
             "task": "check_and_execute_schedules",
             "schedule": crontab(minute="*"),
         },
+        "generate_compliance_deadlines": {
+            "task": "generate_compliance_deadlines",
+            "schedule": crontab(hour=2, minute=0),
+        },
+        "notify_upcoming_deadlines": {
+            "task": "notify_upcoming_deadlines",
+            "schedule": crontab(hour=8, minute=30),
+        },
     },
 )
 # Расписание Beat в локальном часовом поясе приложения (например Europe/Saratov)

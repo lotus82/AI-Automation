@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from src.core.celery_app import app
 
 logger = logging.getLogger(__name__)
 from src.workers.analyst import analyze_conversation_sync
+from src.workers.compliance_beat import (
+    generate_compliance_deadlines_async,
+    notify_upcoming_deadlines_async,
+)
 from src.workers.dialer import run_outbound_campaign_sync
 from src.workers.scheduler import run_schedules_sync
 
@@ -28,6 +33,26 @@ def run_outbound_campaign_task() -> int:
 def check_and_execute_schedules() -> str:
     """Beat раз в минуту: DATABASE / INTERVAL / REMINDER → LLM + MAX (фаза 18)."""
     return run_schedules_sync()
+
+
+@app.task(name="generate_compliance_deadlines")
+def generate_compliance_deadlines() -> str:
+    """Ежедневно: квартальные дедлайны УСН / РСВ по профилям комплаенса (идемпотентно по title+date)."""
+    try:
+        return asyncio.run(generate_compliance_deadlines_async())
+    except Exception:
+        logger.exception("Celery: generate_compliance_deadlines — фатальная ошибка")
+        raise
+
+
+@app.task(name="notify_upcoming_deadlines")
+def notify_upcoming_deadlines() -> str:
+    """Ежедневно: напоминания в MAX за 7 / 3 / 1 день до срока (pending)."""
+    try:
+        return asyncio.run(notify_upcoming_deadlines_async())
+    except Exception:
+        logger.exception("Celery: notify_upcoming_deadlines — фатальная ошибка")
+        raise
 
 
 @app.task(name="process_bitrix24_event")

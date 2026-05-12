@@ -75,8 +75,12 @@ class ILLMService(ABC):
         messages: list[dict[str, Any]],
         *,
         tools: list[dict[str, Any]],
+        temperature: float | None = None,
     ) -> tuple[str | None, list[LLMToolCall]]:
-        """Один шаг чата: текст ассистента (может быть пустым) и запрошенные вызовы инструментов."""
+        """Один шаг чата: текст ассистента (может быть пустым) и запрошенные вызовы инструментов.
+
+        ``temperature``: если не ``None``, подставляется в API вместо значения из настроек (**LLM_TEMPERATURE**).
+        """
 
     @abstractmethod
     async def analyze_conversation_quality(self, transcript_text: str) -> tuple[int, str]:
@@ -366,6 +370,10 @@ class IKnowledgeRepository(ABC):
     @abstractmethod
     async def list_recent(self, *, limit: int = 500) -> list[KnowledgeItem]:
         """Список элементов для админки (новые сверху)."""
+
+    @abstractmethod
+    async def get_by_ids(self, item_ids: list[UUID]) -> list[KnowledgeItem]:
+        """Элементы по id в области репозитория; порядок совпадает с ``item_ids`` (пропуск отсутствующих)."""
 
     @abstractmethod
     async def delete_by_id(self, item_id: UUID) -> bool:

@@ -1,5 +1,10 @@
 """Реализации репозиториев (async SQLAlchemy, Redis) и интеграций."""
 
+from src.infrastructure.repositories.compliance_repositories import (
+    SqlAlchemyComplianceDeadlineRepository,
+    SqlAlchemyLegalDocumentRepository,
+    SqlAlchemyLegalProfileRepository,
+)
 from src.infrastructure.repositories.integration_repo_impl import SqlAlchemyIntegrationRepository
 from src.infrastructure.repositories.shop_repositories import (
     SqlAlchemyCategoryRepository,
@@ -25,6 +30,7 @@ from src.infrastructure.repositories.stores import (
 )
 
 __all__ = [
+    "SqlAlchemyComplianceDeadlineRepository",
     "HybridChatMemoryRepository",
     "PostgresSettingsRepository",
     "RedisChatMemoryRepository",
@@ -33,6 +39,8 @@ __all__ = [
     "SqlAlchemyCategoryRepository",
     "SqlAlchemyChatSessionRepository",
     "SqlAlchemyDialerQueueRepository",
+    "SqlAlchemyLegalDocumentRepository",
+    "SqlAlchemyLegalProfileRepository",
     "SqlAlchemyDiscountRepository",
     "SqlAlchemyIntegrationRepository",
     "SqlAlchemyKnowledgeRepository",

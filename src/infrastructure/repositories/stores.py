@@ -297,6 +297,23 @@ class SqlAlchemyKnowledgeRepository(IKnowledgeRepository):
         result = await self._session.scalars(stmt)
         return [_knowledge_to_domain(row) for row in result.all()]
 
+    async def get_by_ids(self, item_ids: list[UUID]) -> list[KnowledgeItem]:
+        if not item_ids:
+            return []
+        stmt = (
+            select(KnowledgeItemModel)
+            .where(KnowledgeItemModel.id.in_(item_ids))
+            .where(self._org_filter())
+        )
+        result = await self._session.scalars(stmt)
+        by_id = {row.id: row for row in result.all()}
+        out: list[KnowledgeItem] = []
+        for i in item_ids:
+            row = by_id.get(i)
+            if row is not None:
+                out.append(_knowledge_to_domain(row))
+        return out
+
     async def delete_by_id(self, item_id: UUID) -> bool:
         from sqlalchemy import delete
 

@@ -40,6 +40,9 @@ import { ShopConstructorPage } from "./pages/ShopConstructorPage.jsx";
 import { ShopsPage } from "./pages/ShopsPage.jsx";
 import { SiteBuilderPage } from "./pages/sites/SiteBuilderPage.jsx";
 import { SitesListPage } from "./pages/sites/SitesListPage.jsx";
+import { ComplianceDashboardPage } from "./pages/compliance/ComplianceDashboardPage.jsx";
+import { DocumentWizardPage } from "./pages/compliance/DocumentWizardPage.jsx";
+import { LegalProfilePage } from "./pages/compliance/LegalProfilePage.jsx";
 import { DocumentsListPage } from "./pages/documents/DocumentsListPage.jsx";
 import { DocumentEditorPage } from "./pages/documents/DocumentEditorPage.jsx";
 import { SwaggerPage } from "./pages/SwaggerPage.jsx";
@@ -112,6 +115,9 @@ export default function App() {
           <Route path="sites/:id" element={<SiteBuilderPage />} />
           <Route path="documents" element={<DocumentsListPage />} />
           <Route path="documents/:id" element={<DocumentEditorPage />} />
+          <Route path="compliance" element={<ComplianceDashboardPage />} />
+          <Route path="compliance/generate" element={<DocumentWizardPage />} />
+          <Route path="compliance/profile" element={<LegalProfilePage />} />
           <Route path="portal/organizations" element={<OrganizationsPage />} />
           <Route path="portal/users" element={<OrgUsersPage />} />
           <Route path="swagger" element={<SwaggerPage />} />

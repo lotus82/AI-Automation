@@ -1637,3 +1637,170 @@ class AppointmentModel(Base):
 
     portal_user: Mapped["PortalUserModel"] = relationship("PortalUserModel")
     organization: Mapped["OrganizationModel"] = relationship("OrganizationModel")
+
+
+class LegalOrgType(enum.Enum):
+    """ОПФ организации для модуля «Комплаенс»."""
+
+    OOO = "OOO"
+    AO = "AO"
+    IP = "IP"
+    NKO = "NKO"
+
+
+class LegalTaxSystem(enum.Enum):
+    """Система налогообложения."""
+
+    OSNO = "OSNO"
+    USN_INCOME = "USN_INCOME"
+    USN_INCOME_EXPENSE = "USN_INCOME_EXPENSE"
+    PATENT = "PATENT"
+
+
+class ComplianceDeadlineStatus(enum.Enum):
+    """Статус контрольного срока."""
+
+    PENDING = "pending"
+    COMPLETED = "completed"
+    OVERDUE = "overdue"
+
+
+class LegalDocType(enum.Enum):
+    """Тип юридического документа."""
+
+    PROTOCOL = "protocol"
+    REPORT = "report"
+    CONTRACT = "contract"
+    OTHER = "other"
+
+
+class LegalDocStatus(enum.Enum):
+    """Статус редакции документа."""
+
+    DRAFT = "draft"
+    FINAL = "final"
+    SIGNED = "signed"
+
+
+class LegalProfileModel(Base):
+    """Профиль организации для комплаенса (устав, ОПФ, налоговый режим)."""
+
+    __tablename__ = "legal_profiles"
+    __table_args__ = (UniqueConstraint("organization_id", name="uq_legal_profiles_organization"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    org_type: Mapped[LegalOrgType] = mapped_column(
+        SQLEnum(LegalOrgType, name="legal_org_type_str", native_enum=False, length=16),
+        nullable=False,
+    )
+    tax_system: Mapped[LegalTaxSystem] = mapped_column(
+        SQLEnum(LegalTaxSystem, name="legal_tax_system_str", native_enum=False, length=24),
+        nullable=False,
+    )
+    general_director_name: Mapped[str] = mapped_column(String(512), nullable=False, server_default=sql_text("''"))
+    charter_rules: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sql_text("'{}'::jsonb"),
+    )
+    #: Идентификатор роли из **SYSTEM_ROLES_CONFIG** (строка, как в JSON ``roles[].id``).
+    system_role_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    #: UUID элементов базы знаний организации (устав, протоколы и т.д.) — контекст для генерации.
+    knowledge_item_ids: Mapped[list[Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sql_text("'[]'::jsonb"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    organization: Mapped["OrganizationModel"] = relationship("OrganizationModel")
+
+
+class ComplianceDeadlineModel(Base):
+    """Контрольные сроки отчётности и секретариата."""
+
+    __tablename__ = "compliance_deadlines"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    due_date: Mapped[date] = mapped_column(Date(), nullable=False, index=True)
+    status: Mapped[ComplianceDeadlineStatus] = mapped_column(
+        SQLEnum(ComplianceDeadlineStatus, name="compliance_deadline_status_str", native_enum=False, length=16),
+        nullable=False,
+        server_default=sql_text("'pending'"),
+    )
+    description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+
+    organization: Mapped["OrganizationModel"] = relationship("OrganizationModel")
+
+
+class LegalDocumentModel(Base):
+    """Протоколы, отчёты и иные текстовые юридические документы."""
+
+    __tablename__ = "legal_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sql_text("gen_random_uuid()"),
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    doc_type: Mapped[LegalDocType] = mapped_column(
+        SQLEnum(LegalDocType, name="legal_doc_type_str", native_enum=False, length=16),
+        nullable=False,
+    )
+    content: Mapped[str] = mapped_column(Text(), nullable=False, server_default=sql_text("''"))
+    status: Mapped[LegalDocStatus] = mapped_column(
+        SQLEnum(LegalDocStatus, name="legal_doc_status_str", native_enum=False, length=16),
+        nullable=False,
+        server_default=sql_text("'draft'"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=sql_text("now()"),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    organization: Mapped["OrganizationModel"] = relationship("OrganizationModel")
