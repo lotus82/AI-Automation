@@ -18,7 +18,7 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
 from src.api.dependencies import (
     AsyncSessionDep,
@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 @router.post("/webhook")
 async def max_messenger_webhook(
-    body: dict[str, Any],
+    request: Request,
     session: AsyncSessionDep,
     redis: RedisDep,
     settings: SettingsDep,
@@ -55,6 +55,15 @@ async def max_messenger_webhook(
     ),
 ) -> dict[str, Any]:
     """Принимает JSON от MAX; ``chat_id`` → ``session_id`` в Redis; ответ уходит через ``MaxMessengerClient``."""
+    try:
+        raw = await request.json()
+    except Exception:
+        logger.warning("Вебхук MAX: тело запроса не является JSON")
+        return {"ok": True, "skipped": True, "reason": "invalid_json"}
+    if not isinstance(raw, dict):
+        logger.debug("Вебхук MAX: ожидался JSON-объект, получено %s", type(raw).__name__)
+        return {"ok": True, "skipped": True, "reason": "not_object"}
+    body: dict[str, Any] = raw
     body = unwrap_max_update_body(body)
     parsed_call = parse_max_voice_call_incoming(body)
     if parsed_call is not None:

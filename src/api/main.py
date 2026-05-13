@@ -44,15 +44,10 @@ from src.api.routers import (
 from src.presentation.api.routers import chat as agent_chat_router
 from src.presentation.api.routers import integrations as integrations_router
 from src.api.routers import settings as settings_router
-from src.api.dependencies import build_max_long_poll_stack
 from src.core.config import get_settings
 from src.core.logging import setup_logging
 from src.infrastructure.database import AsyncSessionLocal
-from src.infrastructure.max_bot_identity import (
-    deduplicate_max_long_poll_targets,
-    enumerate_max_bot_long_poll_org_ids,
-    sync_all_max_bot_user_ids_from_stored_tokens,
-)
+from src.infrastructure.max_bot_identity import sync_all_max_bot_user_ids_from_stored_tokens
 from src.infrastructure.portal_bootstrap import ensure_portal_bootstrap
 from src.api.openapi_config import API_DESCRIPTION, build_openapi_schema
 
@@ -61,7 +56,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Жизненный цикл: логирование, async Redis для памяти диалогов, опционально MAX long polling."""
+    """Жизненный цикл: логирование, async Redis для памяти диалогов; MAX — через webhook (см. POST /api/max/webhook)."""
     settings = get_settings()
     setup_logging(debug=settings.debug)
     app.state.redis = Redis.from_url(
@@ -95,59 +90,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state.redis,
             app_settings=settings,
         )
-        targets = await enumerate_max_bot_long_poll_org_ids(bootstrap_session)
-        targets = await deduplicate_max_long_poll_targets(
-            bootstrap_session,
-            app.state.redis,
-            settings,
-            targets,
-        )
         await bootstrap_session.commit()
 
-    if settings.max_long_poll_organization_id is not None:
-        flt = settings.max_long_poll_organization_id
-        before = len(targets)
-        targets = [t for t in targets if t == flt]
-        logger.info(
-            "MAX long poll: фильтр MAX_LONG_POLL_ORGANIZATION_ID=%s — контекстов %s → %s",
-            flt,
-            before,
-            len(targets),
-        )
-
-    if not targets:
-        logger.info(
-            "MAX long poll: в БД нет MAX_BOT_TOKEN (ни в system_settings, ни в organization_settings) — "
-            "задачи опроса /updates не созданы",
-        )
-    else:
-        for org_id in targets:
-            sess_cm = AsyncSessionLocal()
-            poll_session = await sess_cm.__aenter__()
-            app.state.max_poll_session_cms.append(sess_cm)
-            uc, mx_client = build_max_long_poll_stack(
-                poll_session,
-                app.state.redis,
-                settings,
-                organization_id=org_id,
-            )
-            task_name = "max-long-poll-global" if org_id is None else f"max-long-poll-org-{org_id}"
-            t = asyncio.create_task(
-                mx_client.start_polling(
-                    uc,
-                    session=poll_session,
-                    stop_event=app.state.max_poll_stop,
-                    redis=app.state.redis,
-                    app_settings=settings,
-                    organization_id=org_id,
-                ),
-                name=task_name,
-            )
-            app.state.max_poll_tasks.append(t)
-        logger.info(
-            "Запущено задач MAX long polling: %s (опрос при MAX_USE_POLLING в соответствующих настройках)",
-            len(app.state.max_poll_tasks),
-        )
+    # Long polling отключён: доставка через POST /api/max/webhook; подписка на URL — при сохранении MAX_BOT_TOKEN.
+    logger.info(
+        "MAX: long polling не запускается; входящие события — POST %s/api/max/webhook "
+        "(подписка platform-api при сохранении токена в настройках).",
+        ((settings.bitrix24_public_app_origin or "").strip() or "https://lotus-it.ru").rstrip("/"),
+    )
     try:
         yield
     finally:

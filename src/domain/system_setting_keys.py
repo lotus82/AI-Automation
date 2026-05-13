@@ -93,6 +93,13 @@ SKIP_ORG_SEED_KEYS = frozenset(
         MAX_BOT_USER_ID,
         # У каждой организации свой бот; общий токен ломает маршрутизацию вебхука по user_id бота
         MAX_BOT_TOKEN,
+        # Роли и MAX-промпты задаются вручную для организации; глобальные значения не сидируем
+        SYSTEM_ROLES_CONFIG,
+        MAX_GROUP_CHAT_PROMPTS,
+        MAX_GROUP_CHAT_ID,
+        MAX_GROUP_ADDITIONAL_PROMPT,
+        TEXT_BOT_SYSTEM_SUPPLEMENT,
+        ANALYST_QA_PROMPT,
     }
 )
 

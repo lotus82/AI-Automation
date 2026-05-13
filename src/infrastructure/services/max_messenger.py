@@ -553,6 +553,44 @@ class MaxMessengerClient:
                 raise
         logger.info("MAX answer_call: вызов принят call_id=%s", cid)
 
+    _WEBHOOK_SUBSCRIPTION_EVENTS: tuple[str, ...] = (
+        "message_created",
+        "message_updated",
+        "message_callback",
+        "bot_started",
+        "voice_call_incoming",
+        "voice_call_answered",
+        "voice_call_ended",
+    )
+
+    async def subscribe_webhook(self, webhook_url: str, *, bot_token: str | None = None) -> None:
+        """Регистрирует URL вебхука в Platform API MAX (``POST /subscriptions``).
+
+        ``bot_token``: явный токен (например сразу после сохранения в БД); иначе читается из репозитория / .env.
+        """
+        token = ((bot_token or "").strip() or await self._resolve_bot_token()).strip()
+        if not token:
+            raise ValueError(
+                "MAX_BOT_TOKEN не задан: укажите в панели «Настройки» или в переменной окружения MAX_BOT_TOKEN (.env)"
+            )
+        url = f"{self._platform_api_base}/subscriptions"
+        headers = {
+            "Authorization": token,
+            "Content-Type": "application/json",
+        }
+        payload: dict[str, Any] = {
+            "url": (webhook_url or "").strip(),
+            "events": list(self._WEBHOOK_SUBSCRIPTION_EVENTS),
+        }
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            response = await client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+        logger.info(
+            "MAX subscribe_webhook: зарегистрирован url=%s events=%s",
+            payload["url"],
+            ",".join(self._WEBHOOK_SUBSCRIPTION_EVENTS),
+        )
+
     async def start_polling(
         self,
         use_case: ProcessTextMessageUseCase,

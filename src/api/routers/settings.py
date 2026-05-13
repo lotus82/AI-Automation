@@ -23,6 +23,7 @@ from src.core.config import get_settings
 from src.domain.entities import SystemSetting
 from src.infrastructure.max_bot_identity import sync_max_bot_user_id_for_token
 from src.infrastructure.repositories import PostgresSettingsRepository
+from src.infrastructure.services.max_messenger import MaxMessengerClient
 
 router = APIRouter(tags=["settings"])
 logger = logging.getLogger(__name__)
@@ -520,5 +521,21 @@ async def update_settings(
                 token=tok,
                 platform_api_base=get_settings().max_platform_api_base,
             )
+            app_settings = get_settings()
+            base_origin = (app_settings.bitrix24_public_app_origin or "").strip() or "https://lotus-it.ru"
+            webhook_url = f"{base_origin.rstrip('/')}/api/max/webhook"
+            try:
+                sub_client = MaxMessengerClient(
+                    settings_repository=settings_repo,
+                    api_base_url=app_settings.max_api_base,
+                    platform_api_base_url=app_settings.max_platform_api_base,
+                    env_fallback_max_bot_token=app_settings.max_bot_token,
+                )
+                await sub_client.subscribe_webhook(webhook_url, bot_token=tok)
+            except Exception:
+                logger.exception(
+                    "MAX: не удалось зарегистрировать webhook в platform-api (токен в БД сохранён); url=%s",
+                    webhook_url,
+                )
 
     return {"ok": True}
