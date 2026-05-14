@@ -5,6 +5,9 @@ import { Outlet } from "react-router-dom";
 import { useMiniAppThemeStore } from "../../store/miniAppThemeStore.js";
 import "./miniappViewport.css";
 
+/** Фон зоны под фиксированным Tabbar Mini App (см. MiniAppTabbar). */
+const MINIAPP_TABBAR_ZONE_BG = "#f8fafc";
+
 /**
  * HEX-цвет → RGB-строка "r, g, b" для использования в `rgba(var(--max-color-primary-rgb), …)`.
  * Поддерживает форматы `#RGB` и `#RRGGBB`; в остальных случаях возвращает null.
@@ -58,7 +61,7 @@ function buildBrandStyle(themeColor) {
  *  - Динамически брендирует акцентный цвет через CSS-переменные на корневом
  *    элементе — `theme_color` приходит из конструктора сайтов.
  *  - Оптимизирует мобильный WebView: viewport без зума, блокировка overscroll,
- *    safe-area padding.
+ *    expand/ready у MAX/Telegram WebApp; safe-area — в шапке и Tabbar страницы.
  *
  * Важно: провайдер и стили MAX UI подключаются ТОЛЬКО здесь — в
  * административную панель (Tailwind) они не проникают.
@@ -66,6 +69,17 @@ function buildBrandStyle(themeColor) {
 export function MiniAppLayout() {
   const themeColor = useMiniAppThemeStore((s) => s.themeColor);
   const colorScheme = useMiniAppThemeStore((s) => s.colorScheme);
+
+  useEffect(() => {
+    const webApp =
+      typeof window !== "undefined"
+        ? window.WebApp || window.MaxWebApp || window.maxWebApp || window.Telegram?.WebApp
+        : null;
+    if (webApp) {
+      if (typeof webApp.expand === "function") webApp.expand();
+      if (typeof webApp.ready === "function") webApp.ready();
+    }
+  }, []);
 
   useEffect(() => {
     const originalViewport = document.querySelector('meta[name="viewport"]');
@@ -104,6 +118,44 @@ export function MiniAppLayout() {
     };
   }, []);
 
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtmlBg = html.style.backgroundColor;
+    const prevBodyBg = body.style.backgroundColor;
+
+    let meta = document.querySelector('meta[name="theme-color"]');
+    const hadMetaAtStart = Boolean(meta);
+    const prevThemeContent = meta?.getAttribute("content");
+    let createdMeta = false;
+
+    const accent = (themeColor || "").trim();
+    html.style.backgroundColor = accent || "#0f172a";
+    body.style.backgroundColor = MINIAPP_TABBAR_ZONE_BG;
+
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "theme-color");
+      document.head.appendChild(meta);
+      createdMeta = true;
+    }
+    meta.setAttribute("content", accent || "#ffffff");
+
+    return () => {
+      html.style.backgroundColor = prevHtmlBg;
+      body.style.backgroundColor = prevBodyBg;
+      if (createdMeta && meta?.parentNode) {
+        meta.parentNode.removeChild(meta);
+      } else if (hadMetaAtStart && meta) {
+        if (prevThemeContent != null && prevThemeContent !== "") {
+          meta.setAttribute("content", prevThemeContent);
+        } else {
+          meta.removeAttribute("content");
+        }
+      }
+    };
+  }, [themeColor]);
+
   const brandStyle = useMemo(() => buildBrandStyle(themeColor), [themeColor]);
 
   const rootStyle = {
@@ -114,9 +166,6 @@ export function MiniAppLayout() {
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
-    paddingTop: "env(safe-area-inset-top, 0px)",
-    paddingLeft: "env(safe-area-inset-left, 0px)",
-    paddingRight: "env(safe-area-inset-right, 0px)",
     background: "var(--max-color-bg-secondary, #f3f4f6)",
     ...brandStyle,
   };

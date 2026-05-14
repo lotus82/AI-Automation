@@ -430,7 +430,15 @@ function StatusScreen({ children }) {
           align="center"
           justify="center"
           gap={16}
-          style={{ minHeight: "100dvh", padding: "32px 16px", textAlign: "center" }}
+          style={{
+            minHeight: "100dvh",
+            boxSizing: "border-box",
+            paddingTop: "calc(32px + env(safe-area-inset-top, 0px))",
+            paddingBottom: "calc(32px + env(safe-area-inset-bottom, 0px))",
+            paddingLeft: "max(16px, env(safe-area-inset-left, 0px))",
+            paddingRight: "max(16px, env(safe-area-inset-right, 0px))",
+            textAlign: "center",
+          }}
         >
           {children}
         </Flex>
@@ -483,12 +491,13 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
         boxSizing: "border-box",
         backdropFilter: "blur(12px)",
         background: "linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(248,250,252,0.98) 100%)",
+        backgroundColor: "#f8fafc",
         borderTop: "1px solid rgba(15, 23, 42, 0.08)",
         boxShadow: "0 -2px 16px rgba(15, 23, 42, 0.05)",
         paddingTop: 4,
         paddingLeft: "max(8px, env(safe-area-inset-left, 0px))",
         paddingRight: "max(8px, env(safe-area-inset-right, 0px))",
-        paddingBottom: "calc(4px + env(safe-area-inset-bottom, 0px))",
+        paddingBottom: "max(env(safe-area-inset-bottom, 0px), 4px)",
       }}
     >
       <ul
@@ -589,7 +598,10 @@ function MiniAppHeader({ title, subtitle, logoUrl, themeColor, logoIconKey }) {
         flexShrink: 0,
         flexGrow: 0,
         boxSizing: "border-box",
-        padding: "16px",
+        paddingTop: "calc(env(safe-area-inset-top, 0px) + 16px)",
+        paddingLeft: "max(16px, env(safe-area-inset-left, 0px))",
+        paddingRight: "max(16px, env(safe-area-inset-right, 0px))",
+        paddingBottom: 16,
         borderBottom: "1px solid rgba(0,0,0,0.08)",
         background,
         color: "#fff",
@@ -897,7 +909,6 @@ export function MiniAppEntryPage() {
   const setThemeColor = useMiniAppThemeStore((s) => s.setThemeColor);
 
   const misSession = useMiniAppMisStore((s) => s.misSession);
-  const misPatientToken = useMiniAppMisStore((s) => s.patientToken);
 
   const [status, setStatus] = useState("loading");
   const [errorTitle, setErrorTitle] = useState("");
@@ -1162,26 +1173,6 @@ export function MiniAppEntryPage() {
         themeColor={themeColor}
         logoIconKey={config?.contacts?.mis_logo_icon}
       />
-      {config?.site_kind === "mis" && misSession?.role ? (
-        <div
-          style={{
-            flexShrink: 0,
-            padding: "8px 16px",
-            fontSize: 13,
-            lineHeight: 1.4,
-            color: "#0369a1",
-            background: "#f0f9ff",
-            borderBottom: "1px solid #bae6fd",
-          }}
-        >
-          МИС:{" "}
-          {misSession.role === "doctor"
-            ? "врач (chat_id совпал с профилем врача)"
-            : misSession.role === "patient"
-              ? `пациент${misPatientToken ? " — доступ к карте по chat_id" : ""}`
-              : "гость (привяжите chat_id в карте пациента или в профиле врача)"}
-        </div>
-      ) : null}
       <div
         className="miniapp-main-scroll"
         style={{
@@ -1191,6 +1182,8 @@ export function MiniAppEntryPage() {
           overflowX: "hidden",
           overscrollBehavior: "contain",
           WebkitOverflowScrolling: "touch",
+          paddingLeft: "env(safe-area-inset-left, 0px)",
+          paddingRight: "env(safe-area-inset-right, 0px)",
           paddingBottom: MINIAPP_TABBAR_SCROLL_PAD,
           scrollPaddingBottom: MINIAPP_TABBAR_SCROLL_PAD,
           /* Явный светлый фон: в dark-схеме MAX UI иначе тело страницы может быть невидимо */
