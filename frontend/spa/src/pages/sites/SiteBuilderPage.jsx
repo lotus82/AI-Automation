@@ -1164,7 +1164,7 @@ function Field({ label, hint, children }) {
 const inputClass =
   "mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:border-emerald-500 focus:outline-none";
 
-const ALL_MIS_PAGE_KINDS = [...MIS_DOCTOR_PAGE_KINDS, ...MIS_PATIENT_PAGE_KINDS];
+const ALL_MIS_PAGE_KINDS = [...MIS_DOCTOR_PAGE_KINDS, ...MIS_PATIENT_PAGE_KINDS, "mis_agreement"];
 
 function normalizeSitePageKind(raw) {
   const s = String(raw || "content").toLowerCase();
@@ -1183,6 +1183,7 @@ function normalizeSitePageKind(raw) {
 function coerceMisPageKindForAudience(kind, audienceIsPatient) {
   const k = normalizeSitePageKind(kind);
   if (k === "document_reader") return "document_reader";
+  if (k === "mis_agreement") return "mis_agreement";
   const doctor = new Set(MIS_DOCTOR_PAGE_KINDS);
   const patient = new Set(MIS_PATIENT_PAGE_KINDS);
   if (audienceIsPatient) {
@@ -1678,7 +1679,9 @@ function MisPageKindHints({ pageKind }) {
       ? "В Mini App — список пациентов врача при совпадении chat_id с профилем. Ниже — вступительный HTML над списком."
       : pk === "mis_doctor_card"
         ? "Подсказка врачу: полный доступ к карте — например через раздел «Пациенты». Ниже — необязательное HTML-вступление."
-        : pk === "mis_patient_card"
+        : pk === "mis_agreement"
+          ? "Текст пользовательского соглашения (HTML) для экрана приветствия гостя в Mini App МИС."
+          : pk === "mis_patient_card"
           ? "Сводка по карте: ФИО, контакты, последние обследования. HTML — над блоком."
           : pk === "mis_patient_profile"
             ? "Редактирование профиля пациента при входе по MAX. HTML — над формой."
@@ -1703,6 +1706,7 @@ function misPageEditorContentLabel(pageKind, isMisSite, misAudiencePatient) {
   if (pk === "document_reader") return "Вступление (HTML) над читалкой (необязательно)";
   if (pk === "mis_patients") return "Вступительный текст (HTML) над списком пациентов";
   if (pk === "mis_doctor_card") return "Вступительный текст (HTML) для экрана «Карта пациента»";
+  if (pk === "mis_agreement") return "Полный текст пользовательского соглашения (HTML)";
   return "Вступительный текст (HTML) над разделом";
 }
 
@@ -1841,7 +1845,9 @@ function PageEditorTab({
                         ? misAudiencePatient
                           ? "patient"
                           : "doctor"
-                        : p.mis_audience,
+                        : v === "mis_agreement"
+                          ? null
+                          : p.mis_audience,
                   }));
                 }}
                 className={`${inputClass} max-w-lg`}
@@ -1852,12 +1858,14 @@ function PageEditorTab({
                     <option value="mis_patient_profile">Профиль</option>
                     <option value="mis_patient_diary">Дневник здоровья</option>
                     <option value="mis_patient_tips">Полезные материалы</option>
+                    <option value="mis_agreement">МИС: Пользовательское соглашение</option>
                     <option value="document_reader">Читатель (документ)</option>
                   </>
                 ) : (
                   <>
                     <option value="mis_patients">Пациенты</option>
                     <option value="mis_doctor_card">Карта пациента</option>
+                    <option value="mis_agreement">МИС: Пользовательское соглашение</option>
                     <option value="document_reader">Читатель (документ)</option>
                   </>
                 )}
@@ -2376,6 +2384,27 @@ function PagePreviewBody({ page }) {
     page.booking_staff_user_id;
   const embedKey =
     page && !isBooking && !pk.startsWith("mis_") && pk !== "profile" ? String(page.embed_module || "").trim() : "";
+
+  if (pk === "mis_agreement") {
+    return (
+      <article className="text-slate-800">
+        <h2 className="mb-2 text-lg font-semibold text-slate-900">
+          {(page.title || "").trim() || "Пользовательское соглашение"}
+        </h2>
+        <p className="mb-2 text-[13px] text-slate-600">
+          В Mini App гостю показывается приветствие с раскрывающимся текстом и кнопкой «Принять» (регистрация
+          пациента).
+        </p>
+        {page.content ? (
+          <div
+            ref={previewContentRef}
+            className="miniapp-preview-content mb-3 max-h-48 overflow-y-auto space-y-2 text-[14px] leading-relaxed"
+            dangerouslySetInnerHTML={{ __html: page.content }}
+          />
+        ) : null}
+      </article>
+    );
+  }
 
   if (pk === "mis_patients") {
     return (

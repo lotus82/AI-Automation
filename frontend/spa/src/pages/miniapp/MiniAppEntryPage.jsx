@@ -13,6 +13,7 @@ import { siteLogoImgSrc } from "../../utils/siteLogoUrl.js";
 import { isValidMisLogoIconKey, MisLogoIcon } from "../../utils/misMedicalBranding.jsx";
 import { MiniAppBookingContent } from "./MiniAppBookingContent.jsx";
 import { MiniAppEmbedPlaceholder } from "./MiniAppEmbedPlaceholder.jsx";
+import { MiniAppGuestWelcome } from "./MiniAppGuestWelcome.jsx";
 import { MiniAppMisPatientsContent } from "./MiniAppMisPatientsContent.jsx";
 import { MiniAppMisDoctorCardContent } from "./MiniAppMisDoctorCardContent.jsx";
 import { MiniAppMisPatientScreens } from "./MiniAppMisPatientScreens.jsx";
@@ -676,7 +677,7 @@ function MiniAppHeader({ title, subtitle, logoUrl, themeColor, logoIconKey }) {
  * компании (не UGC) и рендерится в нативном WebView мессенджера. Клики по ссылкам
  * ведут через WebApp.openLink (внешний браузер), см. useMiniAppHtmlLinkDelegate.
  */
-function MisEmbedController({ page, miniToken, misSession, themeColor }) {
+function MisEmbedController({ page, miniToken, misSession, themeColor, onMisGuestAccepted }) {
   const misSessionFromStore = useMiniAppMisStore((s) => s.misSession);
   const effectiveSession = misSessionFromStore ?? misSession;
   const role = effectiveSession?.role;
@@ -701,29 +702,18 @@ function MisEmbedController({ page, miniToken, misSession, themeColor }) {
       />
     );
   }
-  return (
-    <div style={{ padding: "16px 16px 24px" }}>
-      <Panel mode="secondary" style={{ padding: 16 }}>
-        <Flex direction="column" gap={12} align="stretch">
-          <Typography.Title>МИС</Typography.Title>
-          <Typography.Body style={{ color: "#111827", lineHeight: 1.5 }}>
-            Требуется авторизация в МИС. Ваш профиль пока не привязан к карте пациента или кабинету врача.
-          </Typography.Body>
-          <Button
-            mode="primary"
-            onClick={() =>
-              alert("Здесь будет вызов формы авторизации /mis_patient_auth.py")
-            }
-          >
-            Войти
-          </Button>
-        </Flex>
-      </Panel>
-    </div>
-  );
+  return <MiniAppGuestWelcome miniToken={miniToken} onAccepted={onMisGuestAccepted} />;
 }
 
-function MiniAppPageContent({ page, organizationId, miniToken, misRole, misSession, themeColor }) {
+function MiniAppPageContent({
+  page,
+  organizationId,
+  miniToken,
+  misRole,
+  misSession,
+  themeColor,
+  onMisGuestAccepted,
+}) {
   const contentRef = useMiniAppHtmlLinkDelegate(page?.content);
   const pk = page ? String(page.page_kind || "content").toLowerCase() : "";
   const isBooking =
@@ -731,6 +721,7 @@ function MiniAppPageContent({ page, organizationId, miniToken, misRole, misSessi
   const isMisBuiltIn =
     pk === "mis_patients" ||
     pk === "mis_doctor_card" ||
+    pk === "mis_agreement" ||
     pk.startsWith("mis_patient_");
   const embedKey =
     page && !isBooking && !isMisBuiltIn && pk !== "profile"
@@ -746,6 +737,10 @@ function MiniAppPageContent({ page, organizationId, miniToken, misRole, misSessi
         </div>
       </div>
     );
+  }
+
+  if (pk === "mis_agreement") {
+    return <MiniAppGuestWelcome miniToken={miniToken} onAccepted={onMisGuestAccepted} />;
   }
 
   if (pk === "mis_patients") {
@@ -839,6 +834,7 @@ function MiniAppPageContent({ page, organizationId, miniToken, misRole, misSessi
           miniToken={miniToken}
           misSession={misSession ?? useMiniAppMisStore.getState().misSession}
           themeColor={themeColor}
+          onMisGuestAccepted={onMisGuestAccepted}
         />
       ) : embedKey ? (
         <>
@@ -1224,6 +1220,7 @@ export function MiniAppEntryPage() {
             misRole={misSession?.role ?? null}
             misSession={misSession}
             themeColor={themeColor}
+            onMisGuestAccepted={bootstrap}
           />
         )}
       </div>

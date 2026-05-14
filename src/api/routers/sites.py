@@ -98,6 +98,7 @@ _PAGE_KINDS_MIS_SPECIAL = frozenset(
         "mis_patient_profile",
         "mis_patient_diary",
         "mis_patient_tips",
+        "mis_agreement",
     },
 )
 _ALLOWED_PAGE_KINDS = frozenset({"content", "booking", "document_reader", "profile", *_PAGE_KINDS_MIS_SPECIAL})
@@ -923,6 +924,8 @@ async def create_site_page(
                     detail="Для страницы «Читатель» на МИС-сайте укажите mis_audience: doctor или patient",
                 )
             mis_aud = ma
+        elif pk == "mis_agreement":
+            mis_aud = None
         else:
             mis_aud = _mis_audience_from_page_kind(pk)
             if mis_aud is None:
@@ -1042,6 +1045,8 @@ async def update_site_page(
                     detail="Для страницы «Читатель» на МИС-сайте укажите mis_audience: doctor или patient",
                 )
             row.mis_audience = ma
+        elif pkf == "mis_agreement":
+            row.mis_audience = None
         else:
             mis_aud = _mis_audience_from_page_kind(pkf)
             if mis_aud is None:

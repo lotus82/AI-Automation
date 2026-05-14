@@ -1166,10 +1166,10 @@ class MedicalPatientModel(Base):
         nullable=False,
         index=True,
     )
-    doctor_id: Mapped[uuid.UUID] = mapped_column(
+    doctor_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("medical_doctors.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     full_name: Mapped[str] = mapped_column(String(512), nullable=False)
@@ -1206,7 +1206,7 @@ class MedicalPatientModel(Base):
         "OrganizationModel",
         back_populates="medical_patients",
     )
-    doctor: Mapped["MedicalDoctorModel"] = relationship(
+    doctor: Mapped["MedicalDoctorModel | None"] = relationship(
         "MedicalDoctorModel",
         back_populates="patients",
     )

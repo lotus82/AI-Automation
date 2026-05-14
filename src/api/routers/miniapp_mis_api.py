@@ -9,13 +9,27 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from src.api.dependencies import AsyncSessionDep, SettingsDep
 from src.api.routers.miniapp import MiniAppUserDep
-from src.infrastructure.models import MedicalDoctorModel, MedicalPatientModel, PortalUserModel
+from src.infrastructure.models import (
+    MedicalDoctorModel,
+    MedicalPatientModel,
+    MiniAppUserModel,
+    PortalUserModel,
+)
 from src.infrastructure.portal_security import create_mis_patient_access_token
 
 router = APIRouter(prefix="/mis", tags=["miniapp-mis"])
+
+
+def _miniapp_user_full_name(mini: MiniAppUserModel) -> str:
+    fn = (getattr(mini, "first_name", None) or "").strip()
+    ln = (getattr(mini, "last_name", None) or "").strip()
+    if fn or ln:
+        return (f"{fn} {ln}".strip()) or ((mini.name or "").strip() or "Пациент")
+    return (mini.name or "").strip() or "Пациент"
 
 
 async def get_doctor_for_miniapp_user(
@@ -49,13 +63,21 @@ async def get_doctor_for_miniapp_user(
 
 
 class MiniAppMisSessionOut(BaseModel):
-    """Определение роли в контексте МИС по совпадению ``miniapp_chat_id`` / ``max_chat_id``."""
+    """Определение роли в контексте МИС по совпадению ``miniapp_chat_id`` / ``max_chat_id``.
 
-    role: Literal["guest", "doctor", "patient"]
+    Приоритет: **врач** (portal_users.miniapp_chat_id + medical_doctors), иначе **пациент** по ``max_chat_id``,
+    иначе ``role=null`` (гость).
+    """
+
+    role: Literal["doctor", "patient"] | None = None
     portal_user_id: UUID | None = None
     medical_doctor_id: UUID | None = None
     patient_id: UUID | None = None
     patient_needs_registration: bool = False
+
+
+class MisAcceptAgreementOut(BaseModel):
+    status: Literal["ok"] = "ok"
 
 
 @router.get("/session", response_model=MiniAppMisSessionOut)
@@ -63,14 +85,14 @@ async def mis_miniapp_session(
     mini: MiniAppUserDep,
     session: AsyncSessionDep,
 ) -> MiniAppMisSessionOut:
-    """По JWT Mini App и ``chat_id`` определяет врача (профиль МИС + ``portal_users.miniapp_chat_id``)
-    или пациента (``medical_patients.max_chat_id``)."""
+    """Сначала врач по ``miniapp_chat_id`` портала; только если не врач — пациент по ``max_chat_id``."""
     doc = await get_doctor_for_miniapp_user(mini, session)
     if doc is not None:
         return MiniAppMisSessionOut(
             role="doctor",
             portal_user_id=doc.portal_user_id,
             medical_doctor_id=doc.id,
+            patient_needs_registration=False,
         )
 
     cid = (mini.chat_id or "").strip()
@@ -86,9 +108,54 @@ async def mis_miniapp_session(
             return MiniAppMisSessionOut(
                 role="patient",
                 patient_id=pat.id,
+                patient_needs_registration=False,
             )
 
-    return MiniAppMisSessionOut(role="guest", patient_needs_registration=True)
+    return MiniAppMisSessionOut(role=None, patient_needs_registration=True)
+
+
+@router.post("/accept-agreement", response_model=MisAcceptAgreementOut)
+async def mis_miniapp_accept_agreement(
+    mini: MiniAppUserDep,
+    session: AsyncSessionDep,
+) -> MisAcceptAgreementOut:
+    """Создаёт карту пациента по ``chat_id`` Mini App без врача (``doctor_id`` = NULL), если записи ещё нет.
+
+    Не вызывается для пользователя, у которого уже определён профиль врача МИС.
+    """
+    doc = await get_doctor_for_miniapp_user(mini, session)
+    if doc is not None:
+        return MisAcceptAgreementOut()
+
+    cid = (mini.chat_id or "").strip()
+    if not cid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="В JWT Mini App отсутствует chat_id",
+        )
+
+    stmt = select(MedicalPatientModel).where(
+        MedicalPatientModel.organization_id == mini.organization_id,
+        MedicalPatientModel.max_chat_id == cid,
+    )
+    existing = (await session.execute(stmt)).scalar_one_or_none()
+    if existing is not None:
+        return MisAcceptAgreementOut()
+
+    full_name = _miniapp_user_full_name(mini)
+    row = MedicalPatientModel(
+        organization_id=mini.organization_id,
+        doctor_id=None,
+        full_name=full_name,
+        phone=None,
+        max_chat_id=cid,
+    )
+    session.add(row)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+    return MisAcceptAgreementOut()
 
 
 class MisMiniPatientRow(BaseModel):

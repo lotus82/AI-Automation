@@ -68,7 +68,7 @@ class MedicalPatientPortalSelfUpdate(BaseModel):
 class MedicalPatientOut(BaseModel):
     id: UUID
     organization_id: UUID
-    doctor_id: UUID
+    doctor_id: UUID | None = None
     full_name: str
     phone: str
     birth_date: date | None

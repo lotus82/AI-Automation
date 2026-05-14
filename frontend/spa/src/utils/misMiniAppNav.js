@@ -26,12 +26,13 @@ export function getMisMiniappAudience(contacts) {
  * @param {string | null | undefined} misRole — doctor | patient | guest из /mis/session
  */
 export function misSitePageVisibleInNav(page, audience, misRole) {
+  const pk = String(page?.page_kind || "content").toLowerCase();
+  if (pk === "mis_agreement") return true;
   const ma = String(page?.mis_audience || "").toLowerCase();
   if (ma === "doctor" || ma === "patient") {
     if (!misRole || misRole === "guest") return false;
     return misRole === ma;
   }
-  const pk = String(page?.page_kind || "content").toLowerCase();
   if (audience === "patient") {
     if (!MIS_PATIENT_PAGE_KINDS.includes(pk)) return false;
     return misRole === "patient";
