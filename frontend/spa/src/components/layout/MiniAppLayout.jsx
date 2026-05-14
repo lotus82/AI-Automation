@@ -61,8 +61,7 @@ function buildBrandStyle(themeColor) {
  *  - Динамически брендирует акцентный цвет через CSS-переменные на корневом
  *    элементе — `theme_color` приходит из конструктора сайтов.
  *  - Оптимизирует мобильный WebView: viewport без зума, блокировка overscroll,
- *    expand/ready у MAX/Telegram WebApp; высота `100dvh` + `--tg-viewport-stable-height`;
- *    верхний safe-area — padding на `miniapp-root` (фон бренда), нижний — на `<main>` (фон таббара).
+ *    expand/ready у MAX/Telegram WebApp; safe-area — в шапке и Tabbar страницы.
  *
  * Важно: провайдер и стили MAX UI подключаются ТОЛЬКО здесь — в
  * административную панель (Tailwind) они не проникают.
@@ -131,7 +130,7 @@ export function MiniAppLayout() {
     let createdMeta = false;
 
     const accent = (themeColor || "").trim();
-    html.style.backgroundColor = accent || "#ffffff";
+    html.style.backgroundColor = accent || "#0f172a";
     body.style.backgroundColor = MINIAPP_TABBAR_ZONE_BG;
 
     if (!meta) {
@@ -159,17 +158,15 @@ export function MiniAppLayout() {
 
   const brandStyle = useMemo(() => buildBrandStyle(themeColor), [themeColor]);
 
-  const accentHex = (themeColor || "").trim();
   const rootStyle = {
-    background: accentHex || "#ffffff",
-    display: "flex",
-    flexDirection: "column",
     flex: 1,
     minHeight: 0,
     width: "100%",
     maxWidth: "100vw",
+    display: "flex",
+    flexDirection: "column",
     overflow: "hidden",
-    paddingTop: "env(safe-area-inset-top, 0px)",
+    background: "var(--max-color-bg-secondary, #f3f4f6)",
     ...brandStyle,
   };
 
@@ -208,8 +205,6 @@ export function MiniAppLayout() {
               flexDirection: "column",
               overflow: "hidden",
               overscrollBehavior: "none",
-              backgroundColor: MINIAPP_TABBAR_ZONE_BG,
-              paddingBottom: "env(safe-area-inset-bottom, 0px)",
             }}
           >
             <Outlet />
