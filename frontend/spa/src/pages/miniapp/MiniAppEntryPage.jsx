@@ -23,6 +23,11 @@ import {
   legacyMisPatientsSlugAllowed,
   misSitePageVisibleInNav,
 } from "../../utils/misMiniAppNav.js";
+
+/** Страница с встроенным модулем МИС — в меню всегда (в т.ч. для гостя: вход / привязка). */
+function isMisEmbedNavPage(page) {
+  return String(page?.embed_module || "").trim().toLowerCase() === "mis";
+}
 import { PAGE_H1, PAGE_TEXT } from "../../styles/pageLayout.js";
 import { isoYmdToRuDotted, parseRuDottedToIsoYmd } from "../../utils/dateTimeFormat.js";
 import "./miniappPageContent.css";
@@ -671,7 +676,54 @@ function MiniAppHeader({ title, subtitle, logoUrl, themeColor, logoIconKey }) {
  * компании (не UGC) и рендерится в нативном WebView мессенджера. Клики по ссылкам
  * ведут через WebApp.openLink (внешний браузер), см. useMiniAppHtmlLinkDelegate.
  */
-function MiniAppPageContent({ page, organizationId, miniToken, misRole, themeColor }) {
+function MisEmbedController({ page, miniToken, misSession, themeColor }) {
+  const misSessionFromStore = useMiniAppMisStore((s) => s.misSession);
+  const effectiveSession = misSessionFromStore ?? misSession;
+  const role = effectiveSession?.role;
+  if (role === "doctor") {
+    return (
+      <MiniAppMisPatientsContent
+        miniToken={miniToken}
+        misRole="doctor"
+        pageTitle={page?.title}
+        introHtml={page?.content}
+        themeColor={themeColor}
+      />
+    );
+  }
+  if (role === "patient") {
+    return (
+      <MiniAppMisPatientScreens
+        pageKind="mis_patient_card"
+        pageTitle={page?.title}
+        introHtml={page?.content}
+        themeColor={themeColor}
+      />
+    );
+  }
+  return (
+    <div style={{ padding: "16px 16px 24px" }}>
+      <Panel mode="secondary" style={{ padding: 16 }}>
+        <Flex direction="column" gap={12} align="stretch">
+          <Typography.Title>МИС</Typography.Title>
+          <Typography.Body style={{ color: "#111827", lineHeight: 1.5 }}>
+            Требуется авторизация в МИС. Ваш профиль пока не привязан к карте пациента или кабинету врача.
+          </Typography.Body>
+          <Button
+            mode="primary"
+            onClick={() =>
+              alert("Здесь будет вызов формы авторизации /mis_patient_auth.py")
+            }
+          >
+            Войти
+          </Button>
+        </Flex>
+      </Panel>
+    </div>
+  );
+}
+
+function MiniAppPageContent({ page, organizationId, miniToken, misRole, misSession, themeColor }) {
   const contentRef = useMiniAppHtmlLinkDelegate(page?.content);
   const pk = page ? String(page.page_kind || "content").toLowerCase() : "";
   const isBooking =
@@ -781,6 +833,13 @@ function MiniAppPageContent({ page, organizationId, miniToken, misRole, themeCol
         <p style={{ margin: 0, fontSize: 15, color: "#b91c1c" }}>
           Запись недоступна: нет данных организации.
         </p>
+      ) : embedKey.toLowerCase() === "mis" ? (
+        <MisEmbedController
+          page={page}
+          miniToken={miniToken}
+          misSession={misSession ?? useMiniAppMisStore.getState().misSession}
+          themeColor={themeColor}
+        />
       ) : embedKey ? (
         <>
           <MiniAppEmbedPlaceholder moduleKey={embedKey} />
@@ -949,13 +1008,13 @@ export function MiniAppEntryPage() {
         if (cfg?.site_kind !== "mis") {
           return legacyMisPatientsSlugAllowed(pg, misRoleFromSession);
         }
-        return misSitePageVisibleInNav(pg, audience, misRoleFromSession);
+        return isMisEmbedNavPage(pg) || misSitePageVisibleInNav(pg, audience, misRoleFromSession);
       });
       const firstSlug =
         navForUser[0]?.slug ??
         pgs.find((p) =>
           cfg?.site_kind === "mis"
-            ? misSitePageVisibleInNav(p, audience, misRoleFromSession)
+            ? isMisEmbedNavPage(p) || misSitePageVisibleInNav(p, audience, misRoleFromSession)
             : legacyMisPatientsSlugAllowed(p, misRoleFromSession),
         )?.slug ??
         pgs[0]?.slug ??
@@ -1014,7 +1073,9 @@ export function MiniAppEntryPage() {
   const pages = useMemo(() => {
     const all = Array.isArray(config?.pages) ? config.pages : [];
     if (config?.site_kind !== "mis" || !misSession?.role) return all;
-    return all.filter((p) => misSitePageVisibleInNav(p, misAudience, misSession.role));
+    return all.filter(
+      (p) => isMisEmbedNavPage(p) || misSitePageVisibleInNav(p, misAudience, misSession.role),
+    );
   }, [config?.pages, config?.site_kind, misSession?.role, misAudience]);
 
   const navItems = useMemo(() => {
@@ -1030,7 +1091,7 @@ export function MiniAppEntryPage() {
       if (config?.site_kind !== "mis") {
         return legacyMisPatientsSlugAllowed(pg, misSession?.role);
       }
-      return misSitePageVisibleInNav(pg, misAudience, misSession?.role);
+      return isMisEmbedNavPage(pg) || misSitePageVisibleInNav(pg, misAudience, misSession?.role);
     });
   }, [
     config,
@@ -1161,6 +1222,7 @@ export function MiniAppEntryPage() {
             organizationId={config?.organization_id}
             miniToken={miniToken}
             misRole={misSession?.role ?? null}
+            misSession={misSession}
             themeColor={themeColor}
           />
         )}
