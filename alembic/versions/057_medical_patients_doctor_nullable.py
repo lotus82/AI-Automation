@@ -6,7 +6,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
 
-revision = "057_medical_patients_doctor_nullable"
+# revision id ≤ 32 chars: alembic_version.version_num is VARCHAR(32)
+revision = "057_med_pat_dr_null"
 down_revision = "056_fix_legal_role_fk"
 branch_labels = None
 depends_on = None
