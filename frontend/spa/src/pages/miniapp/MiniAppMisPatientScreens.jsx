@@ -4,6 +4,7 @@ import {
   BookOpen,
   ClipboardList,
   CreditCard,
+  HeartPulse,
   MessageCircle,
   Save,
   Settings,
