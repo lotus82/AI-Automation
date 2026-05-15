@@ -21,6 +21,7 @@ from src.infrastructure.max_webapp_validation import (
     validate_max_webapp_init_data,
 )
 from src.infrastructure.models import MedicalDoctorModel, MedicalPatientModel
+from src.infrastructure.miniapp_birth_date_sync import sync_birth_date_by_chat
 from src.infrastructure.portal_security import create_mis_patient_access_token
 from src.infrastructure.repositories import PostgresSettingsRepository
 
@@ -269,6 +270,12 @@ async def mis_patient_session_update_me(
         patient.phone = None if data["phone"] is None else _norm_phone(str(data["phone"]))
     if "birth_date" in data:
         patient.birth_date = data["birth_date"]
+        await sync_birth_date_by_chat(
+            session,
+            organization_id=patient.organization_id,
+            chat_id=patient.max_chat_id,
+            birth_date=patient.birth_date,
+        )
     if "height" in data:
         patient.height = data["height"]
     if "weight" in data:

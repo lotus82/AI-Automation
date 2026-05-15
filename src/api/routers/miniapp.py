@@ -42,6 +42,7 @@ from src.infrastructure.models import (
     SitePageModel,
 )
 from src.infrastructure.max_webapp_validation import validate_max_webapp_init_data
+from src.infrastructure.miniapp_birth_date_sync import sync_birth_date_by_chat
 from src.infrastructure.portal_security import (
     create_miniapp_access_token,
     decode_miniapp_token,
@@ -926,6 +927,12 @@ async def miniapp_patch_me(
         _recompute_miniapp_user_display_name(user)
     if "birth_date" in fs:
         user.birth_date = body.birth_date
+        await sync_birth_date_by_chat(
+            session,
+            organization_id=user.organization_id,
+            chat_id=user.chat_id,
+            birth_date=user.birth_date,
+        )
     session.add(user)
     await session.commit()
     await session.refresh(user)

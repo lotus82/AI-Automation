@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { BookOpen, ClipboardList, HeartPulse, Save, User } from "lucide-react";
 import patientMisClient from "../../api/patientMisClient.js";
 import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
-import { formatDateTimeRu } from "../../utils/dateTimeFormat.js";
+import { BirthDateRuField } from "../../components/miniapp/BirthDateRuField.jsx";
+import { formatDateRu, formatDateTimeRu, isoYmdToRuDotted, parseRuDottedToIsoYmd } from "../../utils/dateTimeFormat.js";
 import { getStoredPatientId } from "../../utils/patientMisAuth.js";
 import { PAGE_H1, PAGE_TEXT } from "../../styles/pageLayout.js";
 
@@ -137,7 +138,7 @@ export function MiniAppMisPatientScreens({ pageKind, pageTitle, introHtml, theme
             <strong>{patient?.full_name || "—"}</strong>
           </p>
           <p style={{ margin: "8px 0 0", fontSize: 13, color: "#64748b" }}>
-            Тел.: {patient?.phone || "—"} · Дата рождения: {formatDateTimeRu(patient?.birth_date)}
+            Тел.: {patient?.phone || "—"} · Дата рождения: {formatDateRu(patient?.birth_date)}
           </p>
           {recentExams.length > 0 ? (
             <div style={{ marginTop: 14 }}>
@@ -187,7 +188,7 @@ export function MiniAppMisPatientScreens({ pageKind, pageTitle, introHtml, theme
 function ProfileBlock({ patient, accent, onSaved }) {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
-  const [birth, setBirth] = useState("");
+  const [birthText, setBirthText] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -195,19 +196,31 @@ function ProfileBlock({ patient, accent, onSaved }) {
     if (!patient) return;
     setFullName(patient.full_name || "");
     setPhone(patient.phone || "");
-    const iso = patient.birth_date;
-    setBirth(iso && String(iso).length >= 10 ? String(iso).slice(0, 10) : "");
+    const raw = patient.birth_date;
+    if (raw && String(raw).length >= 10) {
+      setBirthText(isoYmdToRuDotted(String(raw).slice(0, 10)));
+    } else {
+      setBirthText("");
+    }
   }, [patient]);
 
   const save = async (e) => {
     e.preventDefault();
+    const t = String(birthText).trim();
+    if (t) {
+      const parsed = parseRuDottedToIsoYmd(t);
+      if (!parsed) {
+        setMsg("Неверный формат даты. Используйте ДД.ММ.ГГГГ (например, 15.03.1990).");
+        return;
+      }
+    }
     setBusy(true);
     setMsg("");
     try {
       await patientMisClient.patch("/mis/patient-session/me", {
         full_name: fullName.trim(),
         phone: phone.trim() || null,
-        birth_date: birth.trim() || null,
+        birth_date: t ? parseRuDottedToIsoYmd(t) : null,
       });
       setMsg("Сохранено.");
       await onSaved();
@@ -260,23 +273,21 @@ function ProfileBlock({ patient, accent, onSaved }) {
             }}
           />
         </label>
-        <label style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 12 }}>
-          Дата рождения
-          <input
-            type="date"
-            value={birth}
-            onChange={(e) => setBirth(e.target.value)}
-            style={{
-              marginTop: 4,
-              width: "100%",
-              boxSizing: "border-box",
+        <div style={{ marginBottom: 12 }}>
+          <span style={{ display: "block", fontSize: 12, color: "#64748b", marginBottom: 6 }}>Дата рождения</span>
+          <BirthDateRuField
+            value={birthText}
+            onChange={setBirthText}
+            accent={accent}
+            disabled={busy}
+            inputStyle={{
               padding: "10px 12px",
               borderRadius: 10,
               border: "1px solid #e2e8f0",
               fontSize: 15,
             }}
           />
-        </label>
+        </div>
         {msg ? (
           <p style={{ margin: "0 0 8px", fontSize: 13, color: msg.includes("Сохранено") ? "#0f766e" : "#b91c1c" }}>{msg}</p>
         ) : null}

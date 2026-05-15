@@ -1,5 +1,5 @@
 import { Button, Container, Flex, Panel, Spinner, Typography } from "@maxhub/max-ui";
-import { Calendar, Save } from "lucide-react";
+import { Save } from "lucide-react";
 import axios from "axios";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useLocation } from "react-router-dom";
@@ -10,6 +10,7 @@ import { setPatientSession } from "../../utils/patientMisAuth.js";
 import { useMiniAppThemeStore } from "../../store/miniAppThemeStore.js";
 import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
 import { MiniAppHeader } from "./MiniAppHeader.jsx";
+import { BirthDateRuField } from "../../components/miniapp/BirthDateRuField.jsx";
 import { MiniAppBookingContent } from "./MiniAppBookingContent.jsx";
 import { MiniAppEmbedPlaceholder } from "./MiniAppEmbedPlaceholder.jsx";
 import { MiniAppGuestWelcome } from "./MiniAppGuestWelcome.jsx";
@@ -61,8 +62,6 @@ function MiniAppProfileContent({ page, miniToken, themeColor }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const introRef = useMiniAppHtmlLinkDelegate(page?.content);
-  const dateInputRef = useRef(null);
-
   const accent = (themeColor || "#2563eb").trim() || "#2563eb";
 
   useEffect(() => {
@@ -105,32 +104,6 @@ function MiniAppProfileContent({ page, miniToken, themeColor }) {
     };
   }, [miniToken]);
 
-  const openDatePicker = () => {
-    const el = dateInputRef.current;
-    if (!el) return;
-    if (typeof el.showPicker === "function") {
-      try {
-        el.showPicker();
-        return;
-      } catch {
-        /* ignore */
-      }
-    }
-    el.click();
-  };
-
-  const onBirthTextChange = (v) => {
-    const next = v.replace(/[^\d.]/g, "");
-    if (next.length > 10) return;
-    if ((next.match(/\./g) || []).length > 2) return;
-    setBirthText(next);
-  };
-
-  const onPickerChange = (e) => {
-    const v = e.target.value;
-    if (v) setBirthText(isoYmdToRuDotted(v));
-  };
-
   const onSave = async () => {
     if (!miniToken) return;
     const t = String(birthText).trim();
@@ -158,13 +131,6 @@ function MiniAppProfileContent({ page, miniToken, themeColor }) {
       setSaving(false);
     }
   };
-
-  const hiddenDateValue = (() => {
-    const p = parseRuDottedToIsoYmd(birthText);
-    return p || "";
-  })();
-
-  const todayIsoMax = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   return (
     <div style={{ padding: "16px 16px 24px" }}>
@@ -216,63 +182,18 @@ function MiniAppProfileContent({ page, miniToken, themeColor }) {
               style={inputFieldStyle}
             />
           </label>
-          <div>
+          <div style={{ maxWidth: 320 }}>
             <span style={{ display: "block", fontSize: 13, color: "#374151", marginBottom: 6 }}>Дата рождения</span>
-            <div
-              style={{
-                display: "flex",
-                width: "100%",
-                maxWidth: 320,
-                alignItems: "stretch",
-                gap: 8,
-              }}
-            >
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="ДД.ММ.ГГГГ"
-                value={birthText}
-                onChange={(e) => onBirthTextChange(e.target.value)}
-                aria-label="Дата рождения (ДД.ММ.ГГГГ)"
-                style={{ ...inputFieldStyle, flex: 1, maxWidth: "none" }}
-              />
-              <input
-                ref={dateInputRef}
-                type="date"
-                className="sr-only"
-                tabIndex={-1}
-                aria-hidden
-                value={hiddenDateValue}
-                onChange={onPickerChange}
-                min="1900-01-01"
-                max={todayIsoMax}
-              />
-              <button
-                type="button"
-                onClick={openDatePicker}
-                title="Открыть календарь"
-                aria-label="Открыть календарь"
-                style={{
-                  flexShrink: 0,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 44,
-                  minWidth: 44,
-                  height: 44,
-                  borderRadius: 8,
-                  border: `1px solid ${accent}`,
-                  background: "rgba(255,255,255,0.95)",
-                  color: accent,
-                  cursor: "pointer",
-                }}
-              >
-                <Calendar className="h-5 w-5" strokeWidth={2} aria-hidden />
-              </button>
-            </div>
-            <p style={{ margin: "6px 0 0", fontSize: 12, color: "#6b7280" }}>Формат: ДД.ММ.ГГГГ или кнопка календаря</p>
+            <BirthDateRuField
+              value={birthText}
+              onChange={setBirthText}
+              accent={accent}
+              disabled={saving}
+              inputStyle={{ ...inputFieldStyle, flex: 1, maxWidth: "none" }}
+              hint="Формат: ДД.ММ.ГГГГ или кнопка календаря"
+            />
           </div>
-          <button
+<button
             type="button"
             onClick={onSave}
             disabled={saving}
