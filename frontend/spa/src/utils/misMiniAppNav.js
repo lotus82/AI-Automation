@@ -27,7 +27,8 @@ export function getMisMiniappAudience(contacts) {
  */
 export function misSitePageVisibleInNav(page, audience, misRole) {
   const pk = String(page?.page_kind || "content").toLowerCase();
-  if (pk === "mis_agreement") return true;
+  /* Страница соглашения — только для гостя (полноэкранно, без нижнего меню). */
+  if (pk === "mis_agreement") return !misRole;
   const ma = String(page?.mis_audience || "").toLowerCase();
   if (ma === "doctor" || ma === "patient") {
     if (!misRole || misRole === "guest") return false;

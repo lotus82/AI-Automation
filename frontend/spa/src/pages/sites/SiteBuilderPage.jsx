@@ -54,6 +54,10 @@ import {
   normalizePublicSectionOrder,
 } from "../../utils/patientPublicCardLayout.js";
 import { MIS_DOCTOR_PAGE_KINDS, MIS_PATIENT_PAGE_KINDS } from "../../utils/misMiniAppNav.js";
+import {
+  parseMisAgreementPageContent,
+  serializeMisAgreementPageContent,
+} from "../../utils/misAgreementPageContent.js";
 
 /** Ключи встраиваемых модулей Mini App (согласовано с backend). */
 const EMBED_MODULE_OPTIONS = [
@@ -381,6 +385,10 @@ export function SiteBuilderPage() {
     embed_module: "",
     linked_document_id: "",
     mis_audience: "doctor",
+    mis_welcome_title: "",
+    mis_welcome_html: "",
+    mis_accordion_label: "",
+    mis_agreement_html: "",
   });
   const [pageSaving, setPageSaving] = useState(false);
   const [portalUsers, setPortalUsers] = useState([]);
@@ -668,6 +676,14 @@ export function SiteBuilderPage() {
     const pageKind = isMisSite
       ? coerceMisPageKindForAudience(p.page_kind, audiencePatient)
       : normalizeSitePageKind(p.page_kind);
+    const agreementPayload =
+      pageKind === "mis_agreement"
+        ? parseMisAgreementPageContent(p.content, {
+            pageTitle: p.title,
+            siteTitle: form?.title,
+            siteSubtitle: form?.subtitle,
+          })
+        : null;
     setPageForm({
       title: p.title || "",
       slug: p.slug || "",
@@ -679,6 +695,10 @@ export function SiteBuilderPage() {
       embed_module: p.embed_module ? String(p.embed_module) : "",
       linked_document_id: p.linked_document_id ? String(p.linked_document_id) : "",
       mis_audience: String(p.mis_audience || "").toLowerCase() === "patient" ? "patient" : "doctor",
+      mis_welcome_title: agreementPayload?.welcome_title ?? "",
+      mis_welcome_html: agreementPayload?.welcome_html ?? "",
+      mis_accordion_label: agreementPayload?.accordion_label ?? "",
+      mis_agreement_html: agreementPayload?.agreement_html ?? "",
     });
     setTab("page-editor");
   };
@@ -692,10 +712,19 @@ export function SiteBuilderPage() {
       const pk = normalizeSitePageKind(pageForm.page_kind);
       const staffRaw = (pageForm.booking_staff_user_id || "").trim();
       const docRaw = (pageForm.linked_document_id || "").trim();
+      const pageContent =
+        pk === "mis_agreement"
+          ? serializeMisAgreementPageContent({
+              welcome_title: (pageForm.mis_welcome_title || "").trim(),
+              welcome_html: pageForm.mis_welcome_html || "",
+              accordion_label: (pageForm.mis_accordion_label || "").trim(),
+              agreement_html: pageForm.mis_agreement_html || "",
+            })
+          : pageForm.content;
       const payload = {
         title: pageForm.title.trim(),
         slug: (pageForm.slug || "").trim().toLowerCase(),
-        content: pageForm.content,
+        content: pageContent,
         order_index: Math.max(0, Number(pageForm.order_index) || 0),
         is_published: Boolean(pageForm.is_published),
         page_kind: pk,
@@ -1680,7 +1709,7 @@ function MisPageKindHints({ pageKind }) {
       : pk === "mis_doctor_card"
         ? "Подсказка врачу: полный доступ к карте — например через раздел «Пациенты». Ниже — необязательное HTML-вступление."
         : pk === "mis_agreement"
-          ? "Текст пользовательского соглашения (HTML) для экрана приветствия гостя в Mini App МИС."
+          ? "Экран гостя в Mini App: заголовок и текст приветствия, подпись аккордеона и HTML соглашения (JSON в поле content)."
           : pk === "mis_patient_card"
           ? "Сводка по карте: ФИО, контакты, последние обследования. HTML — над блоком."
           : pk === "mis_patient_profile"
@@ -1706,8 +1735,92 @@ function misPageEditorContentLabel(pageKind, isMisSite, misAudiencePatient) {
   if (pk === "document_reader") return "Вступление (HTML) над читалкой (необязательно)";
   if (pk === "mis_patients") return "Вступительный текст (HTML) над списком пациентов";
   if (pk === "mis_doctor_card") return "Вступительный текст (HTML) для экрана «Карта пациента»";
-  if (pk === "mis_agreement") return "Полный текст пользовательского соглашения (HTML)";
+  if (pk === "mis_agreement") return null;
   return "Вступительный текст (HTML) над разделом";
+}
+
+const quillToolbarModules = {
+  toolbar: [
+    [{ header: [1, 2, 3, false] }],
+    ["bold", "italic", "underline", "strike", "blockquote"],
+    [{ list: "ordered" }, { list: "bullet" }],
+    ["link", "image"],
+    ["clean"],
+  ],
+};
+
+function MisAgreementPageEditorFields({ form, setForm, isHtmlMode, setIsHtmlMode, inputClass }) {
+  return (
+    <div className="space-y-4">
+      <Field
+        label="Заголовок приветствия"
+        hint="Крупный заголовок над описанием. Если пусто — в Mini App подставится название сайта."
+      >
+        <input
+          type="text"
+          value={form.mis_welcome_title || ""}
+          onChange={(e) => setForm((p) => ({ ...p, mis_welcome_title: e.target.value }))}
+          className={inputClass}
+          maxLength={500}
+        />
+      </Field>
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className="block text-xs font-medium text-slate-300">Текст приветствия (HTML)</label>
+          <button
+            type="button"
+            onClick={() => setIsHtmlMode(!isHtmlMode)}
+            className="text-xs text-emerald-400 hover:text-emerald-300 underline underline-offset-2"
+          >
+            {isHtmlMode ? "Визуальный редактор" : "Редактировать HTML"}
+          </button>
+        </div>
+        {isHtmlMode ? (
+          <textarea
+            value={form.mis_welcome_html || ""}
+            onChange={(e) => setForm((p) => ({ ...p, mis_welcome_html: e.target.value }))}
+            className={`${inputClass} min-h-[160px] font-mono text-[13px]`}
+            maxLength={200000}
+            placeholder="<p>Краткое описание перед соглашением…</p>"
+          />
+        ) : (
+          <div className="rounded-lg border border-slate-700 bg-white text-slate-900 overflow-hidden">
+            <ReactQuill
+              theme="snow"
+              value={form.mis_welcome_html || ""}
+              onChange={(val) => setForm((p) => ({ ...p, mis_welcome_html: val }))}
+              className="h-[200px] pb-10"
+              modules={quillToolbarModules}
+            />
+          </div>
+        )}
+      </div>
+      <Field label="Подпись аккордеона" hint="Заголовок раскрывающегося блока с текстом соглашения.">
+        <input
+          type="text"
+          value={form.mis_accordion_label || ""}
+          onChange={(e) => setForm((p) => ({ ...p, mis_accordion_label: e.target.value }))}
+          className={inputClass}
+          maxLength={500}
+          placeholder="Пользовательское соглашение"
+        />
+      </Field>
+      <div className="space-y-2">
+        <label className="block text-xs font-medium text-slate-300">Текст соглашения (HTML)</label>
+        <textarea
+          value={form.mis_agreement_html || ""}
+          onChange={(e) => setForm((p) => ({ ...p, mis_agreement_html: e.target.value }))}
+          className={`${inputClass} min-h-[280px] font-mono text-[13px]`}
+          maxLength={500000}
+          placeholder="<p>Условия использования…</p>"
+        />
+      </div>
+      <p className="text-[11px] text-slate-500">
+        В Mini App гость видит приветствие на всю высоту экрана; соглашение — в раскрывающемся блоке с кнопкой
+        «Принять».
+      </p>
+    </div>
+  );
 }
 
 function PageEditorTab({
@@ -1725,6 +1838,8 @@ function PageEditorTab({
   misAudiencePatient = false,
 }) {
   const [isHtmlMode, setIsHtmlMode] = useState(false);
+  const pageKindNorm = String(form.page_kind || "content").toLowerCase();
+  const isMisAgreementPage = pageKindNorm === "mis_agreement";
 
   const insertSberDonationBlock = () => {
     const fromSettings = (paymentLinkDefault || "").trim();
@@ -2004,6 +2119,15 @@ function PageEditorTab({
         )}
       </div>
 
+      {isMisAgreementPage ? (
+        <MisAgreementPageEditorFields
+          form={form}
+          setForm={setForm}
+          isHtmlMode={isHtmlMode}
+          setIsHtmlMode={setIsHtmlMode}
+          inputClass={inputClass}
+        />
+      ) : (
       <div className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <label className="block text-xs font-medium text-slate-300">
@@ -2063,6 +2187,7 @@ function PageEditorTab({
           внешний браузер MAX. Блоки с QR держите в HTML-режиме.
         </div>
       </div>
+      )}
 
       <div className="flex justify-end">
         <button type="submit" disabled={saving} className={BTN_SAVE}>
@@ -2160,7 +2285,18 @@ function MiniAppPreview({
             ...p,
             title: (pageForm?.title || p.title || "").trim() || p.title,
             slug: (pageForm?.slug || p.slug || "").trim() || p.slug,
-            content: pageForm?.content ?? p.content ?? "",
+            content: (() => {
+              const k = (pageForm?.page_kind || p.page_kind || "content").toLowerCase();
+              if (k === "mis_agreement") {
+                return serializeMisAgreementPageContent({
+                  welcome_title: (pageForm?.mis_welcome_title || "").trim(),
+                  welcome_html: pageForm?.mis_welcome_html || "",
+                  accordion_label: (pageForm?.mis_accordion_label || "").trim(),
+                  agreement_html: pageForm?.mis_agreement_html || "",
+                });
+              }
+              return pageForm?.content ?? p.content ?? "";
+            })(),
             order_index: Number.isFinite(Number(pageForm?.order_index))
               ? Number(pageForm.order_index)
               : p.order_index,
@@ -2386,20 +2522,26 @@ function PagePreviewBody({ page }) {
     page && !isBooking && !pk.startsWith("mis_") && pk !== "profile" ? String(page.embed_module || "").trim() : "";
 
   if (pk === "mis_agreement") {
+    const payload = parseMisAgreementPageContent(page.content, { pageTitle: page.title });
+    const welcomeTitle = payload.welcome_title || (page.title || "").trim() || "Приветствие";
     return (
       <article className="text-slate-800">
-        <h2 className="mb-2 text-lg font-semibold text-slate-900">
-          {(page.title || "").trim() || "Пользовательское соглашение"}
-        </h2>
+        <h2 className="mb-2 text-lg font-semibold text-slate-900">{welcomeTitle}</h2>
         <p className="mb-2 text-[13px] text-slate-600">
-          В Mini App гостю показывается приветствие с раскрывающимся текстом и кнопкой «Принять» (регистрация
-          пациента).
+          В Mini App гостю показывается приветствие на весь экран, соглашение — в аккордеоне «
+          {payload.accordion_label || "Пользовательское соглашение"}».
         </p>
-        {page.content ? (
+        {payload.welcome_html ? (
           <div
             ref={previewContentRef}
-            className="miniapp-preview-content mb-3 max-h-48 overflow-y-auto space-y-2 text-[14px] leading-relaxed"
-            dangerouslySetInnerHTML={{ __html: page.content }}
+            className="miniapp-preview-content mb-3 space-y-2 text-[14px] leading-relaxed"
+            dangerouslySetInnerHTML={{ __html: payload.welcome_html }}
+          />
+        ) : null}
+        {payload.agreement_html ? (
+          <div
+            className="miniapp-preview-content max-h-40 overflow-y-auto rounded border border-slate-200 bg-slate-50 p-2 text-[13px] leading-relaxed"
+            dangerouslySetInnerHTML={{ __html: payload.agreement_html }}
           />
         ) : null}
       </article>

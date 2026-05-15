@@ -714,7 +714,13 @@ function MisEmbedController({ page, miniToken, misSession, themeColor, onMisGues
       />
     );
   }
-  return <MiniAppGuestWelcome miniToken={miniToken} onAccepted={onMisGuestAccepted} />;
+  return (
+    <MiniAppGuestWelcome
+      miniToken={miniToken}
+      onAccepted={onMisGuestAccepted}
+      themeColor={themeColor}
+    />
+  );
 }
 
 function MiniAppPageContent({
@@ -752,7 +758,13 @@ function MiniAppPageContent({
   }
 
   if (pk === "mis_agreement") {
-    return <MiniAppGuestWelcome miniToken={miniToken} onAccepted={onMisGuestAccepted} />;
+    return (
+      <MiniAppGuestWelcome
+        miniToken={miniToken}
+        onAccepted={onMisGuestAccepted}
+        themeColor={themeColor}
+      />
+    );
   }
 
   if (pk === "mis_patients") {
@@ -1147,11 +1159,35 @@ export function MiniAppEntryPage() {
     return <ErrorScreen title={errorTitle} detail={errorDetail} onRetry={bootstrap} />;
   }
 
+  const isMisGuest = config?.site_kind === "mis" && !misSession?.role;
+
   const activePage =
     activeSlug === "__staff__"
       ? null
       : pages.find((p) => p.slug === activeSlug) || (pages.length > 0 ? pages[0] : null);
   const themeColor = config?.theme_color || null;
+
+  if (isMisGuest) {
+    return (
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          width: "100%",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          background: "#ffffff",
+        }}
+      >
+        <MiniAppGuestWelcome
+          miniToken={miniToken}
+          onAccepted={bootstrap}
+          themeColor={themeColor}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -1186,7 +1222,6 @@ export function MiniAppEntryPage() {
           paddingRight: "env(safe-area-inset-right, 0px)",
           paddingBottom: MINIAPP_TABBAR_SCROLL_PAD,
           scrollPaddingBottom: MINIAPP_TABBAR_SCROLL_PAD,
-          /* Явный светлый фон: в dark-схеме MAX UI иначе тело страницы может быть невидимо */
           background: "#ffffff",
           color: "#111827",
         }}
