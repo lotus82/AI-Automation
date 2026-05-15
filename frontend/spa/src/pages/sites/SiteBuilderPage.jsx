@@ -48,6 +48,7 @@ import {
   MisLogoIcon,
   MIS_LOGO_ICON_OPTIONS,
 } from "../../utils/misMedicalBranding.jsx";
+import { MIS_NAV_ICON_OPTIONS, MisNavIcon } from "../../utils/misNavIcons.jsx";
 import { buildSberQrDonationBlockHtml, SBER_DONATION_DEFAULT_HREF } from "../../utils/sberDonationBlockHtml";
 import {
   PATIENT_PUBLIC_SECTION_LABELS,
@@ -149,6 +150,7 @@ function mapMenuItemsFromApi(arr) {
     page_id: m.page_id,
     order_index: m.order_index ?? 0,
     is_visible: m.is_visible !== false,
+    nav_icon: m.nav_icon || "",
   }));
 }
 
@@ -561,6 +563,7 @@ export function SiteBuilderPage() {
               page_id: it.page_id,
               order_index: Math.max(0, Number(it.order_index) || idx),
               is_visible: Boolean(it.is_visible),
+              nav_icon: (it.nav_icon || "").trim() || null,
             })),
             mis_menu_items_patient: (form.mis_menu_items_patient || []).map((it, idx) => ({
               id: it.id,
@@ -568,6 +571,7 @@ export function SiteBuilderPage() {
               page_id: it.page_id,
               order_index: Math.max(0, Number(it.order_index) || idx),
               is_visible: Boolean(it.is_visible),
+              nav_icon: (it.nav_icon || "").trim() || null,
             })),
           }
         : {
@@ -984,6 +988,7 @@ function MenuTab({
         page_id: p.id,
         order_index: i,
         is_visible: true,
+        nav_icon: "",
       })),
     }));
   };
@@ -1005,6 +1010,7 @@ function MenuTab({
           page_id: first.id,
           order_index: (prev[menuKey] || []).length,
           is_visible: true,
+          nav_icon: "",
         },
       ],
     }));
@@ -1092,6 +1098,9 @@ function MenuTab({
             <tr>
               <th className="w-20 px-3 py-2 text-left font-medium">Порядок</th>
               <th className="px-3 py-2 text-left font-medium">Подпись в меню</th>
+              {isMisSite ? (
+                <th className="min-w-[140px] px-3 py-2 text-left font-medium">Иконка (Lucide)</th>
+              ) : null}
               <th className="min-w-[180px] px-3 py-2 text-left font-medium">Страница</th>
               <th className="w-28 px-3 py-2 text-left font-medium">В меню</th>
               <th className="w-14 px-3 py-2 text-right font-medium" />
@@ -1100,7 +1109,7 @@ function MenuTab({
           <tbody className="divide-y divide-slate-800/60">
             {rows.length === 0 ? (
               <tr>
-                <td className="px-3 py-6 text-center text-slate-500" colSpan={5}>
+                <td className="px-3 py-6 text-center text-slate-500" colSpan={isMisSite ? 6 : 5}>
                   Пунктов нет — в Mini App будет автоматическое меню из опубликованных страниц.
                 </td>
               </tr>
@@ -1126,8 +1135,24 @@ function MenuTab({
                       onChange={(e) => updateRow(row.id, { label: e.target.value })}
                       className="w-full min-w-[140px] rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
                       maxLength={128}
+                      placeholder={isMisSite ? "Профиль (без emoji)" : undefined}
                     />
                   </td>
+                  {isMisSite ? (
+                    <td className="px-3 py-2">
+                      <select
+                        value={row.nav_icon || ""}
+                        onChange={(e) => updateRow(row.id, { nav_icon: e.target.value })}
+                        className="w-full min-w-[140px] rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
+                      >
+                        {MIS_NAV_ICON_OPTIONS.map((o) => (
+                          <option key={o.id || "none"} value={o.id}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  ) : null}
                   <td className="px-3 py-2">
                     <select
                       value={row.page_id != null ? String(row.page_id) : ""}
@@ -2223,10 +2248,16 @@ function buildPreviewNav(menuItems, publishedPages) {
     const p = byId[String(it.page_id)];
     if (!p || !p.is_published) continue;
     const label = (it.label || "").trim() || p.title;
-    if (p.slug) out.push({ label, slug: p.slug });
+    if (p.slug) {
+      out.push({
+        label,
+        slug: p.slug,
+        nav_icon: (it.nav_icon || "").trim() || null,
+      });
+    }
   }
   if (out.length === 0) {
-    return sorted.filter((p) => p.slug).map((p) => ({ label: p.title, slug: p.slug }));
+    return sorted.filter((p) => p.slug).map((p) => ({ label: p.title, slug: p.slug, nav_icon: null }));
   }
   return out;
 }
@@ -2485,12 +2516,15 @@ function MiniAppPreview({
                     return (
                       <li key={item.slug} className="min-w-0 flex-[1_1_auto]" style={{ minWidth: "min(100%,6rem)", maxWidth: "100%" }}>
                         <div
-                          className="flex w-full items-center justify-center px-1 py-1.5 text-center text-[11px] leading-snug"
+                          className="flex w-full flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-center text-[11px] leading-snug"
                           style={{
                             color: isActive ? themeColor : "#6b7280",
                             fontWeight: isActive ? 600 : 500,
                           }}
                         >
+                          {item.nav_icon ? (
+                            <MisNavIcon iconKey={item.nav_icon} size={16} strokeWidth={2} />
+                          ) : null}
                           <span className="break-words [overflow-wrap:anywhere]">{item.label || "—"}</span>
                         </div>
                       </li>

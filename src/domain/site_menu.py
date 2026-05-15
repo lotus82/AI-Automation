@@ -17,6 +17,7 @@ class SiteNavItemDTO:
 
     label: str
     slug: str
+    nav_icon: str | None = None
 
 
 def _page_sort_key(p: Any) -> tuple:
@@ -71,7 +72,8 @@ def nav_items_for_miniapp(
         if not slug:
             continue
         label_raw = (str(row.get("label") or "")).strip()
-        out.append(SiteNavItemDTO(label=label_raw or title, slug=slug))
+        icon_raw = (str(row.get("nav_icon") or "")).strip() or None
+        out.append(SiteNavItemDTO(label=label_raw or title, slug=slug, nav_icon=icon_raw))
 
     if not out:
         return [

@@ -160,6 +160,11 @@ class SiteMenuItemInput(BaseModel):
     page_id: UUID
     order_index: int = Field(default=0, ge=0, le=100_000)
     is_visible: bool = True
+    nav_icon: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Ключ Lucide для иконки в Tabbar (МИС), например user или clipboard_list",
+    )
 
 
 class SiteMenuItemPublic(BaseModel):
@@ -170,6 +175,7 @@ class SiteMenuItemPublic(BaseModel):
     page_id: UUID
     order_index: int
     is_visible: bool
+    nav_icon: str | None = None
 
 
 class SiteListItem(BaseModel):
@@ -409,6 +415,7 @@ class PublicNavItem(BaseModel):
 
     label: str
     slug: str
+    nav_icon: str | None = None
 
 
 class PublicSiteResponse(BaseModel):
@@ -445,6 +452,7 @@ def _menu_public_from_db(raw: object) -> list[SiteMenuItemPublic]:
         except ValueError:
             continue
         iid = str(item.get("id") or "").strip() or str(uuid.uuid4())
+        icon_raw = (str(item.get("nav_icon") or "")).strip() or None
         out.append(
             SiteMenuItemPublic(
                 id=iid,
@@ -452,6 +460,7 @@ def _menu_public_from_db(raw: object) -> list[SiteMenuItemPublic]:
                 page_id=page_id,
                 order_index=int(item.get("order_index", 0) or 0),
                 is_visible=bool(item.get("is_visible", True)),
+                nav_icon=icon_raw,
             ),
         )
     out.sort(key=lambda x: (x.order_index, x.label))
@@ -624,15 +633,17 @@ async def _validate_mis_menu_for_site(
     stored: list[dict] = []
     for it in sorted(items_in, key=_menu_item_sort_key):
         iid = (it.id or "").strip() or str(uuid.uuid4())
-        stored.append(
-            {
-                "id": iid,
-                "label": (it.label or "").strip() or "Пункт",
-                "page_id": str(it.page_id),
-                "order_index": int(it.order_index),
-                "is_visible": bool(it.is_visible),
-            },
-        )
+        entry = {
+            "id": iid,
+            "label": (it.label or "").strip() or "Пункт",
+            "page_id": str(it.page_id),
+            "order_index": int(it.order_index),
+            "is_visible": bool(it.is_visible),
+        }
+        icon = (it.nav_icon or "").strip() if it.nav_icon else ""
+        if icon:
+            entry["nav_icon"] = icon
+        stored.append(entry)
     return stored
 
 
@@ -790,15 +801,17 @@ async def update_site(
         stored: list[dict] = []
         for it in sorted(body.menu_items, key=_menu_item_sort_key):
             iid = (it.id or "").strip() or str(uuid.uuid4())
-            stored.append(
-                {
-                    "id": iid,
-                    "label": it.label.strip(),
-                    "page_id": str(it.page_id),
-                    "order_index": int(it.order_index),
-                    "is_visible": bool(it.is_visible),
-                },
-            )
+            entry = {
+                "id": iid,
+                "label": it.label.strip(),
+                "page_id": str(it.page_id),
+                "order_index": int(it.order_index),
+                "is_visible": bool(it.is_visible),
+            }
+            icon = (it.nav_icon or "").strip() if it.nav_icon else ""
+            if icon:
+                entry["nav_icon"] = icon
+            stored.append(entry)
         row.menu_items = stored
 
     if body.mis_menu_items_doctor is not None:
@@ -1176,7 +1189,11 @@ async def get_public_site(site_id: UUID, session: AsyncSessionDep) -> PublicSite
             )
             for p in pages_rows
         ],
-        nav_items=[PublicNavItem(label=n.label, slug=n.slug) for n in nav_dtos],
-        mis_nav_items_doctor=[PublicNavItem(label=n.label, slug=n.slug) for n in mis_nav_doctor],
-        mis_nav_items_patient=[PublicNavItem(label=n.label, slug=n.slug) for n in mis_nav_patient],
+        nav_items=[PublicNavItem(label=n.label, slug=n.slug, nav_icon=n.nav_icon) for n in nav_dtos],
+        mis_nav_items_doctor=[
+            PublicNavItem(label=n.label, slug=n.slug, nav_icon=n.nav_icon) for n in mis_nav_doctor
+        ],
+        mis_nav_items_patient=[
+            PublicNavItem(label=n.label, slug=n.slug, nav_icon=n.nav_icon) for n in mis_nav_patient
+        ],
     )

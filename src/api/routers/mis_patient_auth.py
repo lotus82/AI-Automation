@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, Query, status
+from fastapi import APIRouter, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -283,3 +283,18 @@ async def mis_patient_session_update_me(
     await session.commit()
     await session.refresh(patient)
     return _patient_out(patient)
+
+
+@router.delete(
+    "/patient-session/me",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def mis_patient_session_delete_me(
+    patient: MisPatientDep,
+    session: AsyncSessionDep,
+) -> Response:
+    """Удаление своей карты пациента (и связанных записей по CASCADE)."""
+    await session.delete(patient)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

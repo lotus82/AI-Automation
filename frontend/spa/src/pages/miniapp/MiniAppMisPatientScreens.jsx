@@ -1,11 +1,23 @@
 import { Typography } from "@maxhub/max-ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BookOpen, ClipboardList, HeartPulse, Save, User } from "lucide-react";
+import {
+  BookOpen,
+  ClipboardList,
+  CreditCard,
+  MessageCircle,
+  Save,
+  Settings,
+  Trash2,
+  User,
+  Wallet,
+} from "lucide-react";
 import patientMisClient from "../../api/patientMisClient.js";
 import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
 import { BirthDateRuField } from "../../components/miniapp/BirthDateRuField.jsx";
+import { useMiniAppConfigStore } from "../../store/miniAppConfigStore.js";
 import { formatDateRu, formatDateTimeRu, isoYmdToRuDotted, parseRuDottedToIsoYmd } from "../../utils/dateTimeFormat.js";
-import { getStoredPatientId } from "../../utils/patientMisAuth.js";
+import { openExternalLinkFromMiniApp } from "../../utils/miniAppOpenExternalLink.js";
+import { clearPatientSession, getStoredPatientId } from "../../utils/patientMisAuth.js";
 import { PAGE_H1, PAGE_TEXT } from "../../styles/pageLayout.js";
 
 const KIND_TO_MODE = {
@@ -14,6 +26,81 @@ const KIND_TO_MODE = {
   mis_patient_diary: "diary",
   mis_patient_tips: "tips",
 };
+
+const profileCardStyle = {
+  borderRadius: 14,
+  border: "1px solid #e2e8f0",
+  padding: 16,
+  background: "#fff",
+  marginBottom: 14,
+};
+
+function buildSupportHref(contacts) {
+  const c = contacts || {};
+  const tg = String(c.telegram || "").trim();
+  if (tg) {
+    if (tg.startsWith("http://") || tg.startsWith("https://")) return tg;
+    const handle = tg.startsWith("@") ? tg.slice(1) : tg;
+    return `https://t.me/${handle}`;
+  }
+  const email = String(c.email || "").trim();
+  if (email) return `mailto:${email}`;
+  const phone = String(c.phone || "").trim().replace(/\s/g, "");
+  if (phone) return `tel:${phone}`;
+  return null;
+}
+
+function profileActionBtnStyle(accent, variant = "default") {
+  if (variant === "danger") {
+    return {
+      width: "100%",
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      padding: "12px 14px",
+      borderRadius: 12,
+      border: "1px solid #fecaca",
+      background: "#fef2f2",
+      color: "#b91c1c",
+      fontWeight: 600,
+      fontSize: 14,
+      cursor: "pointer",
+    };
+  }
+  if (variant === "secondary") {
+    return {
+      width: "100%",
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      padding: "12px 14px",
+      borderRadius: 12,
+      border: `1px solid ${accent}`,
+      background: "#fff",
+      color: accent,
+      fontWeight: 600,
+      fontSize: 14,
+      cursor: "pointer",
+    };
+  }
+  return {
+    width: "100%",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    padding: "12px 14px",
+    borderRadius: 12,
+    border: "none",
+    background: accent,
+    color: "#fff",
+    fontWeight: 600,
+    fontSize: 14,
+    cursor: "pointer",
+  };
+}
 
 /**
  * Экраны пациента в Mini App МИС (разделы карты).
@@ -233,7 +320,8 @@ function ProfileBlock({ patient, accent, onSaved }) {
   };
 
   return (
-    <section style={{ borderRadius: 14, border: "1px solid #e2e8f0", padding: 16, background: "#fff" }}>
+    <>
+    <section style={profileCardStyle}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
         <User size={20} color={accent} aria-hidden />
         <span style={{ fontWeight: 600, fontSize: 16, color: "#0f172a" }}>Мои данные</span>
@@ -314,6 +402,83 @@ function ProfileBlock({ patient, accent, onSaved }) {
           {busy ? "Сохранение…" : "Сохранить"}
         </button>
       </form>
+    </section>
+      <TariffBlock accent={accent} />
+      <ManagementBlock accent={accent} />
+    </>
+  );
+}
+
+function TariffBlock({ accent }) {
+  return (
+    <section style={profileCardStyle}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <CreditCard size={20} color={accent} aria-hidden />
+        <span style={{ fontWeight: 600, fontSize: 16, color: "#0f172a" }}>Тариф</span>
+      </div>
+      <p style={{ margin: "0 0 6px", fontSize: 14, color: "#64748b" }}>
+        Тариф: <strong style={{ color: "#0f172a" }}>Базовый</strong>
+      </p>
+      <p style={{ margin: "0 0 14px", fontSize: 14, color: "#64748b" }}>
+        Баланс: <strong style={{ color: "#0f172a" }}>0.00 ₽</strong>
+      </p>
+      <button type="button" style={profileActionBtnStyle(accent)} onClick={() => {}}>
+        <Wallet className="h-[18px] w-[18px] shrink-0" strokeWidth={2} aria-hidden />
+        Пополнить
+      </button>
+    </section>
+  );
+}
+
+function ManagementBlock({ accent }) {
+  const config = useMiniAppConfigStore((s) => s.config);
+  const supportHref = buildSupportHref(config?.contacts);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const onSupport = () => {
+    if (supportHref) openExternalLinkFromMiniApp(supportHref);
+    else setMsg("Контакты поддержки не настроены в конструкторе сайта.");
+  };
+
+  const onDeleteProfile = async () => {
+    if (
+      !window.confirm(
+        "Удалить ваш профиль и все связанные данные? Это действие нельзя отменить.",
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setMsg("");
+    try {
+      await patientMisClient.delete("/mis/patient-session/me");
+      clearPatientSession();
+      window.location.reload();
+    } catch (err) {
+      const d = err?.response?.data?.detail;
+      setMsg(typeof d === "string" ? d : err?.message || "Не удалось удалить профиль");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section style={{ ...profileCardStyle, marginBottom: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <Settings size={20} color={accent} aria-hidden />
+        <span style={{ fontWeight: 600, fontSize: 16, color: "#0f172a" }}>Управление</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <button type="button" style={profileActionBtnStyle(accent, "secondary")} onClick={onSupport} disabled={busy}>
+          <MessageCircle className="h-[18px] w-[18px] shrink-0" strokeWidth={2} aria-hidden />
+          Написать в поддержку
+        </button>
+        <button type="button" style={profileActionBtnStyle(accent, "danger")} onClick={onDeleteProfile} disabled={busy}>
+          <Trash2 className="h-[18px] w-[18px] shrink-0" strokeWidth={2} aria-hidden />
+          {busy ? "Удаление…" : "Удалить мой профиль"}
+        </button>
+      </div>
+      {msg ? <p style={{ margin: "10px 0 0", fontSize: 13, color: "#b91c1c" }}>{msg}</p> : null}
     </section>
   );
 }

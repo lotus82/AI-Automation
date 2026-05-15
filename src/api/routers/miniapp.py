@@ -671,6 +671,7 @@ class MiniAppNavItem(BaseModel):
 
     label: str
     slug: str
+    nav_icon: str | None = None
 
 
 class MiniAppConfigResponse(BaseModel):
@@ -832,9 +833,13 @@ async def get_miniapp_config(inn: str, session: AsyncSessionDep) -> MiniAppConfi
             )
             for p in pages_rows
         ],
-        nav_items=[MiniAppNavItem(label=n.label, slug=n.slug) for n in nav_dtos],
-        mis_nav_items_doctor=[MiniAppNavItem(label=n.label, slug=n.slug) for n in mis_nav_doctor],
-        mis_nav_items_patient=[MiniAppNavItem(label=n.label, slug=n.slug) for n in mis_nav_patient],
+        nav_items=[MiniAppNavItem(label=n.label, slug=n.slug, nav_icon=n.nav_icon) for n in nav_dtos],
+        mis_nav_items_doctor=[
+            MiniAppNavItem(label=n.label, slug=n.slug, nav_icon=n.nav_icon) for n in mis_nav_doctor
+        ],
+        mis_nav_items_patient=[
+            MiniAppNavItem(label=n.label, slug=n.slug, nav_icon=n.nav_icon) for n in mis_nav_patient
+        ],
     )
 
 

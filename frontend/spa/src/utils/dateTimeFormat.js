@@ -76,3 +76,15 @@ export function isValidRuDottedDate(ru) {
   if (String(ru || "").trim() === "") return true;
   return parseRuDottedToIsoYmd(ru) != null;
 }
+
+/**
+ * Маска ввода даты рождения: только цифры, авто-точки после ДД и ММ (ДД.ММ.ГГГГ).
+ * @param {string} raw
+ * @returns {string}
+ */
+export function formatRuDottedBirthInput(raw) {
+  const digits = String(raw || "").replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4)}`;
+}

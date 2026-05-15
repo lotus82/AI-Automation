@@ -1,6 +1,6 @@
 import { Calendar } from "lucide-react";
 import { useMemo, useRef } from "react";
-import { isoYmdToRuDotted, parseRuDottedToIsoYmd } from "../../utils/dateTimeFormat.js";
+import { formatRuDottedBirthInput, isoYmdToRuDotted, parseRuDottedToIsoYmd } from "../../utils/dateTimeFormat.js";
 
 const defaultInputStyle = {
   flex: 1,
@@ -48,10 +48,7 @@ export function BirthDateRuField({
   };
 
   const onBirthTextChange = (v) => {
-    const next = v.replace(/[^\d.]/g, "");
-    if (next.length > 10) return;
-    if ((next.match(/\./g) || []).length > 2) return;
-    onChange(next);
+    onChange(formatRuDottedBirthInput(v));
   };
 
   const onPickerChange = (e) => {

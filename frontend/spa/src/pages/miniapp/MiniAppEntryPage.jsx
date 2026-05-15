@@ -10,6 +10,7 @@ import { setPatientSession } from "../../utils/patientMisAuth.js";
 import { useMiniAppThemeStore } from "../../store/miniAppThemeStore.js";
 import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
 import { MiniAppHeader } from "./MiniAppHeader.jsx";
+import { MisNavIcon } from "../../utils/misNavIcons.jsx";
 import { BirthDateRuField } from "../../components/miniapp/BirthDateRuField.jsx";
 import { MiniAppBookingContent } from "./MiniAppBookingContent.jsx";
 import { MiniAppEmbedPlaceholder } from "./MiniAppEmbedPlaceholder.jsx";
@@ -454,11 +455,13 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
                 aria-current={active ? "page" : undefined}
                 style={{
                   width: "100%",
-                  minHeight: 40,
-                  padding: "4px 8px",
+                  minHeight: 44,
+                  padding: "4px 6px",
                   display: "flex",
+                  flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
+                  gap: 2,
                   cursor: "pointer",
                   borderRadius: 9,
                   border: active
@@ -477,12 +480,17 @@ function MiniAppTabbar({ items, activeSlug, onChange, themeColor }) {
                   WebkitTapHighlightColor: "transparent",
                 }}
               >
+                {item.nav_icon ? (
+                  <MisNavIcon iconKey={item.nav_icon} size={18} strokeWidth={2} />
+                ) : null}
                 <span
                   style={{
                     textAlign: "center",
                     whiteSpace: "normal",
                     overflowWrap: "anywhere",
                     wordBreak: "break-word",
+                    fontSize: item.nav_icon ? 12 : 14,
+                    lineHeight: 1.25,
                   }}
                 >
                   {item.label}
