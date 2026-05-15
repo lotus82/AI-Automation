@@ -4,12 +4,21 @@ import { useMemo, useState } from "react";
 import { useMiniAppHtmlLinkDelegate } from "../../hooks/useMiniAppHtmlLinkDelegate.js";
 import { useMiniAppConfigStore } from "../../store/miniAppConfigStore.js";
 import { parseMisAgreementPageContent } from "../../utils/misAgreementPageContent.js";
+import { MiniAppHeader } from "./MiniAppHeader.jsx";
 
 const FALLBACK_AGREEMENT_HTML =
   "<p>Настройте страницу с типом «МИС: Пользовательское соглашение» в конструкторе сайта.</p>";
 
+const agreementCardStyle = {
+  borderRadius: 12,
+  border: "1px solid rgba(15, 23, 42, 0.1)",
+  overflow: "hidden",
+  background: "#fff",
+};
+
 /**
- * Экран соглашения для гостя МИС: приветствие + аккордеон с текстом и «Принять» (на всю высоту, без серой карточки).
+ * Экран соглашения для гостя МИС: шапка как на остальных страницах, приветствие,
+ * раскрывающееся соглашение на всю высоть под шапкой с кнопкой «Принять» внизу блока.
  */
 export function MiniAppGuestWelcome({ miniToken, onAccepted, themeColor }) {
   const config = useMiniAppConfigStore((s) => s.config);
@@ -63,6 +72,35 @@ export function MiniAppGuestWelcome({ miniToken, onAccepted, themeColor }) {
     }
   };
 
+  const accordionToggle = (
+    <button
+      type="button"
+      onClick={() => setIsOpen((v) => !v)}
+      aria-expanded={isOpen}
+      style={{
+        width: "100%",
+        textAlign: "left",
+        padding: "14px 16px",
+        border: "none",
+        background: isOpen ? `${accent}14` : "#fafafa",
+        cursor: "pointer",
+        fontSize: 16,
+        fontWeight: 600,
+        color: "#1e293b",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        flexShrink: 0,
+      }}
+    >
+      <span>{agreementTitle}</span>
+      <span aria-hidden style={{ fontSize: 12, color: "#64748b" }}>
+        {isOpen ? "▲" : "▼"}
+      </span>
+    </button>
+  );
+
   return (
     <div
       style={{
@@ -73,88 +111,60 @@ export function MiniAppGuestWelcome({ miniToken, onAccepted, themeColor }) {
         width: "100%",
         background: "#ffffff",
         color: "#111827",
-        overflowY: "auto",
-        WebkitOverflowScrolling: "touch",
+        overflow: "hidden",
       }}
     >
-      <Flex
-        direction="column"
-        gap={20}
-        align="stretch"
-        style={{
-          flex: 1,
-          boxSizing: "border-box",
-          padding: "16px 16px max(24px, env(safe-area-inset-bottom, 0px))",
-          width: "100%",
-        }}
-      >
-        <div>
-          <h1
-            style={{
-              margin: "0 0 10px",
-              fontSize: 22,
-              fontWeight: 700,
-              lineHeight: 1.25,
-              color: "#111827",
-            }}
-          >
-            {welcomeTitle}
-          </h1>
-          {payload.welcome_html ? (
-            <div
-              ref={welcomeHtmlRef}
-              className="miniapp-page-content"
-              style={{ lineHeight: 1.55, fontSize: 15, color: "#374151" }}
-              dangerouslySetInnerHTML={{ __html: payload.welcome_html }}
-            />
-          ) : null}
-        </div>
+      <MiniAppHeader
+        title={config?.title}
+        subtitle={config?.subtitle}
+        logoUrl={config?.logo_url}
+        themeColor={themeColor}
+        logoIconKey={config?.contacts?.mis_logo_icon}
+      />
 
+      {isOpen ? (
         <div
           style={{
-            borderRadius: 12,
-            border: "1px solid rgba(15, 23, 42, 0.1)",
-            overflow: "hidden",
-            background: "#fff",
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
+            padding: "0 16px max(16px, env(safe-area-inset-bottom, 0px))",
+            boxSizing: "border-box",
           }}
         >
-          <button
-            type="button"
-            onClick={() => setIsOpen((v) => !v)}
-            aria-expanded={isOpen}
+          <div
             style={{
-              width: "100%",
-              textAlign: "left",
-              padding: "14px 16px",
-              border: "none",
-              background: isOpen ? `${accent}14` : "#fafafa",
-              cursor: "pointer",
-              fontSize: 16,
-              fontWeight: 600,
-              color: "#1e293b",
+              ...agreementCardStyle,
+              flex: 1,
+              minHeight: 0,
               display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
+              flexDirection: "column",
             }}
           >
-            <span>{agreementTitle}</span>
-            <span aria-hidden style={{ fontSize: 12, color: "#64748b" }}>
-              {isOpen ? "▲" : "▼"}
-            </span>
-          </button>
-          {isOpen ? (
-            <div style={{ padding: "0 16px 16px" }}>
+            {accordionToggle}
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+                padding: "0 16px 16px",
+                boxSizing: "border-box",
+              }}
+            >
               <div
                 ref={agreementRef}
                 className="miniapp-page-content"
                 style={{
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: "auto",
+                  WebkitOverflowScrolling: "touch",
                   lineHeight: 1.55,
                   fontSize: 15,
                   color: "#1f2937",
-                  maxHeight: "min(50vh, 380px)",
-                  overflowY: "auto",
-                  marginBottom: 16,
+                  marginBottom: 12,
                 }}
                 dangerouslySetInnerHTML={{ __html: agreementHtml }}
               />
@@ -162,24 +172,70 @@ export function MiniAppGuestWelcome({ miniToken, onAccepted, themeColor }) {
                 mode="primary"
                 disabled={submitting}
                 onClick={onAccept}
-                style={{ width: "100%", minHeight: 48, fontSize: 16, fontWeight: 600 }}
+                style={{
+                  width: "100%",
+                  minHeight: 48,
+                  fontSize: 16,
+                  fontWeight: 600,
+                  flexShrink: 0,
+                }}
               >
                 {submitting ? "Сохранение…" : "Принять"}
               </Button>
             </div>
+          </div>
+          {err ? (
+            <Typography.Body style={{ color: "#b91c1c", margin: "12px 0 0", fontSize: 13 }}>
+              {err}
+            </Typography.Body>
           ) : null}
         </div>
+      ) : (
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: "auto",
+            WebkitOverflowScrolling: "touch",
+            padding: "16px 16px max(24px, env(safe-area-inset-bottom, 0px))",
+            boxSizing: "border-box",
+          }}
+        >
+          <Flex direction="column" gap={20} align="stretch">
+            <div>
+              <h1
+                style={{
+                  margin: "0 0 10px",
+                  fontSize: 22,
+                  fontWeight: 700,
+                  lineHeight: 1.25,
+                  color: "#111827",
+                }}
+              >
+                {welcomeTitle}
+              </h1>
+              {payload.welcome_html ? (
+                <div
+                  ref={welcomeHtmlRef}
+                  className="miniapp-page-content"
+                  style={{ lineHeight: 1.55, fontSize: 15, color: "#374151" }}
+                  dangerouslySetInnerHTML={{ __html: payload.welcome_html }}
+                />
+              ) : null}
+            </div>
 
-        {err ? (
-          <Typography.Body style={{ color: "#b91c1c", margin: 0 }}>{err}</Typography.Body>
-        ) : null}
+            <div style={agreementCardStyle}>{accordionToggle}</div>
 
-        {!isOpen ? (
-          <Typography.Body style={{ color: "#64748b", fontSize: 13, margin: 0 }}>
-            Разверните блок соглашения, ознакомьтесь с текстом и нажмите «Принять».
-          </Typography.Body>
-        ) : null}
-      </Flex>
+            {err ? (
+              <Typography.Body style={{ color: "#b91c1c", margin: 0 }}>{err}</Typography.Body>
+            ) : null}
+
+            <Typography.Body style={{ color: "#64748b", fontSize: 13, margin: 0 }}>
+              Разверните блок соглашения, ознакомьтесь с текстом и нажмите «Принять».
+            </Typography.Body>
+          </Flex>
+        </div>
+      )}
     </div>
   );
 }
